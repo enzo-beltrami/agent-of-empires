@@ -121,6 +121,7 @@ import { settleSettingsIntrosReadOnly } from "./lib/settingsIntros";
 import { onSettingsChanged } from "./lib/settingsEvents";
 import { parseSystemHealthEnabled, SystemHealthEnabledContext } from "./lib/systemHealth";
 import { toastBus, reportError } from "./lib/toastBus";
+import { isCoordinatorPath } from "./lib/coordinator";
 import { restartForUpdate } from "./lib/restartForUpdate";
 import { startPendingCreates } from "./lib/pendingCreates";
 import { isAbsolutePath, resolveToRepoRelative, type FileRef } from "./lib/fileRef";
@@ -159,7 +160,6 @@ import { BottomDock } from "./components/BottomDock";
 import { PaneDndController } from "./components/PaneDndController";
 import { visibleToFullIndex, type DropTarget } from "./components/paneDnd";
 import { BackgroundAgentsPanel } from "./components/acp/BackgroundAgentsPanel";
-import { CoordinatorPane } from "./components/CoordinatorPane";
 import { hasStartedBefore } from "./components/acp/startupWait";
 import { DiffPane } from "./components/DiffPane";
 import { FilesPane } from "./components/FilesPane";
@@ -913,7 +913,6 @@ function AppContent({
     // The background-agents panel only applies to structured-view (ACP)
     // sessions; a plain terminal session never launches sub-agents.
     ...(activeSession?.view === "structured" ? ["agents"] : []),
-    ...(caps.cityhall || caps.readOnly ? [] : ["coordinator"]),
     ...(caps.cityhall ? [] : pluginPanes.map((p) => p.id)),
   ];
   // The mobile picker/single-pane view reuses this exact list (minus
@@ -921,7 +920,7 @@ function AppContent({
   // single-pane mobile equivalent) so its available views can't drift from
   // desktop's capability/session gating the way the sub-agents and Files
   // panes previously did.
-  const mobilePaneIds = allPaneIds.filter((id) => id !== "terminal" && id !== "coordinator");
+  const mobilePaneIds = allPaneIds.filter((id) => id !== "terminal");
 
   // Fetch the diff when the panel is actually showing: on desktop when the
   // split is expanded, on mobile when the diff view is the active pane.
@@ -1071,17 +1070,6 @@ function AppContent({
     (session: SessionResponse | undefined) => requestSessionInputFocus(session, isCoarse),
     [isCoarse],
   );
-
-  // Panes need an open session and a desktop layout; elsewhere the coordinator opens as the main view.
-  const handleToggleCoordinator = () => {
-    if (activeSession && isMdUp) {
-      togglePaneAny("coordinator");
-      return;
-    }
-    void ensureCoordinator().then((result) => {
-      if (result.kind === "ok") handleSelectSession(result.sessionId);
-    });
-  };
 
   const handleSelectSession = useCallback(
     (sessionId: string, path?: string) => {
@@ -1718,6 +1706,23 @@ function AppContent({
     setSelectedFile(null);
   }, [navigate]);
 
+  // The coordinator opens as the main view; toggling again returns to the session it replaced.
+  const coordinatorReturnRef = useRef<string | null>(null);
+  const coordinatorActive = isCoordinatorPath(activeSession?.project_path);
+  const handleToggleCoordinator = useCallback(() => {
+    if (coordinatorActive) {
+      const back = coordinatorReturnRef.current;
+      if (back && sessions.some((s) => s.id === back)) handleSelectSession(back);
+      else handleGoDashboard();
+      return;
+    }
+    coordinatorReturnRef.current = activeSessionId;
+    void ensureCoordinator().then((result) => {
+      if (result.kind === "ok") handleSelectSession(result.sessionId);
+      else reportError(result.message);
+    });
+  }, [coordinatorActive, sessions, activeSessionId, handleSelectSession, handleGoDashboard]);
+
   const handleOpenSettings = useCallback(() => {
     // A focus window stays on its session, so settings open beside it.
     if (focusNavigation(focusSessionId) === "new-window") {
@@ -1891,6 +1896,7 @@ function AppContent({
         onJumpToAttention: focusMode ? noop : handleJumpToAttention,
         onFocusSidebar: focusMode ? noop : handleFocusSidebar,
         onNewScratch: focusMode ? noop : handleNewScratch,
+        onToggleCoordinator: focusMode || caps.cityhall || caps.readOnly ? noop : handleToggleCoordinator,
         onDiff: () => toggleDiff(),
         // Escape closes local UI surfaces only (dialogs, palette,
         // wizard, settings, help, file viewer). Never wire this to
@@ -1943,6 +1949,9 @@ function AppContent({
         handleNewScratch,
         handleJumpToAttention,
         handleFocusSidebar,
+        handleToggleCoordinator,
+        caps.cityhall,
+        caps.readOnly,
         focusMode,
       ],
     ),
@@ -2040,54 +2049,11 @@ function AppContent({
     // Render a pane body by id. Passed to the docks as a callback (rather than
     // building an array of {icon, body} objects here) so the per-session JSX is
     // constructed inside the dock, not threaded through a prop object.
-    const renderStructured = (session: SessionResponse, active: boolean, selected: boolean) => (
-      <Suspense fallback={<AcpLoadingFallback />}>
-        <StructuredView
-          active={active}
-          selected={selected}
-          sessionId={session.id}
-          acpWorkerState={session.acp_worker_state ?? "absent"}
-          rateLimitAutoResume={session.rate_limit_auto_resume}
-          settingsHref={autoResumeSettingsHref(session.profile, serverAbout)}
-          tool={session.tool}
-          acpAgent={session.acp_agent ?? null}
-          startedBefore={hasStartedBefore(session)}
-          acpProvider={session.acp_provider ?? null}
-          clearAliases={session.clear_aliases}
-          compactAliases={session.compact_aliases}
-          onStartSession={() => void handleStartSession(session.id)}
-          archivedAt={session.archived_at ?? null}
-          snoozedUntil={session.snoozed_until ?? null}
-          trashedAt={session.trashed_at ?? null}
-          onRestore={
-            session.trashed_at
-              ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, session.id))
-              : undefined
-          }
-          onOpenFileRef={handleOpenFileRef}
-          fileRefSession={session}
-          onOpenAgentsPane={openAgentsPane}
-          isSandboxed={session.is_sandboxed}
-          onSwitchToTerminal={canSwitchToTerminal ? () => handleSwitchView(session.id, false) : undefined}
-          onOpenTerminal={canSwitchToTerminal ? (mode) => handleOpenPairedTerminal(session.id, mode) : undefined}
-          canRestartAgent={canRestartAgent}
-        />
-      </Suspense>
-    );
     const renderPaneBody = (id: string): ReactNode => {
       const plugin = pluginPaneById.get(id);
       if (plugin) return <PluginPaneBody entry={plugin.entry} />;
       if (id === "agents") {
         return <BackgroundAgentsPanel sessionId={activeSessionId} />;
-      }
-      if (id === "coordinator") {
-        return (
-          <CoordinatorPane
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            renderSession={(session) => renderStructured(session, true, false)}
-          />
-        );
       }
       if (id === "files") {
         // Remount on session switch so the selected file (and any in-flight
@@ -2145,7 +2111,44 @@ function AppContent({
                       sessions={sessions.filter((session) => session.view === "structured")}
                       persistent={webSettings.persistentStructuredViews}
                       maxPersistentViews={webSettings.maxPersistentStructuredViews}
-                      renderSession={renderStructured}
+                      renderSession={(session, active, selected) => (
+                        <Suspense fallback={<AcpLoadingFallback />}>
+                          <StructuredView
+                            active={active}
+                            selected={selected}
+                            sessionId={session.id}
+                            acpWorkerState={session.acp_worker_state ?? "absent"}
+                            rateLimitAutoResume={session.rate_limit_auto_resume}
+                            settingsHref={autoResumeSettingsHref(session.profile, serverAbout)}
+                            tool={session.tool}
+                            acpAgent={session.acp_agent ?? null}
+                            startedBefore={hasStartedBefore(session)}
+                            acpProvider={session.acp_provider ?? null}
+                            clearAliases={session.clear_aliases}
+                            compactAliases={session.compact_aliases}
+                            onStartSession={() => void handleStartSession(session.id)}
+                            archivedAt={session.archived_at ?? null}
+                            snoozedUntil={session.snoozed_until ?? null}
+                            trashedAt={session.trashed_at ?? null}
+                            onRestore={
+                              session.trashed_at
+                                ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, session.id))
+                                : undefined
+                            }
+                            onOpenFileRef={handleOpenFileRef}
+                            fileRefSession={session}
+                            onOpenAgentsPane={openAgentsPane}
+                            isSandboxed={session.is_sandboxed}
+                            onSwitchToTerminal={
+                              canSwitchToTerminal ? () => handleSwitchView(session.id, false) : undefined
+                            }
+                            onOpenTerminal={
+                              canSwitchToTerminal ? (mode) => handleOpenPairedTerminal(session.id, mode) : undefined
+                            }
+                            canRestartAgent={canRestartAgent}
+                          />
+                        </Suspense>
+                      )}
                     />
                   ) : (
                     <TerminalSessionStack
@@ -2637,7 +2640,7 @@ function AppContent({
                 isMdUp && !fullPageView && !!activeWorkspace && !!activeSession && !rightDockCollapsed
               }
               onToggleCoordinator={caps.cityhall || caps.readOnly ? undefined : handleToggleCoordinator}
-              coordinatorOpen={!!activeSession && isMdUp && isPaneOpen("coordinator")}
+              coordinatorOpen={coordinatorActive}
             />
           </CollapsibleRegion>
 

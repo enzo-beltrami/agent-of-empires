@@ -18,6 +18,7 @@ export interface ShortcutActions {
   onToggleSidebar: () => void;
   onToggleRightPanel: () => void;
   onToggleTerminalFocus: () => void;
+  onToggleCoordinator: () => void;
 }
 
 export type ShortcutId =
@@ -28,6 +29,7 @@ export type ShortcutId =
   | "terminalFocus"
   | "new"
   | "newScratch"
+  | "coordinator"
   | "jumpAttention"
   | "diff"
   | "settings"
@@ -177,6 +179,22 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
       shift: true,
       alt: false,
       code: "KeyN",
+      preventDefault: true,
+      stopPropagation: true,
+    },
+  },
+  {
+    id: "coordinator",
+    action: "onToggleCoordinator",
+    description: "Open or close the coordinator",
+    chord: { ctrl: true, base: "Space" },
+    trigger: {
+      scope: "global",
+      ctrl: true,
+      meta: false,
+      shift: false,
+      alt: false,
+      code: "Space",
       preventDefault: true,
       stopPropagation: true,
     },

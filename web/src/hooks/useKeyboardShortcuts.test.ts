@@ -16,6 +16,7 @@ function mount(ready = true) {
     onFocusSidebar: vi.fn(),
     onJumpToAttention: vi.fn(),
     onNewScratch: vi.fn(),
+    onToggleCoordinator: vi.fn(),
     onDiff: vi.fn(),
     onEscape: vi.fn(),
     onHelp: vi.fn(),

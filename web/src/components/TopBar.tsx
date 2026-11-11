@@ -261,12 +261,7 @@ export function TopBar({
         {activeWorkspace && activeSession && (
           <>
             {/* Desktop: per-pane toggles. */}
-            <ActivityBar
-              paneIds={paneIds.filter((id) => id !== "coordinator")}
-              descriptorFor={paneDescriptor}
-              isOpen={isPaneOpen}
-              onToggle={onTogglePane}
-            />
+            <ActivityBar paneIds={paneIds} descriptorFor={paneDescriptor} isOpen={isPaneOpen} onToggle={onTogglePane} />
             <button
               onClick={onToggleDiff}
               className="md:hidden w-8 h-8 flex items-center justify-center cursor-pointer rounded-md transition-colors text-text-secondary hover:text-text-primary hover:bg-surface-700/50"

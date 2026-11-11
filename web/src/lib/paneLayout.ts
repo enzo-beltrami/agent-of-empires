@@ -227,8 +227,8 @@ export function syncPluginTabs(layout: DockLayout, available: { id: TabId; defau
   return next;
 }
 
-// Sub agents, Files and Coordinator are opt-in, so they never auto-open.
-const AUTO_OPEN_PANES = BUILTIN_PANES.filter((p) => p.id === "diff" || p.id === "terminal");
+// Sub agents and Files are opt-in, so they never auto-open as empty tabs.
+const AUTO_OPEN_PANES = BUILTIN_PANES.filter((p) => p.id !== "agents" && p.id !== "files");
 
 function defaultTemplate(): DockLayout {
   // Narrow viewports start empty and use the mobile picker.
