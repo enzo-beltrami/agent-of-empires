@@ -1149,6 +1149,7 @@ pub(crate) async fn start_server(
         });
 
     super::systemd_reconcile::spawn(state.clone());
+    super::coordinator::spawn(state.clone());
 
     let maintenance_state = state.clone();
     state

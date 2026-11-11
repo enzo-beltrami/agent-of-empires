@@ -49,8 +49,8 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
         )
         .route("/api/recent-projects", get(api::get_recent_projects))
         .route(
-            "/api/assistant",
-            post(api::ensure_assistant).layer(read_only.clone()),
+            "/api/coordinator",
+            post(api::ensure_coordinator).layer(read_only.clone()),
         )
         .route(
             "/api/workspace-ordering",

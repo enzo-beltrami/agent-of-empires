@@ -2,13 +2,13 @@
 
 pub(crate) mod anchored_fs;
 pub mod artifacts;
-pub mod assistant;
 pub mod attach_project;
 pub mod builder;
 pub(crate) mod capture;
 pub mod cityhall_bundle;
 pub mod civilizations;
 pub(crate) mod claim;
+pub mod coordinator;
 // Discovery of on-disk Claude Code sessions. Lives here rather than under
 // `acp` because terminal/tmux import via the CLI does not involve ACP.
 pub mod claude_import;

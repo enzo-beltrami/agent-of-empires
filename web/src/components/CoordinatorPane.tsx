@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
-import { ensureAssistant } from "../lib/api";
+import { ensureCoordinator } from "../lib/api";
 import type { SessionResponse } from "../lib/types";
 
 interface Props {
@@ -11,12 +11,12 @@ interface Props {
 
 type State = { kind: "loading" } | { kind: "ready"; sessionId: string } | { kind: "error"; message: string };
 
-/** The dashboard assistant: a structured session that can read and drive the others. */
-export function AssistantPane({ sessions, activeSessionId, renderSession }: Props) {
+/** The dashboard coordinator: a structured session that can read and drive the others. */
+export function CoordinatorPane({ sessions, activeSessionId, renderSession }: Props) {
   const [state, setState] = useState<State>({ kind: "loading" });
 
   const request = useCallback(() => {
-    void ensureAssistant().then((result) =>
+    void ensureCoordinator().then((result) =>
       setState(result.kind === "ok" ? { kind: "ready", sessionId: result.sessionId } : result),
     );
   }, []);
@@ -45,21 +45,21 @@ export function AssistantPane({ sessions, activeSessionId, renderSession }: Prop
   if (!session) {
     return (
       <Notice>
-        <p>Starting the assistant…</p>
+        <p>Starting the coordinator…</p>
         {state.kind === "ready" && (
           <button
             type="button"
             onClick={ensure}
             className="mt-2 cursor-pointer rounded-md px-2 py-1 text-text-secondary hover:bg-surface-700/50"
           >
-            Start a new assistant
+            Start a new coordinator
           </button>
         )}
       </Notice>
     );
   }
   if (session.id === activeSessionId) {
-    return <Notice>The assistant is open in the main view.</Notice>;
+    return <Notice>The coordinator is open in the main view.</Notice>;
   }
   return <div className="flex h-full min-h-0 flex-col">{renderSession(session)}</div>;
 }
@@ -67,7 +67,7 @@ export function AssistantPane({ sessions, activeSessionId, renderSession }: Prop
 function Notice({ children }: { children: ReactNode }) {
   return (
     <div
-      data-testid="assistant-pane-notice"
+      data-testid="coordinator-pane-notice"
       className="flex h-full flex-col items-center justify-center p-4 text-center text-sm text-text-dim"
     >
       {children}

@@ -227,7 +227,7 @@ export function syncPluginTabs(layout: DockLayout, available: { id: TabId; defau
   return next;
 }
 
-// Sub agents, Files and Assistant are opt-in, so they never auto-open.
+// Sub agents, Files and Coordinator are opt-in, so they never auto-open.
 const AUTO_OPEN_PANES = BUILTIN_PANES.filter((p) => p.id === "diff" || p.id === "terminal");
 
 function defaultTemplate(): DockLayout {

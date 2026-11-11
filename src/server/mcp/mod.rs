@@ -48,6 +48,20 @@ struct ListSessionsParams {
     children_of: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WatchParams {
+    session_id: Option<String>,
+    /// False unwatches `session_id`. Defaults to true.
+    #[serde(default = "watch_default")]
+    watch: bool,
+    /// Watch every session (true) or only the listed ones (false).
+    all: Option<bool>,
+}
+
+fn watch_default() -> bool {
+    true
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 struct ProjectEntry {
     name: String,
@@ -127,7 +141,7 @@ impl McpServer {
             path: project.path,
         })
         .collect();
-        let hidden = crate::session::assistant::assistant_dir().ok();
+        let hidden = crate::session::coordinator::coordinator_dir().ok();
         let recent = tokio::task::spawn_blocking(move || {
             crate::session::load_recent_projects()
                 .unwrap_or_default()
@@ -143,6 +157,53 @@ impl McpServer {
         .await
         .unwrap_or_default();
         Ok(Json(ProjectsView { registered, recent }))
+    }
+
+    #[rmcp::tool(
+        description = "Choose which sessions report their status changes to the coordinator: \
+                       it is told when one starts waiting for input, finishes a turn or fails. \
+                       Give `session_id` to watch or unwatch one session (`watch: false`), or \
+                       `all` to watch every session. Returns the watchlist; with no arguments \
+                       it only reads it."
+    )]
+    async fn watch_session(
+        &self,
+        Parameters(params): Parameters<WatchParams>,
+    ) -> Result<Json<crate::session::coordinator::Watchlist>, CallToolResult> {
+        if (params.session_id.is_some() || params.all.is_some()) && self.state.read_only {
+            return Err(read_only_refusal(&self.state).unwrap());
+        }
+        if let Some(id) = &params.session_id {
+            if !self
+                .state
+                .instances
+                .read()
+                .await
+                .iter()
+                .any(|i| &i.id == id)
+            {
+                return Err(tool_error("not_found", format!("No session with id {id}")));
+            }
+        }
+        let watch = params.watch;
+        tokio::task::spawn_blocking(move || {
+            crate::session::coordinator::update_watchlist(|list| {
+                if let Some(all) = params.all {
+                    list.all = all;
+                }
+                if let Some(id) = params.session_id {
+                    if watch {
+                        list.sessions.insert(id);
+                    } else {
+                        list.sessions.remove(&id);
+                    }
+                }
+            })
+        })
+        .await
+        .map_err(|e| tool_error("internal", e.to_string()))?
+        .map(Json)
+        .map_err(|e| tool_error("internal", format!("{e:#}")))
     }
 
     #[rmcp::tool(

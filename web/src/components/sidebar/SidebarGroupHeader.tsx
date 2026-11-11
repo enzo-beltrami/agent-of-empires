@@ -1,6 +1,6 @@
 import { memo, useId, useRef, useState } from "react";
 import { Folder, Sparkles } from "lucide-react";
-import { isAssistantPath } from "../../lib/assistant";
+import { isCoordinatorPath } from "../../lib/coordinator";
 import { archivableWorkspaces, type SidebarGroup } from "../../lib/sidebarGroups";
 import { SCRATCH_GROUP_ID } from "../../hooks/useRepoGroups";
 import {
@@ -64,8 +64,8 @@ export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props)
   const compact = useSidebarCompact();
 
   const dotClass = STATUS_DOT_CLASS[group.status === "active" ? "Running" : "Idle"] ?? "bg-status-idle";
-  const assistant = isAssistantPath(group.repoPath);
-  const rowClass = `${assistant ? "bg-brand-500/10 hover:bg-brand-500/15" : group.color ? "" : "hover:bg-surface-800/50"} ${hasActiveChild ? "border-l-2 border-session-active" : assistant ? "border-l-2 border-brand-500/60" : ""}`;
+  const coordinator = isCoordinatorPath(group.repoPath);
+  const rowClass = `${coordinator ? "bg-brand-500/10 hover:bg-brand-500/15" : group.color ? "" : "hover:bg-surface-800/50"} ${hasActiveChild ? "border-l-2 border-session-active" : coordinator ? "border-l-2 border-brand-500/60" : ""}`;
   const headerStyle = repoColorStyle(group.color);
   // Like a Session row's glyph: the header button takes focus and is described by the dot.
   const [dotTip, setDotTip] = useState<"hover" | "focus" | null>(null);
@@ -195,7 +195,7 @@ export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props)
                 ownerKey={group.remoteOwnerKey}
                 size={16}
                 fallback={
-                  assistant ? (
+                  coordinator ? (
                     <Sparkles className="h-3.5 w-3.5 text-brand-400" />
                   ) : (
                     <Folder className="h-3.5 w-3.5 text-text-dim" />
@@ -239,10 +239,10 @@ export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props)
             )
           )}
           <span
-            className={`text-[13px] md:text-[14px] font-medium truncate flex-1 ${assistant ? "text-brand-400" : ""}`}
+            className={`text-[13px] md:text-[14px] font-medium truncate flex-1 ${coordinator ? "text-brand-400" : ""}`}
             title={group.groupPath ?? group.repoPath}
           >
-            {assistant && !group.alias ? "Assistant" : group.displayName}
+            {coordinator && !group.alias ? "Coordinator" : group.displayName}
           </span>
           {attentionCount > 0 && (
             <Tooltip

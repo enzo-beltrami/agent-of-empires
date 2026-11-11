@@ -4,7 +4,7 @@ pub(super) use super::AppState;
 
 use axum::{http::StatusCode, response::Response};
 mod acp;
-mod assistant;
+mod coordinator;
 pub(crate) use acp::{submit_prompt, PromptSubmission, PromptSubmitError, PromptSubmitted};
 mod client_log;
 mod file_provenance;
@@ -38,8 +38,9 @@ pub(crate) use acp::{
 
 pub use queue::{queue_clear, queue_edit, queue_enqueue, queue_list, queue_remove};
 
-pub use assistant::ensure_assistant;
 pub use client_log::post_client_log;
+pub(crate) use coordinator::coordinator_session;
+pub use coordinator::ensure_coordinator;
 pub use git::{clone_repo, is_git_repo, list_branches, list_worktrees};
 pub use groups::{collapse_group, create_group, delete_group, move_group, reorder};
 pub use log_level::{get_log_level, patch_log_level};

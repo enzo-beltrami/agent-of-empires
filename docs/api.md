@@ -65,6 +65,7 @@ without a token. To connect an agent, see
 | `archive_session` | `session_id`, `archived` (default `true`) | The session, as `PATCH /api/sessions/{id}/archive` returns it. Archiving stops its agent. |
 | `trash_session` | `session_id` | As `POST /api/sessions/{id}/trash`. The session can be restored until the trash is emptied. |
 | `restore_session` | `session_id` | As `POST /api/sessions/{id}/restore`. |
+| `watch_session` | optionally `session_id` with `watch` (default `true`), and `all` | The coordinator's watchlist, `{all, sessions}`. The Daemon sends the coordinator session a turn when a watched session starts waiting, finishes a turn or fails. With no arguments it only reads the list. |
 
 Every tool declares an `outputSchema` and returns `structuredContent`. A refusal is a
 tool error (`isError`) whose `structuredContent` carries a `code`, such as
@@ -75,8 +76,8 @@ tool error (`isError`) whose `structuredContent` carries a `code`, such as
 fork fields, so repository hooks that need approval are refused with
 `hooks_need_trust` until someone trusts them in the dashboard.
 Listing does not persist workspace ordering or rebuild rows from mutable state.
-Read-only mode permits `list_sessions`, `list_projects`, `whoami` and `read_output`,
-and refuses the other tools with `read_only`. CityHall rejects `POST /mcp` with `403`,
+Read-only mode permits `list_sessions`, `list_projects`, `whoami`, `read_output` and
+reading the watchlist, and refuses the other tools with `read_only`. CityHall rejects `POST /mcp` with `403`,
 as it does other non-allowlisted POST routes, including over the owner socket.
 MCP POST requests remain tracked runtime work: shutdown interrupts them, and a
 long-running request can delay draining. No request is replayed automatically.

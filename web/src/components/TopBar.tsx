@@ -57,9 +57,9 @@ interface Props {
    *  column is showing (desktop, active session, not collapsed), the header's
    *  right zone widens to match it and the divider runs up through the header. */
   rightColumnVisible: boolean;
-  /** Opens or closes the assistant; omitted where it is unavailable (read-only, CityHall). */
-  onToggleAssistant?: () => void;
-  assistantOpen?: boolean;
+  /** Opens or closes the coordinator; omitted where it is unavailable (read-only, CityHall). */
+  onToggleCoordinator?: () => void;
+  coordinatorOpen?: boolean;
 }
 
 export function TopBar({
@@ -87,8 +87,8 @@ export function TopBar({
   onExitFocusMode,
   sidebarColumnVisible,
   rightColumnVisible,
-  onToggleAssistant,
-  assistantOpen = false,
+  onToggleCoordinator,
+  coordinatorOpen = false,
 }: Props) {
   const overflowItems = useMemo<OverflowItem[]>(() => {
     const items: OverflowItem[] = [
@@ -210,21 +210,21 @@ export function TopBar({
       <div className="flex-1 flex items-center px-3 min-w-0 border-b border-surface-700/60">
         <div className="flex-1 flex justify-center items-center gap-1 px-2">
           <PaletteTriggerPill onClick={onOpenPalette} />
-          {onToggleAssistant && (
+          {onToggleCoordinator && (
             <button
-              onClick={onToggleAssistant}
-              aria-pressed={assistantOpen}
-              data-testid="topbar-assistant"
-              title="Ask the assistant about your sessions"
-              aria-label="Assistant"
+              onClick={onToggleCoordinator}
+              aria-pressed={coordinatorOpen}
+              data-testid="topbar-coordinator"
+              title="Coordinate your sessions"
+              aria-label="Coordinator"
               className={`h-8 flex items-center gap-1.5 shrink-0 px-2 sm:px-2.5 rounded-md border cursor-pointer transition-colors text-[13px] ${
-                assistantOpen
+                coordinatorOpen
                   ? "border-brand-500/60 bg-brand-500/15 text-brand-400"
                   : "border-surface-700/60 bg-surface-900 text-text-muted hover:border-brand-500/40 hover:text-brand-400"
               }`}
             >
               <Sparkles className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="hidden sm:inline">Assistant</span>
+              <span className="hidden sm:inline">Coordinator</span>
             </button>
           )}
           <PluginPageButtons />
@@ -262,7 +262,7 @@ export function TopBar({
           <>
             {/* Desktop: per-pane toggles. */}
             <ActivityBar
-              paneIds={paneIds.filter((id) => id !== "assistant")}
+              paneIds={paneIds.filter((id) => id !== "coordinator")}
               descriptorFor={paneDescriptor}
               isOpen={isPaneOpen}
               onToggle={onTogglePane}

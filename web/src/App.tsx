@@ -104,7 +104,7 @@ import {
   trashSession,
   restoreSession,
   fetchPlugins,
-  ensureAssistant,
+  ensureCoordinator,
 } from "./lib/api";
 import type { DeleteSessionOptions, RuntimeCursor, ServerAbout, SettingsResponse } from "./lib/api";
 import { autoResumeSettingsHref } from "./lib/autoResumeSettingsHref";
@@ -159,7 +159,7 @@ import { BottomDock } from "./components/BottomDock";
 import { PaneDndController } from "./components/PaneDndController";
 import { visibleToFullIndex, type DropTarget } from "./components/paneDnd";
 import { BackgroundAgentsPanel } from "./components/acp/BackgroundAgentsPanel";
-import { AssistantPane } from "./components/AssistantPane";
+import { CoordinatorPane } from "./components/CoordinatorPane";
 import { hasStartedBefore } from "./components/acp/startupWait";
 import { DiffPane } from "./components/DiffPane";
 import { FilesPane } from "./components/FilesPane";
@@ -913,7 +913,7 @@ function AppContent({
     // The background-agents panel only applies to structured-view (ACP)
     // sessions; a plain terminal session never launches sub-agents.
     ...(activeSession?.view === "structured" ? ["agents"] : []),
-    ...(caps.cityhall || caps.readOnly ? [] : ["assistant"]),
+    ...(caps.cityhall || caps.readOnly ? [] : ["coordinator"]),
     ...(caps.cityhall ? [] : pluginPanes.map((p) => p.id)),
   ];
   // The mobile picker/single-pane view reuses this exact list (minus
@@ -921,7 +921,7 @@ function AppContent({
   // single-pane mobile equivalent) so its available views can't drift from
   // desktop's capability/session gating the way the sub-agents and Files
   // panes previously did.
-  const mobilePaneIds = allPaneIds.filter((id) => id !== "terminal" && id !== "assistant");
+  const mobilePaneIds = allPaneIds.filter((id) => id !== "terminal" && id !== "coordinator");
 
   // Fetch the diff when the panel is actually showing: on desktop when the
   // split is expanded, on mobile when the diff view is the active pane.
@@ -1072,13 +1072,13 @@ function AppContent({
     [isCoarse],
   );
 
-  // Panes need an open session and a desktop layout; elsewhere the assistant opens as the main view.
-  const handleToggleAssistant = () => {
+  // Panes need an open session and a desktop layout; elsewhere the coordinator opens as the main view.
+  const handleToggleCoordinator = () => {
     if (activeSession && isMdUp) {
-      togglePaneAny("assistant");
+      togglePaneAny("coordinator");
       return;
     }
-    void ensureAssistant().then((result) => {
+    void ensureCoordinator().then((result) => {
       if (result.kind === "ok") handleSelectSession(result.sessionId);
     });
   };
@@ -2080,9 +2080,9 @@ function AppContent({
       if (id === "agents") {
         return <BackgroundAgentsPanel sessionId={activeSessionId} />;
       }
-      if (id === "assistant") {
+      if (id === "coordinator") {
         return (
-          <AssistantPane
+          <CoordinatorPane
             sessions={sessions}
             activeSessionId={activeSessionId}
             renderSession={(session) => renderStructured(session, true, false)}
@@ -2636,8 +2636,8 @@ function AppContent({
               rightColumnVisible={
                 isMdUp && !fullPageView && !!activeWorkspace && !!activeSession && !rightDockCollapsed
               }
-              onToggleAssistant={caps.cityhall || caps.readOnly ? undefined : handleToggleAssistant}
-              assistantOpen={!!activeSession && isMdUp && isPaneOpen("assistant")}
+              onToggleCoordinator={caps.cityhall || caps.readOnly ? undefined : handleToggleCoordinator}
+              coordinatorOpen={!!activeSession && isMdUp && isPaneOpen("coordinator")}
             />
           </CollapsibleRegion>
 

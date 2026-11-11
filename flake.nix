@@ -53,7 +53,8 @@
                 ./acp-worker/aoe-agent/src
                 ./acp-worker/test-shim/shim.mjs
                 ./assets
-                ./src/session/assistant/CLAUDE.md
+                ./src/session/coordinator/CLAUDE.md
+                ./src/session/coordinator/WORKFLOW.md
                 ./docker
                 ./tests/fixtures/cli-read
                 ./web/tests/helpers/fakeAcpAgent.mjs

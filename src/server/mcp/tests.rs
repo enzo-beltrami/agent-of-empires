@@ -278,6 +278,7 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
             "send",
             "stop_session",
             "trash_session",
+            "watch_session",
             "whoami"
         ]
     );
@@ -324,12 +325,12 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn list_projects_offers_recent_directories_but_not_the_assistant() {
+async fn list_projects_offers_recent_directories_but_not_the_coordinator() {
     let _guard = crate::session::test_support::isolate_app_dir();
     let project = tempfile::tempdir().unwrap();
-    let assistant = crate::session::assistant::provision().unwrap();
+    let coordinator = crate::session::coordinator::provision().unwrap();
     for (path, name) in [
-        (assistant.as_path(), "assistant"),
+        (coordinator.as_path(), "coordinator"),
         (std::path::Path::new("/nonexistent/gone"), "gone"),
         (project.path(), "bugs"),
     ] {
@@ -626,6 +627,7 @@ async fn mutating_tools_refuse_while_read_only() {
         ("archive_session", json!({"session_id": id})),
         ("trash_session", json!({"session_id": id})),
         ("restore_session", json!({"session_id": id})),
+        ("watch_session", json!({"session_id": id})),
     ];
     for (tool, arguments) in refused {
         let result = call_result(&app, tool, arguments).await;
@@ -671,6 +673,28 @@ async fn lifecycle_tools_archive_and_trash_reversibly() {
     assert_eq!(row(state.clone()).await.1, false);
 
     let missing = call_result(&app, "archive_session", json!({"session_id": "nope"})).await;
+    assert_eq!(error_code(&missing), Some("not_found"), "{missing}");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn watch_session_edits_and_reads_the_watchlist() {
+    let _guard = crate::session::test_support::isolate_app_dir();
+    let id = "mcp-watched";
+    let (app, _state) = seeded_app(vec![structured_session(id)], false).await;
+    let watched = call(&app, "watch_session", json!({"session_id": id})).await;
+    assert_eq!(watched, json!({"all": false, "sessions": [id]}));
+    assert_eq!(call(&app, "watch_session", json!({})).await, watched);
+    let everything = call(&app, "watch_session", json!({"all": true})).await;
+    assert_eq!(everything["all"], true);
+    let unwatched = call(
+        &app,
+        "watch_session",
+        json!({"session_id": id, "watch": false}),
+    )
+    .await;
+    assert_eq!(unwatched, json!({"all": true, "sessions": []}));
+    let missing = call_result(&app, "watch_session", json!({"session_id": "nope"})).await;
     assert_eq!(error_code(&missing), Some("not_found"), "{missing}");
 }
 

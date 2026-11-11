@@ -1442,8 +1442,8 @@ fn resolve_mcp_layers(
         );
     }
     let mut servers = crate::acp::mcp_config::project_servers_to_acp(merged, session_env);
-    if crate::session::assistant::is_assistant_dir(cwd) {
-        servers.extend(crate::session::assistant::mcp_server());
+    if crate::session::coordinator::is_coordinator_dir(cwd) {
+        servers.extend(crate::session::coordinator::mcp_server());
     }
     servers
 }

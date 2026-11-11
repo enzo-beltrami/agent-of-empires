@@ -1,4 +1,4 @@
-//! `POST /api/assistant`: the dashboard assistant's session, created on first use.
+//! `POST /api/coordinator`: the dashboard coordinator's session, created on first use.
 
 use std::sync::Arc;
 
@@ -12,14 +12,14 @@ use super::api_error;
 use crate::server::AppState;
 
 #[derive(Serialize)]
-pub struct AssistantResponse {
+pub struct CoordinatorResponse {
     pub session_id: String,
 }
 
 /// Serializes ensures, so two dashboards opening the pane at once create one session.
 static ENSURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-pub async fn ensure_assistant(State(state): State<Arc<AppState>>) -> Response {
+pub async fn ensure_coordinator(State(state): State<Arc<AppState>>) -> Response {
     if state.read_only {
         return super::read_only_response();
     }
@@ -28,36 +28,36 @@ pub async fn ensure_assistant(State(state): State<Arc<AppState>>) -> Response {
         return api_error(
             StatusCode::CONFLICT,
             "mcp_disabled",
-            "The assistant needs the MCP server. Turn on Settings > MCP server, then restart aoe serve.",
+            "The coordinator needs the MCP server. Turn on Settings > MCP server, then restart aoe serve.",
         );
     }
     let _ensure = ENSURE.lock().await;
-    let dir = match tokio::task::spawn_blocking(crate::session::assistant::provision).await {
+    let dir = match tokio::task::spawn_blocking(crate::session::coordinator::provision).await {
         Ok(Ok(dir)) => dir,
         Ok(Err(error)) => {
             return api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "assistant_dir",
-                format!("Could not prepare the assistant directory: {error:#}"),
+                "coordinator_dir",
+                format!("Could not prepare the coordinator directory: {error:#}"),
             )
         }
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     let path = dir.to_string_lossy().into_owned();
     if let Some(session_id) = existing(&state, &path).await {
-        return Json(AssistantResponse { session_id }).into_response();
+        return Json(CoordinatorResponse { session_id }).into_response();
     }
     let body = match serde_json::from_value(serde_json::json!({
         "path": path,
         "tool": "claude",
-        "title": "Assistant",
+        "title": "Coordinator",
         "title_typed": true,
         "view": "structured",
     })) {
         Ok(body) => body,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    let reference = format!("assistant-{}", uuid::Uuid::new_v4());
+    let reference = format!("coordinator-{}", uuid::Uuid::new_v4());
     let response =
         super::sessions::create_session_with(state.clone(), true, &reference, false, body, None)
             .await;
@@ -65,12 +65,18 @@ pub async fn ensure_assistant(State(state): State<Arc<AppState>>) -> Response {
         return response;
     }
     match existing(&state, &path).await {
-        Some(session_id) => Json(AssistantResponse { session_id }).into_response(),
+        Some(session_id) => Json(CoordinatorResponse { session_id }).into_response(),
         None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
-/// The newest live structured session in the assistant directory.
+/// The coordinator session, if one exists.
+pub(crate) async fn coordinator_session(state: &AppState) -> Option<String> {
+    let dir = crate::session::coordinator::coordinator_dir().ok()?;
+    existing(state, &dir.to_string_lossy()).await
+}
+
+/// The newest live structured session in the coordinator directory.
 async fn existing(state: &AppState, path: &str) -> Option<String> {
     state
         .instances
