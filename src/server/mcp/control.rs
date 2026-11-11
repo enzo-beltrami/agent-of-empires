@@ -644,7 +644,7 @@ fn text_page(events: &[(u64, crate::acp::state::Event)], since: u64) -> TextPage
 
 /// A refused HTTP response as a tool error: the codes a caller can act on pass through, and
 /// the rest are named by status. A plain-text body becomes the message.
-fn refusal(status: StatusCode, body: &[u8]) -> CallToolResult {
+pub(super) fn refusal(status: StatusCode, body: &[u8]) -> CallToolResult {
     let json: Option<Value> = serde_json::from_slice(body).ok();
     let http_error = json
         .as_ref()

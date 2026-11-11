@@ -269,11 +269,15 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
     assert_eq!(
         names,
         [
+            "archive_session",
             "create_session",
             "list_projects",
             "list_sessions",
             "read_output",
+            "restore_session",
             "send",
+            "stop_session",
+            "trash_session",
             "whoami"
         ]
     );
@@ -618,6 +622,10 @@ async fn mutating_tools_refuse_while_read_only() {
             "create_session",
             json!({"path": "/tmp", "tool": "claude", "view": "structured"}),
         ),
+        ("stop_session", json!({"session_id": id})),
+        ("archive_session", json!({"session_id": id})),
+        ("trash_session", json!({"session_id": id})),
+        ("restore_session", json!({"session_id": id})),
     ];
     for (tool, arguments) in refused {
         let result = call_result(&app, tool, arguments).await;
@@ -631,6 +639,39 @@ async fn mutating_tools_refuse_while_read_only() {
     assert!(state.acp_event_store.replay_from(id, 0).is_empty());
     let read = call(&app, "read_output", json!({"session_id": id})).await;
     assert_eq!(read["view"], "structured");
+}
+
+/// Archive and trash round-trip through their HTTP handlers, and an unknown id is `not_found`.
+#[tokio::test]
+#[serial_test::serial]
+async fn lifecycle_tools_archive_and_trash_reversibly() {
+    let _guard = crate::session::test_support::isolate_app_dir();
+    crate::tmux::tool_retirement::initialize(&crate::session::get_app_dir().unwrap()).unwrap();
+    let id = "mcp-lifecycle";
+    let (app, state) = seeded_app(vec![structured_session(id)], false).await;
+    state.runtime.publish(&state).await.unwrap();
+    let row = |state: std::sync::Arc<crate::server::AppState>| async move {
+        let rows = state.instances.read().await;
+        let row = rows.iter().find(|row| row.id == id).unwrap();
+        (row.is_archived(), row.is_trashed())
+    };
+
+    call(&app, "archive_session", json!({"session_id": id})).await;
+    assert_eq!(row(state.clone()).await, (true, false));
+    call(
+        &app,
+        "archive_session",
+        json!({"session_id": id, "archived": false}),
+    )
+    .await;
+    assert_eq!(row(state.clone()).await, (false, false));
+    call(&app, "trash_session", json!({"session_id": id})).await;
+    assert_eq!(row(state.clone()).await.1, true);
+    call(&app, "restore_session", json!({"session_id": id})).await;
+    assert_eq!(row(state.clone()).await.1, false);
+
+    let missing = call_result(&app, "archive_session", json!({"session_id": "nope"})).await;
+    assert_eq!(error_code(&missing), Some("not_found"), "{missing}");
 }
 
 /// A structured create stores its prompt as the pending initial turn and its parent link; a

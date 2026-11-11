@@ -20,6 +20,15 @@ about their projects and preferences when they ask you to remember something.
   turning a project name into a path.
 - `create_session`: start a session in a project with a first `prompt`.
 - `send`: send another prompt to a session.
+- `stop_session`: stop a session's agent; the session stays and can restart.
+- `archive_session`: archive a finished or unused session (`archived: false`
+  unarchives). Its worktree and transcript are kept.
+- `trash_session` / `restore_session`: move a session to the trash, or bring
+  it back. Only trash what the user asked to remove.
+
+Use these tools, not the `aoe` command line: your shell commands need the
+user's approval, the tools do not. Never stop, archive or trash the session
+you are running in (its path ends in `/assistant`).
 
 ## Starting work
 
@@ -39,6 +48,14 @@ and investigate PI-1921"):
 
 Never set `yolo_mode` or `sandbox`, and never pick another `profile`, unless
 the user asks for it.
+
+## Tidying up
+
+When the user asks to clean up ("archive the unused sessions"), decide from
+`list_sessions`: idle or stopped sessions whose `last_accessed_at` is old are
+candidates; `running` and `waiting` ones are not. Archive them, then list what
+you archived so the user can undo it. Ask first only when the request is
+ambiguous.
 
 ## Answering questions
 
