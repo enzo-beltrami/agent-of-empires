@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Sparkles } from "lucide-react";
 import type { SessionResponse, Workspace } from "../lib/types";
 import { PaletteTriggerPill } from "./PaletteTriggerPill";
 import { OverflowMenu, type OverflowItem } from "./OverflowMenu";
@@ -56,6 +57,9 @@ interface Props {
    *  column is showing (desktop, active session, not collapsed), the header's
    *  right zone widens to match it and the divider runs up through the header. */
   rightColumnVisible: boolean;
+  /** Opens or closes the assistant; omitted where it is unavailable (read-only, CityHall). */
+  onToggleAssistant?: () => void;
+  assistantOpen?: boolean;
 }
 
 export function TopBar({
@@ -83,6 +87,8 @@ export function TopBar({
   onExitFocusMode,
   sidebarColumnVisible,
   rightColumnVisible,
+  onToggleAssistant,
+  assistantOpen = false,
 }: Props) {
   const overflowItems = useMemo<OverflowItem[]>(() => {
     const items: OverflowItem[] = [
@@ -204,6 +210,23 @@ export function TopBar({
       <div className="flex-1 flex items-center px-3 min-w-0 border-b border-surface-700/60">
         <div className="flex-1 flex justify-center items-center gap-1 px-2">
           <PaletteTriggerPill onClick={onOpenPalette} />
+          {onToggleAssistant && (
+            <button
+              onClick={onToggleAssistant}
+              aria-pressed={assistantOpen}
+              data-testid="topbar-assistant"
+              title="Ask the assistant about your sessions"
+              aria-label="Assistant"
+              className={`h-8 flex items-center gap-1.5 shrink-0 px-2 sm:px-2.5 rounded-md border cursor-pointer transition-colors text-[13px] ${
+                assistantOpen
+                  ? "border-brand-500/60 bg-brand-500/15 text-brand-400"
+                  : "border-surface-700/60 bg-surface-900 text-text-muted hover:border-brand-500/40 hover:text-brand-400"
+              }`}
+            >
+              <Sparkles className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="hidden sm:inline">Assistant</span>
+            </button>
+          )}
           <PluginPageButtons />
         </div>
       </div>
@@ -238,7 +261,12 @@ export function TopBar({
         {activeWorkspace && activeSession && (
           <>
             {/* Desktop: per-pane toggles. */}
-            <ActivityBar paneIds={paneIds} descriptorFor={paneDescriptor} isOpen={isPaneOpen} onToggle={onTogglePane} />
+            <ActivityBar
+              paneIds={paneIds.filter((id) => id !== "assistant")}
+              descriptorFor={paneDescriptor}
+              isOpen={isPaneOpen}
+              onToggle={onTogglePane}
+            />
             <button
               onClick={onToggleDiff}
               className="md:hidden w-8 h-8 flex items-center justify-center cursor-pointer rounded-md transition-colors text-text-secondary hover:text-text-primary hover:bg-surface-700/50"

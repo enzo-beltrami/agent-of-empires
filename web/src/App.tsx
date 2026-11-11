@@ -104,6 +104,7 @@ import {
   trashSession,
   restoreSession,
   fetchPlugins,
+  ensureAssistant,
 } from "./lib/api";
 import type { DeleteSessionOptions, RuntimeCursor, ServerAbout, SettingsResponse } from "./lib/api";
 import { autoResumeSettingsHref } from "./lib/autoResumeSettingsHref";
@@ -1070,6 +1071,17 @@ function AppContent({
     (session: SessionResponse | undefined) => requestSessionInputFocus(session, isCoarse),
     [isCoarse],
   );
+
+  // Panes need an open session and a desktop layout; elsewhere the assistant opens as the main view.
+  const handleToggleAssistant = () => {
+    if (activeSession && isMdUp) {
+      togglePaneAny("assistant");
+      return;
+    }
+    void ensureAssistant().then((result) => {
+      if (result.kind === "ok") handleSelectSession(result.sessionId);
+    });
+  };
 
   const handleSelectSession = useCallback(
     (sessionId: string, path?: string) => {
@@ -2624,6 +2636,8 @@ function AppContent({
               rightColumnVisible={
                 isMdUp && !fullPageView && !!activeWorkspace && !!activeSession && !rightDockCollapsed
               }
+              onToggleAssistant={caps.cityhall || caps.readOnly ? undefined : handleToggleAssistant}
+              assistantOpen={!!activeSession && isMdUp && isPaneOpen("assistant")}
             />
           </CollapsibleRegion>
 
