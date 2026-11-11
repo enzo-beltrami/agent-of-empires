@@ -17,7 +17,7 @@ use rmcp::{
     ServerHandler,
 };
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::api::sessions::{list_sessions_envelope, SessionFilter, SessionsView};
 use super::state::AppState;
@@ -45,6 +45,20 @@ struct ListSessionsParams {
     group: Option<String>,
     /// Only direct children of the session with this id.
     children_of: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct ProjectEntry {
+    name: String,
+    path: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct ProjectsView {
+    /// Projects registered with `aoe project add` or the dashboard.
+    registered: Vec<ProjectEntry>,
+    /// Directories sessions were recently created in, newest first.
+    recent: Vec<ProjectEntry>,
 }
 
 #[derive(Clone)]
@@ -79,6 +93,55 @@ impl McpServer {
             .await
             .map(Json)
             .map_err(|_| rmcp::ErrorData::internal_error("Session snapshot unavailable", None))
+    }
+
+    #[rmcp::tool(
+        description = "Projects a session can be created in: the served profile's registered \
+                       projects, then recently used directories. Match a project the user names \
+                       against `name` and the last path component."
+    )]
+    async fn list_projects(&self) -> Result<Json<ProjectsView>, rmcp::ErrorData> {
+        let snapshot = {
+            let _namespace = self.state.profile_namespace.read().await;
+            self.state.runtime.publish(&self.state).await.map_err(|_| {
+                rmcp::ErrorData::internal_error("Project snapshot unavailable", None)
+            })?
+        };
+        let contents = &snapshot.value.contents;
+        let served = self.state.served_profile().clone();
+        let profile_projects = contents
+            .profiles
+            .iter()
+            .find(|profile| profile.name == *served)
+            .map(|profile| profile.projects.clone())
+            .unwrap_or_default();
+        let registered: Vec<ProjectEntry> = crate::session::projects::merge_project_scopes(
+            contents.global_projects.clone(),
+            profile_projects,
+            |project| project.path.clone(),
+        )
+        .into_iter()
+        .map(|project| ProjectEntry {
+            name: project.name,
+            path: project.path,
+        })
+        .collect();
+        let hidden = crate::session::assistant::assistant_dir().ok();
+        let recent = tokio::task::spawn_blocking(move || {
+            crate::session::load_recent_projects()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|p| std::path::Path::new(&p.path).is_dir())
+                .filter(|p| hidden.as_deref() != Some(std::path::Path::new(&p.path)))
+                .map(|p| ProjectEntry {
+                    name: p.display_name,
+                    path: p.path,
+                })
+                .collect()
+        })
+        .await
+        .unwrap_or_default();
+        Ok(Json(ProjectsView { registered, recent }))
     }
 
     #[rmcp::tool(

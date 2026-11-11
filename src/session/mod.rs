@@ -2,6 +2,7 @@
 
 pub(crate) mod anchored_fs;
 pub mod artifacts;
+pub mod assistant;
 pub mod attach_project;
 pub mod builder;
 pub(crate) mod capture;

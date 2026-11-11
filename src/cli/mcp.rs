@@ -26,6 +26,9 @@ pub enum McpCommands {
     /// Print an MCP client config for the running daemon's `/mcp` server, ready to paste into
     /// an agent's `mcpServers` (for example a Claude Code `.mcp.json`).
     Config,
+    /// Serve the running daemon's `/mcp` tools over stdin/stdout, relayed through its private
+    /// owner socket, so a local MCP client needs no token. Requires `[web] mcp_enabled`.
+    Stdio,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -133,6 +136,7 @@ pub async fn run(profile: &str, command: McpCommands) -> Result<()> {
         McpCommands::Edit(args) => edit(profile, args),
         McpCommands::Remove(args) => remove(profile, args),
         McpCommands::Config => config(profile).await,
+        McpCommands::Stdio => stdio().await,
     }
 }
 
@@ -415,6 +419,75 @@ const CLIENT_ENTRY_NAME: &str = "aoe";
 /// How long `aoe mcp config` waits for the daemon to answer its `/mcp` probe.
 const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+async fn stdio() -> Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+    let client =
+        crate::daemon::DaemonClient::new_unix(crate::daemon::transport::local_socket_path()?)?;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let writer = tokio::spawn(async move {
+        let mut stdout = tokio::io::stdout();
+        while let Some(mut line) = rx.recv().await {
+            line.push(b'\n');
+            stdout.write_all(&line).await?;
+            stdout.flush().await?;
+        }
+        std::io::Result::Ok(())
+    });
+    let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+    while let Some(line) = lines.next_line().await? {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let client = client.clone();
+        let tx = tx.clone();
+        // Concurrent, so a slow create does not hold up a list; replies carry their ids.
+        tokio::spawn(async move {
+            let reply = relay_reply(&line, client.mcp_message(line.clone().into_bytes()).await);
+            if let Some(reply) = reply {
+                let _ = tx.send(reply);
+            }
+        });
+    }
+    drop(tx);
+    writer.await??;
+    Ok(())
+}
+
+/// The line to write back for one relayed message: the server's JSON-RPC body, nothing for
+/// an accepted notification, or a JSON-RPC error for a request the daemon did not answer.
+fn relay_reply(
+    request: &str,
+    outcome: Result<(reqwest::StatusCode, Vec<u8>), crate::daemon::DaemonClientError>,
+) -> Option<Vec<u8>> {
+    let failure = match outcome {
+        Ok((_, body)) if !body.is_empty() => {
+            if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&body) {
+                return serde_json::to_vec(&value).ok();
+            }
+            "the daemon answered /mcp with a body that is not JSON".to_string()
+        }
+        Ok((status, _)) if status.is_success() => return None,
+        Ok((reqwest::StatusCode::NOT_FOUND, _)) => {
+            "the daemon does not serve /mcp; set `[web] mcp_enabled = true` and run \
+             `aoe serve --restart`"
+                .to_string()
+        }
+        Ok((status, _)) => format!("the daemon answered /mcp with {status}"),
+        Err(error) => format!("could not reach the aoe daemon: {error}"),
+    };
+    let id = serde_json::from_str::<serde_json::Value>(request)
+        .ok()?
+        .get("id")
+        .filter(|id| !id.is_null())?
+        .clone();
+    serde_json::to_vec(&serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": -32603, "message": failure },
+    }))
+    .ok()
+}
+
 async fn config(profile: &str) -> Result<()> {
     let pid = match super::serve::daemon_status() {
         DaemonStatus::Verified(pid) => pid,
@@ -647,6 +720,48 @@ fn rejected_message(entry: &ClientEntry, status: reqwest::StatusCode) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relay_reply_forwards_bodies_and_answers_requests_the_daemon_dropped() {
+        use reqwest::StatusCode;
+        let request = r#"{"jsonrpc":"2.0","id":7,"method":"tools/list"}"#;
+        let notification = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        let error_for = |reply: Option<Vec<u8>>| {
+            let value: serde_json::Value = serde_json::from_slice(&reply.unwrap()).unwrap();
+            assert_eq!(value["id"], 7);
+            value["error"]["message"].as_str().unwrap().to_owned()
+        };
+
+        let body = b"{\n  \"jsonrpc\": \"2.0\", \"id\": 7, \"result\": {}\n}".to_vec();
+        let relayed = relay_reply(request, Ok((StatusCode::OK, body))).unwrap();
+        assert!(!relayed.contains(&b'\n'), "relayed as one line");
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&relayed).unwrap(),
+            serde_json::json!({"jsonrpc": "2.0", "id": 7, "result": {}})
+        );
+        assert_eq!(
+            relay_reply(notification, Ok((StatusCode::ACCEPTED, Vec::new()))),
+            None
+        );
+        assert!(error_for(relay_reply(
+            request,
+            Ok((StatusCode::NOT_FOUND, Vec::new()))
+        ))
+        .contains("mcp_enabled"));
+        assert!(error_for(relay_reply(
+            request,
+            Err(crate::daemon::DaemonClientError::UnixTransport)
+        ))
+        .contains("could not reach"));
+        assert_eq!(
+            relay_reply(
+                notification,
+                Err(crate::daemon::DaemonClientError::UnixTransport)
+            ),
+            None,
+            "a notification has no id to answer"
+        );
+    }
 
     fn stored(args: &[&str]) -> ProjectMcpServer {
         ProjectMcpServer {

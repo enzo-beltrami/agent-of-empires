@@ -270,6 +270,7 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
         names,
         [
             "create_session",
+            "list_projects",
             "list_sessions",
             "read_output",
             "send",
@@ -315,6 +316,36 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
         assert!(!properties.contains_key(field), "{field}");
     }
     assert!(properties.contains_key("prompt") && properties.contains_key("parent_session_id"));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn list_projects_offers_recent_directories_but_not_the_assistant() {
+    let _guard = crate::session::test_support::isolate_app_dir();
+    let project = tempfile::tempdir().unwrap();
+    let assistant = crate::session::assistant::provision().unwrap();
+    for (path, name) in [
+        (assistant.as_path(), "assistant"),
+        (std::path::Path::new("/nonexistent/gone"), "gone"),
+        (project.path(), "bugs"),
+    ] {
+        crate::session::record_recent_project(crate::session::RecentProjectEntry {
+            path: path.to_string_lossy().into_owned(),
+            display_name: name.into(),
+            tool: "claude".into(),
+            last_used_at: chrono::Utc::now().to_rfc3339(),
+        })
+        .unwrap();
+    }
+    let app = app(true, vec![]);
+    let listed = call(&app, "list_projects", json!({})).await;
+    assert_eq!(
+        listed,
+        json!({
+            "registered": [],
+            "recent": [{"name": "bugs", "path": project.path().to_string_lossy()}],
+        })
+    );
 }
 
 #[tokio::test]

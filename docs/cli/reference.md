@@ -102,6 +102,7 @@ This document contains the help content for the `aoe` command-line program.
 * [`aoe mcp edit`↴](#aoe-mcp-edit)
 * [`aoe mcp remove`↴](#aoe-mcp-remove)
 * [`aoe mcp config`↴](#aoe-mcp-config)
+* [`aoe mcp stdio`↴](#aoe-mcp-stdio)
 * [`aoe skill`↴](#aoe-skill)
 * [`aoe skill list`↴](#aoe-skill-list)
 * [`aoe skill view`↴](#aoe-skill-view)
@@ -1524,6 +1525,7 @@ Inspect the effective MCP server set (provenance, conflicts, drift)
 * `edit` — Edit an AoE-owned MCP server. Secrets you do not mention keep their stored value
 * `remove` — Remove an AoE-owned MCP server
 * `config` — Print an MCP client config for the running daemon's `/mcp` server, ready to paste into an agent's `mcpServers` (for example a Claude Code `.mcp.json`)
+* `stdio` — Serve the running daemon's `/mcp` tools over stdin/stdout, relayed through its private owner socket, so a local MCP client needs no token. Requires `[web] mcp_enabled`
 
 
 
@@ -1606,6 +1608,14 @@ Remove an AoE-owned MCP server
 Print an MCP client config for the running daemon's `/mcp` server, ready to paste into an agent's `mcpServers` (for example a Claude Code `.mcp.json`)
 
 **Usage:** `aoe mcp config`
+
+
+
+## `aoe mcp stdio`
+
+Serve the running daemon's `/mcp` tools over stdin/stdout, relayed through its private owner socket, so a local MCP client needs no token. Requires `[web] mcp_enabled`
+
+**Usage:** `aoe mcp stdio`
 
 
 

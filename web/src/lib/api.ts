@@ -3288,3 +3288,19 @@ export async function syncSkills(options?: {
     };
   }
 }
+
+export type EnsureAssistantResult = { kind: "ok"; sessionId: string } | Failure;
+
+/** The dashboard assistant's structured session, created on first use. */
+export async function ensureAssistant(): Promise<EnsureAssistantResult> {
+  try {
+    return await kindRequest(
+      "/api/assistant",
+      jsonInit("POST"),
+      (p) => (typeof p.session_id === "string" ? { kind: "ok" as const, sessionId: p.session_id } : null),
+      "Could not start the assistant",
+    );
+  } catch {
+    return { kind: "error", message: "Network error." };
+  }
+}

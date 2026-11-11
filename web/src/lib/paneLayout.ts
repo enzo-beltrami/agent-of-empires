@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLatestRef } from "../hooks/useLatestRef";
 import { getWebSettingsSnapshot, useWebSettings } from "../hooks/useWebSettings";
 import { safeGetItem, safeSetItem } from "./safeStorage";
-import { BUILTIN_PANES, isTerminalTabId, terminalTabId, type DockLocation } from "./panes";
+import { BUILTIN_PANES, isTerminalTabId, terminalTabId, type BuiltinPaneId, type DockLocation } from "./panes";
 
 const LAYOUT_KEY = "aoe-pane-layout-v2";
 // v1 per-browser layout, read once to seed the v2 per-session template.
@@ -227,8 +227,8 @@ export function syncPluginTabs(layout: DockLayout, available: { id: TabId; defau
   return next;
 }
 
-// Sub agents and Files are opt-in, so they never auto-open as empty tabs.
-const AUTO_OPEN_PANES = BUILTIN_PANES.filter((p) => p.id !== "agents" && p.id !== "files");
+// Sub agents, Files and Assistant are opt-in, so they never auto-open.
+const AUTO_OPEN_PANES = BUILTIN_PANES.filter((p) => p.id === "diff" || p.id === "terminal");
 
 function defaultTemplate(): DockLayout {
   // Narrow viewports start empty and use the mobile picker.
@@ -364,7 +364,7 @@ export interface PaneLayoutApi {
   activateTab: (dock: DockLocation, tabId: TabId) => void;
   moveTab: (tabId: TabId, toDock: DockLocation) => void;
   placeTab: (tabId: TabId, target: PlaceTarget) => void;
-  toggleKind: (kind: "diff" | "terminal" | "agents" | "files", defaultDock: DockLocation) => void;
+  toggleKind: (kind: BuiltinPaneId, defaultDock: DockLocation) => void;
   togglePlugin: (id: TabId, defaultDock: DockLocation) => void;
   syncPlugins: (available: { id: TabId; defaultDock: DockLocation }[]) => void;
   setDockCollapsed: (dock: DockLocation, collapsed: boolean) => void;
@@ -521,10 +521,10 @@ export function usePaneLayout(sessionId: string | null, outsideRepository: boole
     [mutate],
   );
   const toggleKind = useCallback(
-    (kind: "diff" | "terminal" | "agents" | "files", defaultDock: DockLocation) =>
+    (kind: BuiltinPaneId, defaultDock: DockLocation) =>
       mutate((l) => {
         // Single-instance panes toggle their tab; terminals toggle the whole group.
-        if (kind === "diff" || kind === "agents" || kind === "files") {
+        if (kind !== "terminal") {
           const at = findTab(l, kind);
           if (at) return isDockCollapsed(l, at.dock) ? openOrRevealTab(l, kind, defaultDock) : removeTab(l, kind);
           return openOrRevealTab(l, kind, defaultDock);

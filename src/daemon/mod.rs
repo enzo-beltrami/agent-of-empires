@@ -52,6 +52,8 @@ pub use wire::{
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
+/// A terminal `create_session` alone may wait 30 s for the agent's input prompt.
+const MCP_TIMEOUT: Duration = Duration::from_secs(120);
 /// Sandbox copies, image pulls and launch hooks can take minutes.
 const LIFECYCLE_TIMEOUT: Duration =
     Duration::from_secs(crate::session::Instance::SANDBOX_PREPARATION_WINDOW.num_seconds() as u64);
@@ -366,6 +368,36 @@ impl DaemonClient {
         let mut client = Self::new("http://localhost", None)?;
         client.unix_path = Some(path.into());
         Ok(client)
+    }
+
+    /// POST one JSON-RPC message to `/mcp`, returning the status and body unmapped so the
+    /// caller can relay MCP errors as the server wrote them.
+    pub async fn mcp_message(
+        &self,
+        body: Vec<u8>,
+    ) -> Result<(StatusCode, Vec<u8>), DaemonClientError> {
+        let url = self
+            .sessions_url
+            .join("/mcp")
+            .map_err(|_| DaemonClientError::Transport)?;
+        let mut request = self
+            .http
+            .post(url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header(
+                reqwest::header::ACCEPT,
+                "application/json, text/event-stream",
+            )
+            .timeout(MCP_TIMEOUT)
+            .body(body);
+        for (name, value) in &self.credentials {
+            request = request.header(name.clone(), value.clone());
+        }
+        let request = request.build().map_err(|_| DaemonClientError::Transport)?;
+        let response = transport::execute(&self.http, self.unix_path.as_deref(), request).await?;
+        let status = response.status();
+        let body = response.bytes().await.map_err(transport::request_error)?;
+        Ok((status, body.to_vec()))
     }
 
     /// Fetch the sessions endpoint, optionally filtered by session state.

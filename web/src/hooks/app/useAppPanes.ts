@@ -7,7 +7,13 @@ import type { DockGroupView } from "../../components/DockGroups";
 import { visibleToFullIndex, type DropTarget } from "../../components/paneDnd";
 import { fetchPlugins, killTerminal } from "../../lib/api";
 import { dockGroups, dockOf, dockTabs, isDockCollapsed, usePaneLayout } from "../../lib/paneLayout";
-import { BUILTIN_PANES, isTerminalTabId, terminalIndexOf, type DockLocation } from "../../lib/panes";
+import {
+  BUILTIN_PANES,
+  isTerminalTabId,
+  terminalIndexOf,
+  type BuiltinPaneId,
+  type DockLocation,
+} from "../../lib/panes";
 import { isPluginPaneId, resolvePaneIcon, usePluginPanes, type PluginPane } from "../../lib/pluginPanes";
 
 const DOCKS: DockLocation[] = ["right", "bottom"];
@@ -109,7 +115,7 @@ export function useAppPanes(activeSessionId: string | null, autoOpenPluginPanes:
       const defaultDock: DockLocation =
         pluginPaneById.get(kind)?.defaultDock ?? BUILTIN_PANES.find((p) => p.id === kind)?.defaultDock ?? "right";
       if (isPluginPaneId(kind)) togglePlugin(kind, defaultDock);
-      else toggleKind(kind as "diff" | "terminal" | "agents" | "files", defaultDock);
+      else toggleKind(kind as BuiltinPaneId, defaultDock);
     },
     [toggleKind, togglePlugin, pluginPaneById],
   );
