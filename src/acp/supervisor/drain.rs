@@ -825,6 +825,12 @@ impl<S: BroadcastSink> Drain<S> {
             "MCP re-resolution on respawn failed",
         )
         .await;
+        super::launch::add_aoe_relay(
+            &mut config.mcp_servers,
+            config.sandbox_info.is_some(),
+            session_id,
+            config.source_profile.as_deref(),
+        );
     }
 
     /// Route an archived, trashed or purged row through the stop path, so the cancellation retires

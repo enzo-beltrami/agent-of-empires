@@ -66,6 +66,12 @@ without a token. To connect an agent, see
 | `trash_session` | `session_id` | As `POST /api/sessions/{id}/trash`. The session can be restored until the trash is emptied. |
 | `restore_session` | `session_id` | As `POST /api/sessions/{id}/restore`. |
 | `watch_session` | optionally `session_id` with `watch` (default `true`), and `all` | The coordinator's watchlist, `{all, sessions}`. The Daemon sends the coordinator session a turn when a watched session starts waiting, finishes a turn or fails. With no arguments it only reads the list. |
+| `session_summary` | none | `{wip, needs_action, idle}`, each a list of `{id, title, project_path, status}`: live sessions other than the coordinator. `wip` is running, starting or creating; `needs_action` is waiting or error; `idle` is idle, stopped or unknown. |
+| `list_deploys` | none | `{deploys}`: the coordinator's deploy list, each `{id, url, title?, session_id?, note?, added_at, deployed_at?}`. |
+| `add_deploy` | `url`, and optionally `title`, `session_id`, `note` | The new entry, or the existing one for the same URL. |
+| `set_deployed` | `id`, `deployed` (default `true`) | The entry; `deployed: false` moves it back to pending. |
+| `remove_deploy` | `id` | The remaining list. |
+| `message_coordinator` | `message`, `needs_decision` (default `false`) | `{coordinator_session_id}`. Sends the coordinator session a turn naming the caller, and adds the caller to its watchlist. Only a caller that names its session, as the relay AoE injects does, can use it (`no_caller`); `no_coordinator` when there is no coordinator session. |
 
 Every tool declares an `outputSchema` and returns `structuredContent`. A refusal is a
 tool error (`isError`) whose `structuredContent` carries a `code`, such as
@@ -76,8 +82,14 @@ tool error (`isError`) whose `structuredContent` carries a `code`, such as
 fork fields, so repository hooks that need approval are refused with
 `hooks_need_trust` until someone trusts them in the dashboard.
 Listing does not persist workspace ordering or rebuild rows from mutable state.
-Read-only mode permits `list_sessions`, `list_projects`, `whoami`, `read_output` and
-reading the watchlist, and refuses the other tools with `read_only`. CityHall rejects `POST /mcp` with `403`,
+Read-only mode permits `list_sessions`, `list_projects`, `whoami`, `read_output`,
+`session_summary`, `list_deploys` and reading the watchlist, and refuses the other
+tools with `read_only`.
+
+AoE gives every host structured session this server as `aoe`, run as
+`aoe mcp stdio --session <id>`, when `mcp_enabled` is on and the session has no
+server of its own named `aoe`. The relay reaches the Daemon over its owner socket
+and names the calling session in the `x-aoe-session` header. CityHall rejects `POST /mcp` with `403`,
 as it does other non-allowlisted POST routes, including over the owner socket.
 MCP POST requests remain tracked runtime work: shutdown interrupts them, and a
 long-running request can delay draining. No request is replayed automatically.

@@ -54,6 +54,9 @@ pub use wire::{
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 /// A terminal `create_session` alone may wait 30 s for the agent's input prompt.
 const MCP_TIMEOUT: Duration = Duration::from_secs(120);
+/// The session an `aoe mcp stdio` relay speaks for. Trusted as the owner socket is: any
+/// caller that reaches `/mcp` already holds the user's full access.
+pub const MCP_CALLER_HEADER: &str = "x-aoe-session";
 /// Sandbox copies, image pulls and launch hooks can take minutes.
 const LIFECYCLE_TIMEOUT: Duration =
     Duration::from_secs(crate::session::Instance::SANDBOX_PREPARATION_WINDOW.num_seconds() as u64);
@@ -370,11 +373,12 @@ impl DaemonClient {
         Ok(client)
     }
 
-    /// POST one JSON-RPC message to `/mcp`, returning the status and body unmapped so the
-    /// caller can relay MCP errors as the server wrote them.
+    /// POST one JSON-RPC message to `/mcp` on behalf of `caller`, returning the status and
+    /// body unmapped so the relay can pass MCP errors on as the server wrote them.
     pub async fn mcp_message(
         &self,
         body: Vec<u8>,
+        caller: Option<&str>,
     ) -> Result<(StatusCode, Vec<u8>), DaemonClientError> {
         let url = self
             .sessions_url
@@ -390,6 +394,9 @@ impl DaemonClient {
             )
             .timeout(MCP_TIMEOUT)
             .body(body);
+        if let Some(caller) = caller {
+            request = request.header(MCP_CALLER_HEADER, caller);
+        }
         for (name, value) in &self.credentials {
             request = request.header(name.clone(), value.clone());
         }

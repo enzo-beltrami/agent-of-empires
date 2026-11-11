@@ -3304,3 +3304,63 @@ export async function ensureCoordinator(): Promise<EnsureCoordinatorResult> {
     return { kind: "error", message: "Network error." };
   }
 }
+
+export interface CoordinatorSummaryRow {
+  id: string;
+  title: string;
+  project_path: string;
+  /** Lowercase status, e.g. `running`. */
+  status: string;
+}
+
+export interface CoordinatorSummary {
+  wip: CoordinatorSummaryRow[];
+  needs_action: CoordinatorSummaryRow[];
+  idle: CoordinatorSummaryRow[];
+}
+
+export interface Deploy {
+  id: string;
+  url: string;
+  title?: string;
+  session_id?: string;
+  note?: string;
+  added_at: string;
+  deployed_at?: string;
+}
+
+export async function fetchCoordinatorSummary(): Promise<CoordinatorSummary | null> {
+  try {
+    const res = await fetch("/api/coordinator/summary", { headers: ACCEPT_JSON });
+    return res.ok ? ((await res.json()) as CoordinatorSummary) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchDeploys(): Promise<Deploy[] | null> {
+  try {
+    const res = await fetch("/api/coordinator/deploys", { headers: ACCEPT_JSON });
+    return res.ok ? ((await res.json()) as Deploy[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function addDeploy(url: string): Promise<{ ok: true; deploy: Deploy } | { ok: false; message: string }> {
+  try {
+    const reply = await send("/api/coordinator/deploys", jsonInit("POST", { url }));
+    if (reply.ok && reply.payload) return { ok: true, deploy: reply.payload as unknown as Deploy };
+    return { ok: false, message: rawMessage(reply.payload) ?? `Could not add it (HTTP ${reply.status}).` };
+  } catch (e) {
+    return { ok: false, message: networkError(e) };
+  }
+}
+
+export async function setDeployDeployed(id: string, deployed: boolean): Promise<boolean> {
+  return fetchOk(`/api/coordinator/deploys/${encodeURIComponent(id)}`, jsonInit("PATCH", { deployed }));
+}
+
+export async function removeDeploy(id: string): Promise<boolean> {
+  return fetchOk(`/api/coordinator/deploys/${encodeURIComponent(id)}`, { method: "DELETE" });
+}

@@ -53,6 +53,22 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
             post(api::ensure_coordinator).layer(read_only.clone()),
         )
         .route(
+            "/api/coordinator/summary",
+            get(api::get_coordinator_summary),
+        )
+        .route(
+            "/api/coordinator/deploys",
+            get(api::list_coordinator_deploys)
+                .post(api::add_coordinator_deploy)
+                .layer(read_only.clone()),
+        )
+        .route(
+            "/api/coordinator/deploys/{id}",
+            patch(api::update_coordinator_deploy)
+                .delete(api::delete_coordinator_deploy)
+                .layer(read_only.clone()),
+        )
+        .route(
             "/api/workspace-ordering",
             put(api::update_workspace_ordering),
         )

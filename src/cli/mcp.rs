@@ -28,7 +28,14 @@ pub enum McpCommands {
     Config,
     /// Serve the running daemon's `/mcp` tools over stdin/stdout, relayed through its private
     /// owner socket, so a local MCP client needs no token. Requires `[web] mcp_enabled`.
-    Stdio,
+    Stdio(McpStdioArgs),
+}
+
+#[derive(clap::Args, Debug)]
+pub struct McpStdioArgs {
+    /// The session this client runs in; AoE sets it when it injects the relay.
+    #[arg(long)]
+    pub session: Option<String>,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -136,7 +143,7 @@ pub async fn run(profile: &str, command: McpCommands) -> Result<()> {
         McpCommands::Edit(args) => edit(profile, args),
         McpCommands::Remove(args) => remove(profile, args),
         McpCommands::Config => config(profile).await,
-        McpCommands::Stdio => stdio().await,
+        McpCommands::Stdio(args) => stdio(args.session).await,
     }
 }
 
@@ -419,7 +426,7 @@ const CLIENT_ENTRY_NAME: &str = "aoe";
 /// How long `aoe mcp config` waits for the daemon to answer its `/mcp` probe.
 const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-async fn stdio() -> Result<()> {
+async fn stdio(session: Option<String>) -> Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
     let client =
         crate::daemon::DaemonClient::new_unix(crate::daemon::transport::local_socket_path()?)?;
@@ -440,9 +447,13 @@ async fn stdio() -> Result<()> {
         }
         let client = client.clone();
         let tx = tx.clone();
+        let session = session.clone();
         // Concurrent, so a slow create does not hold up a list; replies carry their ids.
         tokio::spawn(async move {
-            let reply = relay_reply(&line, client.mcp_message(line.clone().into_bytes()).await);
+            let sent = client
+                .mcp_message(line.clone().into_bytes(), session.as_deref())
+                .await;
+            let reply = relay_reply(&line, sent);
             if let Some(reply) = reply {
                 let _ = tx.send(reply);
             }

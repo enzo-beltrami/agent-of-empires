@@ -25,6 +25,7 @@ use crate::daemon::SessionResponse;
 use crate::session::SessionScope;
 
 mod control;
+mod coordination;
 mod lifecycle;
 
 #[derive(Debug, Default, Clone, Copy, Deserialize, JsonSchema)]
@@ -87,7 +88,10 @@ impl McpServer {
     fn new(state: Arc<AppState>) -> Self {
         Self {
             state,
-            tool_router: Self::tool_router() + Self::control_router() + Self::lifecycle_router(),
+            tool_router: Self::tool_router()
+                + Self::control_router()
+                + Self::lifecycle_router()
+                + Self::coordination_router(),
         }
     }
 
@@ -219,7 +223,13 @@ impl ServerHandler for McpServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("aoe", env!("CARGO_PKG_VERSION")))
-            .with_instructions("Read, create and drive Agent of Empires sessions.")
+            .with_instructions(
+                "Read, create and drive Agent of Empires sessions. If you are a session working \
+                 on a task and need a decision you should not make alone, or are blocked, call \
+                 `message_coordinator` with `needs_decision: true` and end your turn; the answer \
+                 arrives as your next message. Report milestones such as an opened pull request \
+                 the same way, without `needs_decision`.",
+            )
     }
 }
 

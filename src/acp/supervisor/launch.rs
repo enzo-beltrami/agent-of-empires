@@ -510,7 +510,7 @@ impl<S: BroadcastSink> Supervisor<S> {
         let socket_path = worker_registry::socket_path_for(&req.session_id).map_err(|e| {
             SupervisorError::Acp(AcpError::Spawn(format!("worker socket path: {e:#}")))
         })?;
-        let mcp_servers = resolve_mcp_servers(
+        let mut mcp_servers = resolve_mcp_servers(
             discovery_key(req.sandbox_info.is_some(), &req.agent, native),
             &req.session_id,
             req.source_profile.clone(),
@@ -520,6 +520,12 @@ impl<S: BroadcastSink> Supervisor<S> {
             "MCP resolution task failed",
         )
         .await;
+        add_aoe_relay(
+            &mut mcp_servers,
+            req.sandbox_info.is_some(),
+            &req.session_id,
+            req.source_profile.as_deref(),
+        );
 
         let (stored_acp_session_id, fork_from, seed_history_replay, context_reset, source_profile) =
             if req.sandbox_info.as_ref().is_some_and(|info| info.enabled) {
@@ -1441,11 +1447,29 @@ fn resolve_mcp_layers(
             "forwarding MCP servers"
         );
     }
-    let mut servers = crate::acp::mcp_config::project_servers_to_acp(merged, session_env);
-    if crate::session::coordinator::is_coordinator_dir(cwd) {
-        servers.extend(crate::session::coordinator::mcp_server());
+    crate::acp::mcp_config::project_servers_to_acp(merged, session_env)
+}
+
+/// Every host session gets AoE's own tools, so it can reach the coordinator. A sandbox cannot
+/// run the host binary, the relay needs the daemon to serve `/mcp`, and a server the user
+/// named `aoe` themselves wins.
+pub(super) fn add_aoe_relay(
+    servers: &mut Vec<agent_client_protocol::v1::schema::McpServer>,
+    sandboxed: bool,
+    session_id: &str,
+    profile: Option<&str>,
+) {
+    let aoe_named = |server: &agent_client_protocol::v1::schema::McpServer| {
+        crate::acp::mcp_config::server_name(server) == crate::session::coordinator::MCP_SERVER_NAME
+    };
+    if !sandboxed
+        && !servers.iter().any(aoe_named)
+        && crate::session::config::profile_config::resolve_config_or_warn(profile.unwrap_or(""))
+            .web
+            .mcp_enabled
+    {
+        servers.extend(crate::session::coordinator::mcp_server(session_id));
     }
-    servers
 }
 
 /// Apply current model pins and effort defaults to a cached respawn config,
@@ -2520,6 +2544,51 @@ time.sleep(60)
             sup.worker_state("s-c").await,
             AcpWorkerState::Absent,
             "a refused admission leaves nothing behind"
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn host_sessions_get_the_aoe_relay_as_themselves() {
+        let (_home, tmp) = isolate_home();
+        let _env = crate::session::test_support::EnvGuard::unset(&["CLAUDE_CONFIG_DIR"]);
+        let app_dir = crate::session::get_app_dir().unwrap();
+        let aoe_servers = |sandboxed: bool| {
+            let cwd = tmp.path().to_path_buf();
+            let mut servers = resolve_mcp_layers("claude", "s1", None, &cwd, &[], None);
+            add_aoe_relay(&mut servers, sandboxed, "s1", None);
+            let val = serde_json::to_value(&servers).unwrap();
+            val.as_array()
+                .unwrap()
+                .iter()
+                .filter(|s| s["name"] == "aoe")
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+
+        assert!(aoe_servers(false).is_empty(), "no relay while /mcp is off");
+        std::fs::write(app_dir.join("config.toml"), "[web]\nmcp_enabled = true\n").unwrap();
+        let injected = aoe_servers(false);
+        assert_eq!(injected.len(), 1);
+        assert_eq!(
+            injected[0]["args"],
+            serde_json::json!(["mcp", "stdio", "--session", "s1"])
+        );
+        assert!(
+            aoe_servers(true).is_empty(),
+            "a sandbox cannot run the host binary"
+        );
+
+        std::fs::write(
+            app_dir.join("mcp.json"),
+            r#"{ "mcpServers": { "aoe": { "command": "mine" } } }"#,
+        )
+        .unwrap();
+        let own = aoe_servers(false);
+        assert_eq!(own.len(), 1);
+        assert_eq!(
+            own[0]["command"], "mine",
+            "the user's own `aoe` server wins"
         );
     }
 

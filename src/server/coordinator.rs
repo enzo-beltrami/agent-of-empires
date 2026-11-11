@@ -80,12 +80,19 @@ async fn pending_for(state: &AppState, change: StatusChange) -> Option<Pending> 
 }
 
 async fn deliver(state: &Arc<AppState>, pending: &[Pending]) {
-    let Some(coordinator) = coordinator_session(state).await else {
-        return;
-    };
-    let text = message(pending);
+    if let Err(reason) = tell_coordinator(state, &message(pending)).await {
+        tracing::warn!(target: "server.coordinator", reason, "status update not delivered");
+    }
+}
+
+/// Sends the coordinator session an AoE-marked turn, returning its id, or why it could not.
+pub(crate) async fn tell_coordinator(
+    state: &Arc<AppState>,
+    text: &str,
+) -> Result<String, &'static str> {
+    let coordinator = coordinator_session(state).await.ok_or("no_coordinator")?;
     let submission = PromptSubmission {
-        text: &text,
+        text,
         uploads: &[],
         prompt_id: None,
         queued_prompt_id: None,
@@ -94,18 +101,16 @@ async fn deliver(state: &Arc<AppState>, pending: &[Pending]) {
     let caller = SessionCaller::PluginMessage {
         plugin_id: ORIGIN.into(),
     };
-    if let Err(error) = submit_prompt(state, &caller, &coordinator, submission).await {
-        use crate::server::api::PromptSubmitError as E;
-        let reason = match error {
-            E::SessionNotFound => "session_not_found",
-            E::RevivalRefused => "revival_refused",
-            E::WorkerNotReady => "worker_not_ready",
-            E::Blocked(_) => "blocked",
-            E::Enqueue(..) => "queue_refused",
-            E::Turn(_) => "turn_failed",
-            _ => "refused",
-        };
-        tracing::warn!(target: "server.coordinator", %coordinator, reason, "status update not delivered");
+    use crate::server::api::PromptSubmitError as E;
+    match submit_prompt(state, &caller, &coordinator, submission).await {
+        Ok(_) => Ok(coordinator),
+        Err(E::SessionNotFound) => Err("no_coordinator"),
+        Err(E::RevivalRefused) => Err("revival_refused"),
+        Err(E::WorkerNotReady) => Err("worker_not_ready"),
+        Err(E::Blocked(_)) => Err("blocked"),
+        Err(E::Enqueue(..)) => Err("queue_refused"),
+        Err(E::Turn(_)) => Err("turn_failed"),
+        Err(_) => Err("refused"),
     }
 }
 

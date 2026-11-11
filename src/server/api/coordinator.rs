@@ -92,3 +92,186 @@ async fn existing(state: &AppState, path: &str) -> Option<String> {
         .max_by_key(|inst| inst.created_at)
         .map(|inst| inst.id.clone())
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Bucket {
+    Wip,
+    NeedsAction,
+    Idle,
+}
+
+pub(crate) fn bucket(status: crate::session::Status) -> Option<Bucket> {
+    use crate::session::Status::*;
+    match status {
+        Running | Starting | Creating => Some(Bucket::Wip),
+        Waiting | Error => Some(Bucket::NeedsAction),
+        Idle | Stopped | Unknown => Some(Bucket::Idle),
+        Deleting => None,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub(crate) struct SummaryRow {
+    pub id: String,
+    pub title: String,
+    pub project_path: String,
+    /// Lowercase status, e.g. `running` or `waiting`.
+    pub status: String,
+}
+
+/// Live sessions other than the coordinator, by what they need from the user.
+#[derive(Debug, Default, Serialize, schemars::JsonSchema)]
+pub(crate) struct SessionSummary {
+    /// Running, starting or being created.
+    pub wip: Vec<SummaryRow>,
+    /// Waiting for input, or failed.
+    pub needs_action: Vec<SummaryRow>,
+    /// Idle or stopped.
+    pub idle: Vec<SummaryRow>,
+}
+
+pub(crate) async fn session_summary(state: &AppState) -> SessionSummary {
+    let coordinator = coordinator_session(state).await;
+    let mut summary = SessionSummary::default();
+    for inst in state.instances.read().await.iter() {
+        if inst.is_trashed() || inst.is_archived() || Some(&inst.id) == coordinator.as_ref() {
+            continue;
+        }
+        let Some(bucket) = bucket(inst.status) else {
+            continue;
+        };
+        let row = SummaryRow {
+            id: inst.id.clone(),
+            title: inst.title.clone(),
+            project_path: inst.project_path.clone(),
+            status: inst.status.as_str().to_string(),
+        };
+        match bucket {
+            Bucket::Wip => summary.wip.push(row),
+            Bucket::NeedsAction => summary.needs_action.push(row),
+            Bucket::Idle => summary.idle.push(row),
+        }
+    }
+    summary
+}
+
+pub async fn get_coordinator_summary(State(state): State<Arc<AppState>>) -> Response {
+    Json(session_summary(&state).await).into_response()
+}
+
+pub async fn list_coordinator_deploys() -> Response {
+    match tokio::task::spawn_blocking(crate::session::coordinator::deploys).await {
+        Ok(deploys) => Json(deploys).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct AddDeployBody {
+    pub url: String,
+    pub title: Option<String>,
+    pub session_id: Option<String>,
+    pub note: Option<String>,
+}
+
+pub async fn add_coordinator_deploy(
+    State(state): State<Arc<AppState>>,
+    body: Result<Json<AddDeployBody>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if state.read_only {
+        return super::read_only_response();
+    }
+    let Json(body) = match body {
+        Ok(body) => body,
+        Err(rejection) => return rejection.into_response(),
+    };
+    let new = crate::session::coordinator::NewDeploy {
+        url: body.url,
+        title: body.title,
+        session_id: body.session_id,
+        note: body.note,
+    };
+    match tokio::task::spawn_blocking(move || crate::session::coordinator::add_deploy(new)).await {
+        Ok(Ok(deploy)) => (StatusCode::CREATED, Json(deploy)).into_response(),
+        Ok(Err(error)) => api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_deploy",
+            format!("{error:#}"),
+        ),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateDeployBody {
+    pub deployed: bool,
+}
+
+pub async fn update_coordinator_deploy(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    body: Result<Json<UpdateDeployBody>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if state.read_only {
+        return super::read_only_response();
+    }
+    let Json(body) = match body {
+        Ok(body) => body,
+        Err(rejection) => return rejection.into_response(),
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        crate::session::coordinator::set_deployed(&id, body.deployed)
+    })
+    .await;
+    match result {
+        Ok(Ok(Some(deploy))) => Json(deploy).into_response(),
+        Ok(Ok(None)) => deploy_not_found(),
+        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn delete_coordinator_deploy(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    if state.read_only {
+        return super::read_only_response();
+    }
+    match tokio::task::spawn_blocking(move || crate::session::coordinator::remove_deploy(&id)).await
+    {
+        Ok(Ok(true)) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Ok(false)) => deploy_not_found(),
+        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+fn deploy_not_found() -> Response {
+    api_error(
+        StatusCode::NOT_FOUND,
+        "deploy_not_found",
+        "No deploy with that id",
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::Status::*;
+
+    #[test]
+    fn buckets_group_statuses_by_what_they_need() {
+        for (status, expected) in [
+            (Running, Some(Bucket::Wip)),
+            (Starting, Some(Bucket::Wip)),
+            (Creating, Some(Bucket::Wip)),
+            (Waiting, Some(Bucket::NeedsAction)),
+            (Error, Some(Bucket::NeedsAction)),
+            (Idle, Some(Bucket::Idle)),
+            (Stopped, Some(Bucket::Idle)),
+            (Unknown, Some(Bucket::Idle)),
+            (Deleting, None),
+        ] {
+            assert_eq!(bucket(status), expected, "{status:?}");
+        }
+    }
+}

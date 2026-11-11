@@ -160,7 +160,7 @@ pub fn filter_for_capabilities(
         .collect()
 }
 
-fn server_name(server: &McpServer) -> &str {
+pub(crate) fn server_name(server: &McpServer) -> &str {
     match server {
         McpServer::Stdio(s) => &s.name,
         McpServer::Http(s) => &s.name,

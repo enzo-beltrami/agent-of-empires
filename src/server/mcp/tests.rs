@@ -269,13 +269,19 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
     assert_eq!(
         names,
         [
+            "add_deploy",
             "archive_session",
             "create_session",
+            "list_deploys",
             "list_projects",
             "list_sessions",
+            "message_coordinator",
             "read_output",
+            "remove_deploy",
             "restore_session",
             "send",
+            "session_summary",
+            "set_deployed",
             "stop_session",
             "trash_session",
             "watch_session",
@@ -628,6 +634,10 @@ async fn mutating_tools_refuse_while_read_only() {
         ("trash_session", json!({"session_id": id})),
         ("restore_session", json!({"session_id": id})),
         ("watch_session", json!({"session_id": id})),
+        ("add_deploy", json!({"url": "https://x/pull/1"})),
+        ("set_deployed", json!({"id": "d"})),
+        ("remove_deploy", json!({"id": "d"})),
+        ("message_coordinator", json!({"message": "hi"})),
     ];
     for (tool, arguments) in refused {
         let result = call_result(&app, tool, arguments).await;
@@ -696,6 +706,95 @@ async fn watch_session_edits_and_reads_the_watchlist() {
     assert_eq!(unwatched, json!({"all": true, "sessions": []}));
     let missing = call_result(&app, "watch_session", json!({"session_id": "nope"})).await;
     assert_eq!(error_code(&missing), Some("not_found"), "{missing}");
+}
+
+/// `message_coordinator` as the session an `aoe mcp stdio --session` relay speaks for.
+async fn message_as(app: &axum::Router, caller: Option<&str>, message: &str) -> Value {
+    let mut req = Request::builder()
+        .method("POST")
+        .uri("/mcp")
+        .header(header::HOST, "localhost")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"));
+    if let Some(caller) = caller {
+        req = req.header(crate::daemon::MCP_CALLER_HEADER, caller);
+    }
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": "message_coordinator", "arguments": {"message": message, "needs_decision": true}}
+    });
+    let resp = send(
+        app,
+        req.body(axum::body::Body::from(body.to_string())).unwrap(),
+    )
+    .await;
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    serde_json::from_slice::<Value>(&bytes).unwrap()["result"].clone()
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn coordination_tools_summarize_sessions_and_keep_a_deploy_list() {
+    let _guard = crate::session::test_support::isolate_app_dir();
+    let with_status = |id: &str, status| {
+        let mut inst = structured_session(id);
+        inst.status = status;
+        inst
+    };
+    let (app, _state) = seeded_app(
+        vec![
+            with_status("busy", crate::session::Status::Running),
+            with_status("asking", crate::session::Status::Waiting),
+            with_status("resting", crate::session::Status::Idle),
+        ],
+        false,
+    )
+    .await;
+    let summary = call(&app, "session_summary", json!({})).await;
+    let ids = |bucket: &str| -> Vec<String> {
+        summary[bucket]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(ids("wip"), ["busy"]);
+    assert_eq!(ids("needs_action"), ["asking"]);
+    assert_eq!(ids("idle"), ["resting"]);
+    assert_eq!(summary["needs_action"][0]["status"], "waiting");
+
+    let added = call(
+        &app,
+        "add_deploy",
+        json!({"url": "https://github.com/o/r/pull/7", "session_id": "busy"}),
+    )
+    .await;
+    let id = added["id"].as_str().unwrap();
+    let deployed = call(&app, "set_deployed", json!({"id": id})).await;
+    assert!(deployed["deployed_at"].is_string());
+    let listed = call(&app, "list_deploys", json!({})).await;
+    assert_eq!(listed["deploys"][0]["session_id"], "busy");
+    let removed = call(&app, "remove_deploy", json!({"id": id})).await;
+    assert_eq!(removed, json!({"deploys": []}));
+    let missing = call_result(&app, "set_deployed", json!({"id": id})).await;
+    assert_eq!(error_code(&missing), Some("not_found"), "{missing}");
+
+    let anonymous = message_as(&app, None, "which API?").await;
+    assert_eq!(error_code(&anonymous), Some("no_caller"), "{anonymous}");
+    let unknown = message_as(&app, Some("gone"), "which API?").await;
+    assert_eq!(error_code(&unknown), Some("no_caller"), "{unknown}");
+    let alone = message_as(&app, Some("asking"), "which API?").await;
+    assert_eq!(error_code(&alone), Some("no_coordinator"), "{alone}");
+    assert!(
+        crate::session::coordinator::watchlist().watches("asking"),
+        "a session that reaches out is watched"
+    );
 }
 
 /// A structured create stores its prompt as the pending initial turn and its parent link; a

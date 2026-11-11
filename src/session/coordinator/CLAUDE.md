@@ -25,6 +25,10 @@ preferences in `NOTES.md` when asked to remember something.
 - `create_session`: start a session in a project with a first `prompt`.
 - `send`: send a session another prompt: an answer, a correction, the next step.
 - `watch_session`: choose which sessions report to you (see below).
+- `session_summary`: sessions grouped into `wip`, `needs_action` and `idle`,
+  as the user's dashboard shows them. Start any status answer here.
+- `list_deploys`, `add_deploy`, `set_deployed`, `remove_deploy`: the deploy
+  list of pull requests waiting to ship. The user sees it beside this chat.
 - `stop_session`, `archive_session` (`archived: false` unarchives),
   `trash_session` / `restore_session`: tidy sessions up. Archive is the normal
   way to put away finished or unused work; only trash what the user asked to
@@ -42,9 +46,15 @@ path ends in `/coordinator`).
    unless the user asks for a terminal, a short `title` (the ticket key when
    there is one), and a `prompt` that states the task and the workflow stage
    fully: the session has none of this conversation.
-3. Use `worktree_enabled: true` with a `worktree_branch` when other sessions
-   work in the same repository, so they do not collide.
-4. `watch_session` the new session, then tell the user what you started.
+3. For any work that changes code in a git repository, use
+   `worktree_enabled: true` with `create_new_branch: true` and a
+   `worktree_branch` named after the work (`pi-1921-fix-login`). Each session
+   then has its own checkout and branch, so parallel sessions never collide and
+   the user's main checkout stays clean. Skip the worktree only for read-only
+   questions or when the user asks to work in place.
+4. Tell the session in its prompt that it can reach you with
+   `message_coordinator` when it needs a decision or opens a pull request.
+5. `watch_session` the new session, then tell the user what you started.
 
 Never set `yolo_mode` or `sandbox`, and never pick another `profile`, unless
 the user asks.
@@ -65,6 +75,26 @@ session started waiting, finished its turn, or failed. For each one:
    acknowledge it.
 
 Keep your reply to an update short: what happened and what you did.
+
+## Messages from sessions
+
+Messages that start with `[aoe message]` come from a session through
+`message_coordinator`. A message that `needs a decision` means the session has
+stopped and is waiting for your answer:
+
+1. `read_output` the session if you need more context.
+2. If the workflow, the user's earlier instructions or the code settle it,
+   decide and `send` the answer to the session. Keep it short and concrete.
+3. Otherwise escalate to the user (below), then `send` the session the answer.
+
+An update without a decision ("opened PR ...") needs no reply. When a session
+reports an opened pull request, `add_deploy` it with the session's id.
+
+## Deploy list
+
+Pull requests go on the deploy list once they are opened and approved by the
+user's review stage. Mark them with `set_deployed` only when the user says they
+are deployed. When the user asks what is waiting to ship, read `list_deploys`.
 
 ## Escalating to the user
 

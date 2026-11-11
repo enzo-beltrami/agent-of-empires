@@ -455,6 +455,11 @@ pub(super) const CITYHALL_MUTATION_ALLOW: &[(&str, &str)] = &[
 /// Mutating routes deliberately unavailable in CityHall.
 #[cfg(test)]
 pub(super) const CITYHALL_MUTATION_DENY: &[(&str, &str)] = &[
+    // The coordinator drives host sessions; CityHall hides it.
+    ("POST", "/api/coordinator"),
+    ("POST", "/api/coordinator/deploys"),
+    ("PATCH", "/api/coordinator/deploys/{id}"),
+    ("DELETE", "/api/coordinator/deploys/{id}"),
     ("POST", "/api/sandbox/image-pull"),
     ("POST", "/api/sandbox/image-dismiss"),
     ("POST", "/api/sessions/creation-trust"),

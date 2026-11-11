@@ -22,7 +22,8 @@ it. It does not edit code yet.
 
 ## 3. Implement
 
-The session makes the change on its own branch or worktree, with tests.
+The session makes the change in its own git worktree, on a branch named after
+the work, with tests. It never works directly on the main checkout.
 
 - Keep it on the approved plan. If it drifts, point it back.
 
@@ -40,3 +41,5 @@ The session summarizes what changed and how it was tested.
 
 - Escalate to the user for review. Never commit, push, open a pull request,
   merge or deploy without the user's go-ahead.
+- Once the user approves and the pull request is opened, add it to the deploy
+  list. The user marks it deployed.

@@ -122,6 +122,7 @@ import { onSettingsChanged } from "./lib/settingsEvents";
 import { parseSystemHealthEnabled, SystemHealthEnabledContext } from "./lib/systemHealth";
 import { toastBus, reportError } from "./lib/toastBus";
 import { isCoordinatorPath } from "./lib/coordinator";
+import { WithCoordinatorPanel } from "./components/CoordinatorPanel";
 import { restartForUpdate } from "./lib/restartForUpdate";
 import { startPendingCreates } from "./lib/pendingCreates";
 import { isAbsolutePath, resolveToRepoRelative, type FileRef } from "./lib/fileRef";
@@ -2112,42 +2113,44 @@ function AppContent({
                       persistent={webSettings.persistentStructuredViews}
                       maxPersistentViews={webSettings.maxPersistentStructuredViews}
                       renderSession={(session, active, selected) => (
-                        <Suspense fallback={<AcpLoadingFallback />}>
-                          <StructuredView
-                            active={active}
-                            selected={selected}
-                            sessionId={session.id}
-                            acpWorkerState={session.acp_worker_state ?? "absent"}
-                            rateLimitAutoResume={session.rate_limit_auto_resume}
-                            settingsHref={autoResumeSettingsHref(session.profile, serverAbout)}
-                            tool={session.tool}
-                            acpAgent={session.acp_agent ?? null}
-                            startedBefore={hasStartedBefore(session)}
-                            acpProvider={session.acp_provider ?? null}
-                            clearAliases={session.clear_aliases}
-                            compactAliases={session.compact_aliases}
-                            onStartSession={() => void handleStartSession(session.id)}
-                            archivedAt={session.archived_at ?? null}
-                            snoozedUntil={session.snoozed_until ?? null}
-                            trashedAt={session.trashed_at ?? null}
-                            onRestore={
-                              session.trashed_at
-                                ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, session.id))
-                                : undefined
-                            }
-                            onOpenFileRef={handleOpenFileRef}
-                            fileRefSession={session}
-                            onOpenAgentsPane={openAgentsPane}
-                            isSandboxed={session.is_sandboxed}
-                            onSwitchToTerminal={
-                              canSwitchToTerminal ? () => handleSwitchView(session.id, false) : undefined
-                            }
-                            onOpenTerminal={
-                              canSwitchToTerminal ? (mode) => handleOpenPairedTerminal(session.id, mode) : undefined
-                            }
-                            canRestartAgent={canRestartAgent}
-                          />
-                        </Suspense>
+                        <WithCoordinatorPanel projectPath={session.project_path} onOpenSession={handleSelectSession}>
+                          <Suspense fallback={<AcpLoadingFallback />}>
+                            <StructuredView
+                              active={active}
+                              selected={selected}
+                              sessionId={session.id}
+                              acpWorkerState={session.acp_worker_state ?? "absent"}
+                              rateLimitAutoResume={session.rate_limit_auto_resume}
+                              settingsHref={autoResumeSettingsHref(session.profile, serverAbout)}
+                              tool={session.tool}
+                              acpAgent={session.acp_agent ?? null}
+                              startedBefore={hasStartedBefore(session)}
+                              acpProvider={session.acp_provider ?? null}
+                              clearAliases={session.clear_aliases}
+                              compactAliases={session.compact_aliases}
+                              onStartSession={() => void handleStartSession(session.id)}
+                              archivedAt={session.archived_at ?? null}
+                              snoozedUntil={session.snoozed_until ?? null}
+                              trashedAt={session.trashed_at ?? null}
+                              onRestore={
+                                session.trashed_at
+                                  ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, session.id))
+                                  : undefined
+                              }
+                              onOpenFileRef={handleOpenFileRef}
+                              fileRefSession={session}
+                              onOpenAgentsPane={openAgentsPane}
+                              isSandboxed={session.is_sandboxed}
+                              onSwitchToTerminal={
+                                canSwitchToTerminal ? () => handleSwitchView(session.id, false) : undefined
+                              }
+                              onOpenTerminal={
+                                canSwitchToTerminal ? (mode) => handleOpenPairedTerminal(session.id, mode) : undefined
+                              }
+                              canRestartAgent={canRestartAgent}
+                            />
+                          </Suspense>
+                        </WithCoordinatorPanel>
                       )}
                     />
                   ) : (
