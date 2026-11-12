@@ -226,7 +226,7 @@ pub struct RestartArgs {
     pub identifier: Option<String>,
 
     /// Restart every session in the active profile. Useful after
-    /// `aoe update`, after editing `sandbox.environment`, after a
+    /// upgrading aoe, after editing `sandbox.environment`, after a
     /// Docker hiccup, or after changing a hook. Mutually exclusive
     /// with `identifier`. When run from an agent session, the caller is
     /// skipped so the command can finish.

@@ -104,8 +104,8 @@ pub struct ServeArgs {
     /// CityHall client mode: a locked-down, composer-first dashboard for
     /// non-technical users (structured view only; no terminal/diff/project
     /// management). Equivalent to `AOE_CITYHALL_MODE=1`; the flag is what the
-    /// daemon replays to its restart child so the mode survives `aoe update`
-    /// and `aoe serve --restart`. See #7.
+    /// daemon replays to its restart child so the mode survives
+    /// `aoe serve --restart`. See #7.
     #[arg(long)]
     pub cityhall: bool,
 
@@ -628,9 +628,9 @@ pub struct ServeLaunch {
     #[serde(default)]
     pub allow_plaintext_remote: bool,
     pub read_only: bool,
-    /// CityHall client mode. Persisted so `--restart` and the `aoe update`
-    /// re-exec replay it; without this the mode would silently drop because it
-    /// is otherwise only carried by the `AOE_CITYHALL_MODE` env var (#7).
+    /// CityHall client mode. Persisted so a `--restart` re-exec replays it;
+    /// without this the mode would silently drop because it is otherwise only
+    /// carried by the `AOE_CITYHALL_MODE` env var (#7).
     #[serde(default)]
     pub cityhall: bool,
     pub remote: bool,

@@ -476,7 +476,7 @@ Restart session (or all sessions with `--all`)
 
 ###### **Options:**
 
-* `--all` — Restart every session in the active profile. Useful after `aoe update`, after editing `sandbox.environment`, after a Docker hiccup, or after changing a hook. Mutually exclusive with `identifier`. When run from an agent session, the caller is skipped so the command can finish
+* `--all` — Restart every session in the active profile. Useful after upgrading aoe, after editing `sandbox.environment`, after a Docker hiccup, or after changing a hook. Mutually exclusive with `identifier`. When run from an agent session, the caller is skipped so the command can finish
 * `--parallel <PARALLEL>` — Concurrency cap for `--all`. Restarting many sandboxed sessions in parallel pressures dockerd, so the default is intentionally modest. Ignored when `--all` is not set
 
   Default value: `3`
@@ -1627,7 +1627,7 @@ Start the aoe daemon: REST/WebSocket API, plus the web dashboard in builds that 
 * `--allowed-host <HOST>` — Extra `Host` header value to accept (repeatable). The DNS-rebinding gate trusts loopback, any routable IP-literal `Host` (LAN/tailnet IPs can't be rebound), and a non-wildcard `--host` by default. A browser `Origin` is accepted without `--allowed-origin` only when it is allowlisted or has the exact same authority as `Host`; add a HOSTNAME or mDNS name here when serving behind a reverse proxy, a custom tunnel, or by name when binding `0.0.0.0` (access by IP needs no flag). Auto-injected tunnel hosts (`--remote`) need no flag
 * `--allowed-origin <ORIGIN>` — Extra browser `Origin` to accept (repeatable, full origin `scheme://host[:port]`, e.g. `https://aoe.example.com:8443`). Needed only for a reverse proxy on a nonstandard port; standard 80/443 origins for `--allowed-host` entries are derived automatically
 * `--read-only` — Read-only mode: view terminals but cannot send keystrokes
-* `--cityhall` — CityHall client mode: a locked-down, composer-first dashboard for non-technical users (structured view only; no terminal/diff/project management). Equivalent to `AOE_CITYHALL_MODE=1`; the flag is what the daemon replays to its restart child so the mode survives `aoe update` and `aoe serve --restart`. See #7
+* `--cityhall` — CityHall client mode: a locked-down, composer-first dashboard for non-technical users (structured view only; no terminal/diff/project management). Equivalent to `AOE_CITYHALL_MODE=1`; the flag is what the daemon replays to its restart child so the mode survives `aoe serve --restart`. See #7
 * `--remote` — Expose the daemon over a public HTTPS tunnel. Prefers Tailscale Funnel when `tailscale` is installed and logged in (stable `.ts.net` URL, installable PWAs survive restarts). Falls back to a Cloudflare quick tunnel otherwise (fresh URL on every restart)
 * `--tunnel-name <TUNNEL_NAME>` — Use a named Cloudflare Tunnel (requires prior `cloudflared tunnel create`). Takes precedence over Tailscale auto-detection
 * `--no-tailscale` — Skip Tailscale Funnel auto-detection and go straight to Cloudflare. Useful if you have Tailscale installed for unrelated reasons
