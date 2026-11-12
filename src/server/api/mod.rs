@@ -39,11 +39,13 @@ pub(crate) use acp::{
 pub use queue::{queue_clear, queue_edit, queue_enqueue, queue_list, queue_remove};
 
 pub use client_log::post_client_log;
+pub(crate) use coordinator::{
+    coordinator_session, deploy_views, session_summary, DeployView, SessionSummary,
+};
 pub use coordinator::{
-    add_coordinator_deploy, delete_coordinator_deploy, ensure_coordinator, get_coordinator_summary,
+    delete_coordinator_deploy, ensure_coordinator, get_coordinator_summary,
     list_coordinator_deploys, update_coordinator_deploy,
 };
-pub(crate) use coordinator::{coordinator_session, session_summary, SessionSummary};
 pub use git::{clone_repo, is_git_repo, list_branches, list_worktrees};
 pub use groups::{collapse_group, create_group, delete_group, move_group, reorder};
 pub use log_level::{get_log_level, patch_log_level};
@@ -463,7 +465,6 @@ mod tests {
             "coordinator.rs",
             include_str!("coordinator.rs"),
             &[
-                "add_coordinator_deploy",
                 "delete_coordinator_deploy",
                 "ensure_coordinator",
                 "update_coordinator_deploy",

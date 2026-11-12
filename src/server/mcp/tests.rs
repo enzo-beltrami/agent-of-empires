@@ -776,10 +776,20 @@ async fn coordination_tools_summarize_sessions_and_keep_a_deploy_list() {
     )
     .await;
     let id = added["id"].as_str().unwrap();
+    let linked = call(
+        &app,
+        "add_deploy",
+        json!({"url": "https://github.com/o/r/pull/7", "ticket": "PI-1921"}),
+    )
+    .await;
+    assert_eq!(linked["id"], id, "re-adding a URL updates it");
+    assert_eq!(linked["ticket"], "PI-1921");
     let deployed = call(&app, "set_deployed", json!({"id": id})).await;
     assert!(deployed["deployed_at"].is_string());
     let listed = call(&app, "list_deploys", json!({})).await;
     assert_eq!(listed["deploys"][0]["session_id"], "busy");
+    assert_eq!(listed["deploys"][0]["session_title"], "busy");
+    assert_eq!(listed["deploys"][0]["ticket"], "PI-1921");
     let removed = call(&app, "remove_deploy", json!({"id": id})).await;
     assert_eq!(removed, json!({"deploys": []}));
     let missing = call_result(&app, "set_deployed", json!({"id": id})).await;

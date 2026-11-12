@@ -20,6 +20,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const pending: api.Deploy = {
+  id: "d1",
+  url: "https://github.com/o/streambox/pull/42",
+  title: "Fix login",
+  session_id: "s1",
+  session_title: "PI-1921",
+  ticket: "https://acme.atlassian.net/browse/PI-1921",
+  note: "Retries the token refresh",
+  added_at: "2026-11-11T10:00:00Z",
+};
+
 describe("CoordinatorPanel", () => {
   it("counts sessions per bucket and opens one from its list", async () => {
     vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
@@ -36,30 +47,37 @@ describe("CoordinatorPanel", () => {
     expect(screen.queryByText("t-c")).toBeNull();
   });
 
-  it("adds a pull request and marks it deployed", async () => {
-    const pending = { id: "d1", url: "https://github.com/o/streambox/pull/42", added_at: "2026-11-11T00:00:00Z" };
-    const fetchDeploys = vi.spyOn(api, "fetchDeploys").mockResolvedValueOnce([]).mockResolvedValue([pending]);
-    const add = vi.spyOn(api, "addDeploy").mockResolvedValue({ ok: true, deploy: pending });
-    const mark = vi.spyOn(api, "setDeployDeployed").mockResolvedValue(true);
+  it("switches tabs by click and arrow key, with the pending count on the Deploys tab", async () => {
+    vi.spyOn(api, "fetchDeploys").mockResolvedValue([pending]);
     render(<CoordinatorPanel onOpenSession={vi.fn()} />);
-    expect(await screen.findByText("Nothing waiting to deploy.")).toBeTruthy();
+    const sessions = screen.getByRole("tab", { name: "Sessions" });
+    expect(sessions.getAttribute("aria-selected")).toBe("true");
+    expect(await screen.findByTestId("deploys-pending-count")).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Pull request URL"), { target: { value: pending.url } });
-    fireEvent.click(screen.getByText("Add"));
-    expect(await screen.findByText("streambox#42")).toBeTruthy();
-    expect(add).toHaveBeenCalledWith(pending.url);
-    expect(fetchDeploys.mock.calls.length).toBeGreaterThan(1);
-
-    fireEvent.click(screen.getByLabelText("Mark streambox#42 deployed"));
-    await waitFor(() => expect(mark).toHaveBeenCalledWith("d1", true));
+    fireEvent.keyDown(sessions, { key: "ArrowRight" });
+    const deploys = screen.getByRole("tab", { name: /Deploys/ });
+    expect(deploys.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(deploys);
+    expect(screen.queryByRole("tabpanel", { name: "Sessions" })).toBeNull();
   });
 
-  it("shows why a pull request was not added", async () => {
-    vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
-    vi.spyOn(api, "addDeploy").mockResolvedValue({ ok: false, message: "The pull request URL is empty" });
-    render(<CoordinatorPanel onOpenSession={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Pull request URL"), { target: { value: "x" } });
-    fireEvent.click(screen.getByText("Add"));
-    expect(await screen.findByText("The pull request URL is empty")).toBeTruthy();
+  it("shows each pull request's details, with no way to add one, and toggles deployed", async () => {
+    vi.spyOn(api, "fetchDeploys").mockResolvedValue([pending]);
+    const mark = vi.spyOn(api, "setDeployDeployed").mockResolvedValue(true);
+    const onOpen = vi.fn();
+    render(<CoordinatorPanel onOpenSession={onOpen} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Deploys/ }));
+
+    expect(await screen.findByText("Fix login")).toBeTruthy();
+    expect(screen.getByText("streambox#42")).toBeTruthy();
+    expect(screen.getByText("PI-1921", { selector: "a" }).getAttribute("href")).toBe(pending.ticket);
+    expect(screen.getByText("Retries the token refresh")).toBeTruthy();
+    expect(screen.getByText(/^Pending/)).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
+
+    fireEvent.click(screen.getByText("PI-1921", { selector: "button" }));
+    expect(onOpen).toHaveBeenCalledWith("s1");
+    fireEvent.click(screen.getByLabelText("Mark Fix login deployed"));
+    await waitFor(() => expect(mark).toHaveBeenCalledWith("d1", true));
   });
 });

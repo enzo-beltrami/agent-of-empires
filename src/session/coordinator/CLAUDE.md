@@ -88,7 +88,10 @@ stopped and is waiting for your answer:
 3. Otherwise escalate to the user (below), then `send` the session the answer.
 
 An update without a decision ("opened PR ...") needs no reply. When a session
-reports an opened pull request, `add_deploy` it with the session's id.
+reports an opened pull request, `add_deploy` it with a title, the session's id,
+the ticket it resolves (key or URL) and a one-line note on what it changes. The
+user cannot add entries from the dashboard, so the list is only as complete as
+you keep it. Call `add_deploy` again with the same URL to link a ticket later.
 
 ## Deploy list
 

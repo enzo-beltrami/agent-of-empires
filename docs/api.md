@@ -67,8 +67,8 @@ without a token. To connect an agent, see
 | `restore_session` | `session_id` | As `POST /api/sessions/{id}/restore`. |
 | `watch_session` | optionally `session_id` with `watch` (default `true`), and `all` | The coordinator's watchlist, `{all, sessions}`. The Daemon sends the coordinator session a turn when a watched session starts waiting, finishes a turn or fails. With no arguments it only reads the list. |
 | `session_summary` | none | `{wip, needs_action, idle}`, each a list of `{id, title, project_path, status}`: live sessions other than the coordinator. `wip` is running, starting or creating; `needs_action` is waiting or error; `idle` is idle, stopped or unknown. |
-| `list_deploys` | none | `{deploys}`: the coordinator's deploy list, each `{id, url, title?, session_id?, note?, added_at, deployed_at?}`. |
-| `add_deploy` | `url`, and optionally `title`, `session_id`, `note` | The new entry, or the existing one for the same URL. |
+| `list_deploys` | none | `{deploys}`: the coordinator's deploy list, each `{id, url, title?, session_id?, session_title?, ticket?, note?, added_at, deployed_at?}`. `session_title` is present while the producing session exists. |
+| `add_deploy` | `url`, and optionally `title`, `session_id`, `ticket`, `note` | The entry. The only way onto the list; the dashboard shows it but does not add to it. For a URL already listed, the fields given replace its own and the rest are kept. |
 | `set_deployed` | `id`, `deployed` (default `true`) | The entry; `deployed: false` moves it back to pending. |
 | `remove_deploy` | `id` | The remaining list. |
 | `message_coordinator` | `message`, `needs_decision` (default `false`) | `{coordinator_session_id}`. Sends the coordinator session a turn naming the caller, and adds the caller to its watchlist. Only a caller that names its session, as the relay AoE injects does, can use it (`no_caller`); `no_coordinator` when there is no coordinator session. |

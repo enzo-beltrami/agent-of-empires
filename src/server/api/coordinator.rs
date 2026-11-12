@@ -159,46 +159,40 @@ pub async fn get_coordinator_summary(State(state): State<Arc<AppState>>) -> Resp
     Json(session_summary(&state).await).into_response()
 }
 
-pub async fn list_coordinator_deploys() -> Response {
-    match tokio::task::spawn_blocking(crate::session::coordinator::deploys).await {
-        Ok(deploys) => Json(deploys).into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+/// A deploy with the title of the session that produced it, while that session exists.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub(crate) struct DeployView {
+    #[serde(flatten)]
+    pub deploy: crate::session::coordinator::Deploy,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_title: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
-pub struct AddDeployBody {
-    pub url: String,
-    pub title: Option<String>,
-    pub session_id: Option<String>,
-    pub note: Option<String>,
+pub(crate) async fn deploy_views(state: &AppState) -> Option<Vec<DeployView>> {
+    let deploys = tokio::task::spawn_blocking(crate::session::coordinator::deploys)
+        .await
+        .ok()?;
+    let instances = state.instances.read().await;
+    Some(
+        deploys
+            .into_iter()
+            .map(|deploy| DeployView {
+                session_title: deploy.session_id.as_ref().and_then(|id| {
+                    instances
+                        .iter()
+                        .find(|inst| &inst.id == id)
+                        .map(|inst| inst.title.clone())
+                }),
+                deploy,
+            })
+            .collect(),
+    )
 }
 
-pub async fn add_coordinator_deploy(
-    State(state): State<Arc<AppState>>,
-    body: Result<Json<AddDeployBody>, axum::extract::rejection::JsonRejection>,
-) -> Response {
-    if state.read_only {
-        return super::read_only_response();
-    }
-    let Json(body) = match body {
-        Ok(body) => body,
-        Err(rejection) => return rejection.into_response(),
-    };
-    let new = crate::session::coordinator::NewDeploy {
-        url: body.url,
-        title: body.title,
-        session_id: body.session_id,
-        note: body.note,
-    };
-    match tokio::task::spawn_blocking(move || crate::session::coordinator::add_deploy(new)).await {
-        Ok(Ok(deploy)) => (StatusCode::CREATED, Json(deploy)).into_response(),
-        Ok(Err(error)) => api_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_deploy",
-            format!("{error:#}"),
-        ),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+pub async fn list_coordinator_deploys(State(state): State<Arc<AppState>>) -> Response {
+    match deploy_views(&state).await {
+        Some(deploys) => Json(deploys).into_response(),
+        None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 

@@ -457,7 +457,6 @@ pub(super) const CITYHALL_MUTATION_ALLOW: &[(&str, &str)] = &[
 pub(super) const CITYHALL_MUTATION_DENY: &[(&str, &str)] = &[
     // The coordinator drives host sessions; CityHall hides it.
     ("POST", "/api/coordinator"),
-    ("POST", "/api/coordinator/deploys"),
     ("PATCH", "/api/coordinator/deploys/{id}"),
     ("DELETE", "/api/coordinator/deploys/{id}"),
     ("POST", "/api/sandbox/image-pull"),

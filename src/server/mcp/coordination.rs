@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{read_only_refusal, tool_error, McpServer};
-use crate::server::api::{session_summary, SessionSummary};
+use crate::server::api::{deploy_views, session_summary, DeployView, SessionSummary};
 use crate::session::coordinator::{self, Deploy, NewDeploy};
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -18,6 +18,9 @@ pub(super) struct AddDeployParams {
     title: Option<String>,
     /// The session that produced the pull request.
     session_id: Option<String>,
+    /// The ticket it resolves: a key such as `PI-1921`, or the ticket's URL.
+    ticket: Option<String>,
+    /// What it changes, in a sentence, for whoever deploys it.
     note: Option<String>,
 }
 
@@ -49,7 +52,7 @@ fn yes() -> bool {
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub(super) struct DeployList {
-    deploys: Vec<Deploy>,
+    deploys: Vec<DeployView>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -73,13 +76,18 @@ impl McpServer {
             and ones already deployed."
     )]
     async fn list_deploys(&self) -> Result<Json<DeployList>, CallToolResult> {
-        let deploys = blocking(coordinator::deploys).await.map_err(|e| *e)?;
+        let deploys = deploy_views(&self.state)
+            .await
+            .ok_or_else(|| tool_error("internal", "Could not read the deploy list"))?;
         Ok(Json(DeployList { deploys }))
     }
 
     #[rmcp::tool(
-        description = "Add a pull request to the deploy list. Adding a URL already on the list \
-            returns its entry."
+        description = "Add a pull request to the deploy list, which the user reads in the \
+            dashboard; this tool is the only way onto it. Give a `title`, the producing \
+            `session_id`, the `ticket` it resolves when there is one, and a one-line `note` on \
+            what it changes. Calling it again for a URL already listed updates the fields you \
+            give, for example to link a ticket later."
     )]
     async fn add_deploy(
         &self,
@@ -90,6 +98,7 @@ impl McpServer {
             url: p.url,
             title: p.title,
             session_id: p.session_id,
+            ticket: p.ticket,
             note: p.note,
         };
         blocking(move || coordinator::add_deploy(new))

@@ -67,6 +67,9 @@ pub struct Deploy {
     /// The session that produced it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// The ticket it resolves: a key such as `PI-1921`, or a URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ticket: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     pub added_at: chrono::DateTime<chrono::Utc>,
@@ -85,6 +88,7 @@ pub struct NewDeploy {
     pub url: String,
     pub title: Option<String>,
     pub session_id: Option<String>,
+    pub ticket: Option<String>,
     pub note: Option<String>,
 }
 
@@ -93,23 +97,41 @@ pub fn deploys() -> Vec<Deploy> {
     load::<DeployList>(DEPLOYS).deploys
 }
 
-/// Adds a pull request, or returns the existing entry for the same URL.
+/// Adds a pull request. For a URL already on the list, the fields given replace its own, so a
+/// ticket or title can be linked later; omitted fields are kept.
 pub fn add_deploy(new: NewDeploy) -> Result<Deploy> {
     let url = new.url.trim().to_string();
     if url.is_empty() {
         anyhow::bail!("The pull request URL is empty");
     }
+    let blank = |s: Option<String>| s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let (title, session_id, ticket, note) = (
+        blank(new.title),
+        blank(new.session_id),
+        blank(new.ticket),
+        blank(new.note),
+    );
     update(DEPLOYS, |list: &mut DeployList| {
-        if let Some(existing) = list.deploys.iter().find(|d| d.url == url) {
+        if let Some(existing) = list.deploys.iter_mut().find(|d| d.url == url) {
+            for (field, value) in [
+                (&mut existing.title, title),
+                (&mut existing.session_id, session_id),
+                (&mut existing.ticket, ticket),
+                (&mut existing.note, note),
+            ] {
+                if value.is_some() {
+                    *field = value;
+                }
+            }
             return Ok(existing.clone());
         }
-        let blank = |s: Option<String>| s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
         let deploy = Deploy {
             id: uuid::Uuid::new_v4().simple().to_string()[..12].to_string(),
             url,
-            title: blank(new.title),
-            session_id: blank(new.session_id),
-            note: blank(new.note),
+            title,
+            session_id,
+            ticket,
+            note,
             added_at: chrono::Utc::now(),
             deployed_at: None,
         };
@@ -257,12 +279,28 @@ mod tests {
             url: url.into(),
             title: Some("  ".into()),
             session_id: None,
-            note: None,
+            ticket: None,
+            note: Some("first".into()),
         };
         let first = add_deploy(new(" https://x/pull/1 ")).unwrap();
         assert_eq!(first.url, "https://x/pull/1");
         assert_eq!(first.title, None, "blank fields are dropped");
-        assert_eq!(add_deploy(new("https://x/pull/1")).unwrap().id, first.id);
+        let linked = add_deploy(NewDeploy {
+            ticket: Some("PI-1921".into()),
+            note: None,
+            ..new("https://x/pull/1")
+        })
+        .unwrap();
+        assert_eq!(
+            linked.id, first.id,
+            "a known URL is updated, not added again"
+        );
+        assert_eq!(linked.ticket.as_deref(), Some("PI-1921"));
+        assert_eq!(
+            linked.note.as_deref(),
+            Some("first"),
+            "omitted fields are kept"
+        );
         assert!(add_deploy(new(" ")).is_err());
         add_deploy(new("https://x/pull/2")).unwrap();
         assert_eq!(deploys().len(), 2);

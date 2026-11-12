@@ -3324,6 +3324,10 @@ export interface Deploy {
   url: string;
   title?: string;
   session_id?: string;
+  /** Present while the producing session exists. */
+  session_title?: string;
+  /** A key such as `PI-1921`, or a URL. */
+  ticket?: string;
   note?: string;
   added_at: string;
   deployed_at?: string;
@@ -3344,16 +3348,6 @@ export async function fetchDeploys(): Promise<Deploy[] | null> {
     return res.ok ? ((await res.json()) as Deploy[]) : null;
   } catch {
     return null;
-  }
-}
-
-export async function addDeploy(url: string): Promise<{ ok: true; deploy: Deploy } | { ok: false; message: string }> {
-  try {
-    const reply = await send("/api/coordinator/deploys", jsonInit("POST", { url }));
-    if (reply.ok && reply.payload) return { ok: true, deploy: reply.payload as unknown as Deploy };
-    return { ok: false, message: rawMessage(reply.payload) ?? `Could not add it (HTTP ${reply.status}).` };
-  } catch (e) {
-    return { ok: false, message: networkError(e) };
   }
 }
 
