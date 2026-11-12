@@ -276,6 +276,7 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
             "list_projects",
             "list_sessions",
             "message_coordinator",
+            "read_notes",
             "read_output",
             "remove_deploy",
             "restore_session",
@@ -285,7 +286,8 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
             "stop_session",
             "trash_session",
             "watch_session",
-            "whoami"
+            "whoami",
+            "write_notes"
         ]
     );
     for tool in tools.as_array().unwrap() {
@@ -637,6 +639,7 @@ async fn mutating_tools_refuse_while_read_only() {
         ("add_deploy", json!({"url": "https://x/pull/1"})),
         ("set_deployed", json!({"id": "d"})),
         ("remove_deploy", json!({"id": "d"})),
+        ("write_notes", json!({"text": "x"})),
         ("message_coordinator", json!({"message": "hi"})),
     ];
     for (tool, arguments) in refused {
@@ -802,6 +805,20 @@ async fn coordination_tools_summarize_sessions_and_keep_a_deploy_list() {
     assert_eq!(removed, json!({"deploys": []}));
     let missing = call_result(&app, "set_deployed", json!({"id": id})).await;
     assert_eq!(error_code(&missing), Some("not_found"), "{missing}");
+
+    assert_eq!(
+        call(&app, "read_notes", json!({})).await,
+        json!({"text": ""})
+    );
+    call(&app, "write_notes", json!({"text": "- ship Friday"})).await;
+    let notes = call(
+        &app,
+        "write_notes",
+        json!({"text": "- check tests", "append": true}),
+    )
+    .await;
+    assert_eq!(notes["text"], "- ship Friday\n- check tests\n");
+    assert_eq!(call(&app, "read_notes", json!({})).await, notes);
 
     let anonymous = message_as(&app, None, "which API?").await;
     assert_eq!(error_code(&anonymous), Some("no_caller"), "{anonymous}");

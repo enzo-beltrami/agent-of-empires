@@ -71,6 +71,8 @@ without a token. To connect an agent, see
 | `add_deploy` | `url`, and optionally `title`, `session_id`, `ticket`, `note`, `tested` | The entry. The only way onto the list; the dashboard shows it but does not add to it. For a URL already listed, the fields given replace its own and the rest are kept. |
 | `set_deployed` | `id`, and optionally `deployed`, `tested` | The entry; `deployed: false` moves it back to pending. `deployed` defaults to `true` unless only `tested` is given. |
 | `remove_deploy` | `id` | The remaining list. |
+| `read_notes` | none | `{text}`: the Markdown notes the user keeps in the coordinator's Notes tab. |
+| `write_notes` | `text`, `append` (default `false`) | `{text}` after the change. Replaces the notes, or with `append` adds `text` on new lines at the end. |
 | `message_coordinator` | `message`, `needs_decision` (default `false`) | `{coordinator_session_id}`. Sends the coordinator session a turn naming the caller, and adds the caller to its watchlist. Only a caller that names its session, as the relay AoE injects does, can use it (`no_caller`); `no_coordinator` when there is no coordinator session. |
 
 Every tool declares an `outputSchema` and returns `structuredContent`. A refusal is a

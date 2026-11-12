@@ -41,6 +41,20 @@ pub(super) struct DeployIdParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub(super) struct WriteNotesParams {
+    /// Markdown. Replaces all the notes unless `append` is set.
+    text: String,
+    /// Add `text` on new lines at the end instead of replacing the notes.
+    #[serde(default)]
+    append: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub(super) struct Notes {
+    text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub(super) struct MessageParams {
     /// What you need: the question with its context and the options you see, or the update.
     message: String,
@@ -145,6 +159,36 @@ impl McpServer {
         {
             Ok(true) => self.list_deploys().await,
             Ok(false) => Err(deploy_not_found(&id)),
+            Err(e) => Err(tool_error("internal", format!("{e:#}"))),
+        }
+    }
+
+    #[rmcp::tool(
+        description = "The user's notes: the Markdown they keep in the dashboard's Notes tab \
+            beside the coordinator, for anything they want to keep track of."
+    )]
+    async fn read_notes(&self) -> Result<Json<Notes>, CallToolResult> {
+        match blocking(coordinator::notes).await.map_err(|e| *e)? {
+            Ok(text) => Ok(Json(Notes { text })),
+            Err(e) => Err(tool_error("internal", format!("{e:#}"))),
+        }
+    }
+
+    #[rmcp::tool(
+        description = "Change the user's notes. Prefer `append: true` to add an item; replace \
+            the whole text only to edit or remove what is there, after `read_notes`, keeping \
+            everything the user wrote that you were not asked to change. Returns the notes."
+    )]
+    async fn write_notes(
+        &self,
+        Parameters(p): Parameters<WriteNotesParams>,
+    ) -> Result<Json<Notes>, CallToolResult> {
+        self.writable().map_err(|e| *e)?;
+        match blocking(move || coordinator::write_notes(&p.text, p.append))
+            .await
+            .map_err(|e| *e)?
+        {
+            Ok(text) => Ok(Json(Notes { text })),
             Err(e) => Err(tool_error("internal", format!("{e:#}"))),
         }
     }

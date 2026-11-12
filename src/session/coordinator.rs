@@ -193,11 +193,26 @@ pub fn notes() -> Result<String> {
     }
 }
 
-pub fn set_notes(text: &str) -> Result<()> {
+/// Replaces the notes, or with `append` adds `text` on lines of its own; returns the result.
+pub fn write_notes(text: &str, append: bool) -> Result<String> {
     let _files = FILES
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    write_atomic(&coordinator_dir()?, NOTES, text.as_bytes())
+    let notes = if append {
+        let mut notes = notes()?;
+        if !notes.is_empty() && !notes.ends_with('\n') {
+            notes.push('\n');
+        }
+        notes.push_str(text);
+        if !text.ends_with('\n') {
+            notes.push('\n');
+        }
+        notes
+    } else {
+        text.to_string()
+    };
+    write_atomic(&coordinator_dir()?, NOTES, notes.as_bytes())?;
+    Ok(notes)
 }
 
 /// Serializes read-modify-write of the coordinator's files across dashboard and MCP callers.
@@ -304,8 +319,11 @@ mod tests {
     fn notes_round_trip_and_start_empty() {
         let _home = crate::session::test_support::isolate_app_dir();
         assert_eq!(notes().unwrap(), "");
-        set_notes("- ship PI-1921 Friday\n").unwrap();
-        assert_eq!(notes().unwrap(), "- ship PI-1921 Friday\n");
+        write_notes("- ship PI-1921 Friday", false).unwrap();
+        assert_eq!(notes().unwrap(), "- ship PI-1921 Friday");
+        let appended = write_notes("- ask about tests", true).unwrap();
+        assert_eq!(appended, "- ship PI-1921 Friday\n- ask about tests\n");
+        assert_eq!(notes().unwrap(), appended);
     }
 
     #[test]

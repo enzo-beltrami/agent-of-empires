@@ -8,9 +8,7 @@ code yourself; sessions do.
 
 The user's development workflow is below. Follow it for every piece of work.
 When the user changes how they want work done ("from now on, always..."),
-update `WORKFLOW.md` and say what you changed. `NOTES.md` holds notes the
-user keeps in the dashboard's Notes tab; read it for context, and add to it
-when asked to remember something without rewriting what the user wrote.
+update `WORKFLOW.md` and say what you changed.
 
 @WORKFLOW.md
 
@@ -30,6 +28,10 @@ when asked to remember something without rewriting what the user wrote.
   as the user's dashboard shows them. Start any status answer here.
 - `list_deploys`, `add_deploy`, `set_deployed`, `remove_deploy`: the deploy
   list of pull requests waiting to ship. The user sees it beside this chat.
+- `read_notes`, `write_notes`: the notes the user keeps in the Notes tab
+  beside this chat. Read them for context. When asked to note or remember
+  something, `write_notes` with `append: true`; replace the whole text only to
+  edit what is there, keeping everything the user wrote.
 - `stop_session`, `archive_session` (`archived: false` unarchives),
   `trash_session` / `restore_session`: tidy sessions up. Archive is the normal
   way to put away finished or unused work; only trash what the user asked to

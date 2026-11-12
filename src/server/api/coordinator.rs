@@ -260,8 +260,12 @@ pub async fn put_coordinator_notes(
         Ok(body) => body,
         Err(rejection) => return rejection.into_response(),
     };
-    match tokio::task::spawn_blocking(move || crate::session::coordinator::set_notes(&text)).await {
-        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+    match tokio::task::spawn_blocking(move || {
+        crate::session::coordinator::write_notes(&text, false)
+    })
+    .await
+    {
+        Ok(Ok(_)) => StatusCode::NO_CONTENT.into_response(),
         _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
