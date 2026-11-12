@@ -13,7 +13,6 @@ pub mod daemon;
 pub mod events;
 pub mod file_watch;
 pub mod git;
-pub mod github;
 pub mod hooks;
 pub mod logging;
 pub mod migrations;

@@ -391,7 +391,7 @@ fn compare(image: &str, local: &str, remote: String) -> ImageCheck {
 
 fn client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
-        .user_agent(crate::github::DEFAULT_USER_AGENT)
+        .user_agent("agent-of-empires")
         .timeout(std::time::Duration::from_secs(8))
         .redirect(reqwest::redirect::Policy::none())
 }

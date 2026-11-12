@@ -10,7 +10,7 @@
 
 use serial_test::parallel;
 
-use crate::harness::{require_tmux, TuiTestHarness};
+use crate::harness::TuiTestHarness;
 
 fn web_row(h: &TuiTestHarness) -> String {
     let stdout = h.run_cli_ok(&["plugin", "list"]);
