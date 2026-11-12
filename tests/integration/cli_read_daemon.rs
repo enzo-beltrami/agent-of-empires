@@ -19,7 +19,7 @@ impl Fixture {
         std::fs::create_dir_all(&profile).unwrap();
         std::fs::write(
             app.join("config.toml"),
-            "default_profile = \"main\"\n[updates]\nupdate_check_mode = \"off\"\n[systemd]\nenabled = false\n",
+            "default_profile = \"main\"\n[systemd]\nenabled = false\n",
         )
         .unwrap();
         let mut row = Instance::new("Disk must not answer", "/isolated/project");
@@ -484,8 +484,9 @@ fn reads_do_not_need_an_unrelated_missing_default_to_bootstrap() {
         let fixture = Fixture::new();
         std::fs::write(
             fixture.app.join("config.toml"),
-            "default_profile = \"missing\"\n[updates]\nupdate_check_mode = \"off\"\n[systemd]\nenabled = false\n",
-        ).unwrap();
+            "default_profile = \"missing\"\n[systemd]\nenabled = false\n",
+        )
+        .unwrap();
         let output = fixture.run(args);
         assert!(output.status.success(), "{args:?}: {output:?}");
         if args.contains(&"profile") {
@@ -521,9 +522,7 @@ fn empty_registry_reads_preserve_a_missing_configured_default() {
             std::fs::remove_dir_all(fixture.app.join("profiles/main")).unwrap();
             std::fs::write(
                 fixture.app.join("config.toml"),
-                format!(
-                    "default_profile = \"{default}\"\n[updates]\nupdate_check_mode = \"off\"\n[systemd]\nenabled = false\n"
-                ),
+                format!("default_profile = \"{default}\"\n[systemd]\nenabled = false\n"),
             )
             .unwrap();
             let output = fixture.run(args);
@@ -570,8 +569,9 @@ fn configured_alias_does_not_choose_an_unlisted_startup_profile() {
         std::os::unix::fs::symlink("main", fixture.app.join("profiles/account")).unwrap();
         std::fs::write(
             fixture.app.join("config.toml"),
-            "default_profile = \"account\"\n[updates]\nupdate_check_mode = \"off\"\n[systemd]\nenabled = false\n",
-        ).unwrap();
+            "default_profile = \"account\"\n[systemd]\nenabled = false\n",
+        )
+        .unwrap();
         let output = fixture.run(args);
         assert!(output.status.success(), "{args:?}: {output:?}");
         let rows: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -604,7 +604,7 @@ async fn read_reuse_does_not_require_an_unadopted_startup_profile() {
     let fixture = Fixture::new();
     std::fs::write(
         fixture.app.join("config.toml"),
-        "[updates]\nupdate_check_mode = \"off\"\n[systemd]\nenabled = false\n",
+        "[systemd]\nenabled = false\n",
     )
     .unwrap();
     let started = fixture.run(&["list", "--json"]);

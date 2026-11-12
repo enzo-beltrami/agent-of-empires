@@ -57,7 +57,6 @@ export type TabId =
   | "sound"
   | "tmux"
   | "systemd"
-  | "updates"
   | "notifications"
   | "panels"
   | "terminal"
@@ -121,7 +120,6 @@ export function buildSidebar(readOnly = false): SidebarItem[] {
     { kind: "tab", id: "systemd", label: "Systemd" },
     { kind: "tab", id: "sound", label: "Sound" },
     { kind: "divider", label: "System" },
-    { kind: "tab", id: "updates", label: "Updates" },
     { kind: "tab", id: "logging", label: "Logging" },
     ...(readOnly ? [] : [{ kind: "tab" as const, id: "logs" as const, label: "Logs" }]),
     { kind: "tab", id: "plugins", label: "Plugins" },
@@ -200,7 +198,6 @@ const ALL_TAB_IDS = new Set<TabId>([
   "sound",
   "tmux",
   "systemd",
-  "updates",
   "notifications",
   "panels",
   "terminal",
@@ -232,7 +229,6 @@ const SCHEMA_BACKED_TABS = new Set<TabId>([
   "sound",
   "tmux",
   "systemd",
-  "updates",
   "logging",
   "notifications",
   "structured-view",
@@ -682,16 +678,6 @@ export function SettingsView({
             values={settings?.systemd ?? {}}
             onSaveField={sendSave}
             advancedSubtitle="Per-session memory and task limits."
-          />
-        );
-      case "updates":
-        return (
-          <SchemaSection
-            section="updates"
-            schema={schema}
-            focusRequest={focusRequest}
-            values={settings?.updates ?? {}}
-            onSaveField={sendSave}
           />
         );
       case "cityhall":

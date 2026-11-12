@@ -6,7 +6,7 @@ import { SettingsView } from "../SettingsView";
 
 const SCHEMA = [
   ["sandbox", "enabled_by_default", true],
-  ["updates", "check_mode", false],
+  ["logging", "level", false],
 ].map(([section, field, profile_overridable]) => ({
   section,
   field,
@@ -22,7 +22,7 @@ const SCHEMA = [
 
 vi.mock("../../lib/api", () => ({
   fetchProfiles: vi.fn(() => Promise.resolve([{ name: "main", is_default: true }])),
-  fetchSettings: vi.fn(() => Promise.resolve({ sandbox: {}, updates: {} })),
+  fetchSettings: vi.fn(() => Promise.resolve({ sandbox: {}, logging: {} })),
   getSettingsSchema: vi.fn(() => Promise.resolve(SCHEMA)),
   updateProfileSettings: vi.fn(() => Promise.resolve("committed" as const)),
   updateSettings: vi.fn(() => Promise.resolve("committed" as const)),
@@ -76,7 +76,7 @@ describe("SettingsView navigation", () => {
 
   it.each([
     ["sandbox", "enabled_by_default", true],
-    ["updates", "check_mode", false],
+    ["logging", "level", false],
   ])("on %s, shows the profile picker only for profile-overridable fields", async (tab, field, shown) => {
     renderView(tab);
     // The field renders from the same schema, so the picker has had its chance.

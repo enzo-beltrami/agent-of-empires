@@ -14,8 +14,7 @@ import { PluginDetailModal } from "./PluginDetailModal";
 import { PluginInstallConsentModal } from "./PluginInstallConsentModal";
 import { PluginJobProgressModal } from "./PluginJobProgressModal";
 import { PluginMarketplace } from "./PluginMarketplace";
-import { PluginUpdateConsentModal } from "./PluginUpdateConsentModal";
-import { usePluginMarketplace, usePluginUpdates, type PluginJobRef } from "./pluginFlows";
+import { usePluginMarketplace, type PluginJobRef } from "./pluginFlows";
 
 const WEB_PLUGIN_ID = "aoe.web";
 
@@ -34,7 +33,6 @@ export function PluginsSettings({ readOnly = false }: { readOnly?: boolean } = {
   const uninstallDialogRef = useRef<HTMLDivElement | null>(null);
   const [confirmWebOff, setConfirmWebOff] = useState<PluginView | null>(null);
   const [job, setJob] = useState<PluginJobRef | null>(null);
-  const updates = usePluginUpdates(setError, setJob);
   const market = usePluginMarketplace(setJob);
 
   const reload = useCallback(async () => {
@@ -97,7 +95,6 @@ export function PluginsSettings({ readOnly = false }: { readOnly?: boolean } = {
     return <p className="text-sm text-text-dim">Loading plugins…</p>;
   }
 
-  const review = updates.review;
   return (
     <div className="space-y-4">
       {/* Read-only (CityHall) hides the marketplace and every lifecycle control. */}
@@ -142,18 +139,6 @@ export function PluginsSettings({ readOnly = false }: { readOnly?: boolean } = {
             </div>
           )}
 
-          {!readOnly && (
-            <button
-              type="button"
-              className="rounded border border-surface-700 px-2 py-1 text-xs hover:bg-surface-800 disabled:opacity-50"
-              disabled={updates.checking}
-              onClick={() => void updates.check()}
-              data-testid="plugins-check-updates"
-            >
-              {updates.checking ? "Checking…" : "Check for updates"}
-            </button>
-          )}
-
           {data && data.plugins.length === 0 && (
             <p className="text-xs text-text-dim" data-testid="plugins-empty">
               No plugins detected.
@@ -163,10 +148,8 @@ export function PluginsSettings({ readOnly = false }: { readOnly?: boolean } = {
             <PluginCard
               key={plugin.id}
               plugin={plugin}
-              update={updates.updates[plugin.id]}
               readOnly={readOnly}
               toggleBusy={busy}
-              updating={updates.updatingId === plugin.id}
               onOpen={() =>
                 setDetail({
                   source: plugin.source ?? "",
@@ -184,7 +167,6 @@ export function PluginsSettings({ readOnly = false }: { readOnly?: boolean } = {
               onToggle={(enabled) =>
                 plugin.id === WEB_PLUGIN_ID && !enabled ? setConfirmWebOff(plugin) : void onToggle(plugin, enabled)
               }
-              onUpdate={() => void updates.preview(plugin)}
               onUninstall={() => setConfirmUninstall(plugin)}
             />
           ))}
@@ -192,22 +174,6 @@ export function PluginsSettings({ readOnly = false }: { readOnly?: boolean } = {
       )}
 
       {detail && <PluginDetailModal key={detail.source} {...detail} onClose={() => setDetail(null)} />}
-
-      {review && (
-        <PluginUpdateConsentModal
-          key={review.plugin.id}
-          consent={review.consent}
-          name={review.plugin.name}
-          fromVersion={review.fromVersion}
-          toVersion={review.toVersion}
-          changelog={review.changelog}
-          busy={updates.busy}
-          error={updates.reviewError}
-          onApprove={() => void updates.approve()}
-          onDecline={review.consent ? () => void updates.decline() : undefined}
-          onClose={updates.closeReview}
-        />
-      )}
 
       {market.consent && (
         <PluginInstallConsentModal

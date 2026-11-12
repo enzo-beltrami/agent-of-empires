@@ -2990,31 +2990,20 @@
       "components": ["web/src/components/ConnectedDevices.tsx"]
     },
     {
-      "id": "connectivity.update-banner-how-to-update",
-      "kind": "mocked-playwright",
-      "risk": "medium",
-      "specs": ["tests/update-banner.spec.ts", "src/components/__tests__/UpdateBanner.test.tsx"],
-      "components": ["web/src/components/UpdateBanner.tsx"],
-      "notes": "The dismiss test asserts text-subtle, not text-muted or text-secondary, on the dismiss control. #5514: each install method's lines are pinned in UpdateBanner.test.tsx (an unknown install reads \"Run aoe update on the machine running AoE.\"; a release install has no second line). The mocked spec checks the layout: at 1280px the dot and lines form one centered block, line two starts under line one, and the dot and × share line one's center, × pinned right; at 375px the lines stack left-aligned with × at the top right and nothing scrolls sideways."
-    },
-    {
       "id": "connectivity.banner-stack",
       "kind": "vitest",
       "risk": "medium",
       "specs": [
         "src/components/__tests__/BannerStack.test.tsx",
         "src/components/__tests__/DisconnectBanner.test.tsx",
-        "src/components/__tests__/UpdateBanner.test.tsx",
         "src/components/__tests__/DashboardUpdateBanner.test.tsx"
       ],
       "components": [
         "web/src/components/BannerStack.tsx",
         "web/src/components/DisconnectBanner.tsx",
-        "web/src/components/UpdateBanner.tsx",
         "web/src/components/DashboardUpdateBanner.tsx",
         "web/src/components/PushHealthBanner.tsx",
         "web/src/hooks/useConnectionBanner.ts",
-        "web/src/hooks/useUpdateBanner.ts",
         "web/src/components/SandboxImageBanner.tsx"
       ]
     },
@@ -5298,7 +5287,6 @@
       "components": [
         "web/src/components/settings/PluginsSettings.tsx",
         "web/src/components/settings/PluginDetailModal.tsx",
-        "web/src/components/settings/PluginUpdateConsentModal.tsx",
         "web/src/components/settings/PluginInstallConsentModal.tsx",
         "web/src/components/settings/PluginJobProgressModal.tsx",
         "web/src/components/settings/PluginIdentityIcon.tsx",

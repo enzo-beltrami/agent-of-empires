@@ -5,18 +5,8 @@ import { expect, type Page } from "@playwright/test";
 import { clickSidebarSession, openMobileSidebar } from "./sidebar";
 import { sessionResponse } from "./sessions";
 
-const BOOT_PATHS = [
-  "settings",
-  "themes",
-  "agents",
-  "profiles",
-  "groups",
-  "devices",
-  "docker/status",
-  "about",
-  "system/update-status",
-];
-const OBJECT_PATHS = new Set(["settings", "docker/status", "about", "system/update-status"]);
+const BOOT_PATHS = ["settings", "themes", "agents", "profiles", "groups", "devices", "docker/status", "about"];
+const OBJECT_PATHS = new Set(["settings", "docker/status", "about"]);
 
 /** Boot stubs plus one running structured-view session. Sockets are accepted
  *  but silent, so the session reads as connected; a spec that needs frames

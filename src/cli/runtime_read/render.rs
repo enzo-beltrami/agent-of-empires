@@ -17,12 +17,10 @@ use crate::cli::project::{ProjectListArgs, ScopeFilter};
 use crate::cli::session::ShowArgs;
 use crate::cli::status::{self, VERBOSE_GROUPS};
 
-/// One rendered read: the text the command prints, and whether it printed the
-/// human session table, which is the only place the update notice belongs.
+/// One rendered read: the text the command prints.
 #[derive(Debug)]
 pub(crate) struct Projection {
     pub stdout: String,
-    pub session_table: bool,
     pub stderr: Option<String>,
     pub exit: i32,
 }
@@ -31,7 +29,6 @@ impl Projection {
     fn text(stdout: String) -> Self {
         Self {
             stdout,
-            session_table: false,
             stderr: None,
             exit: 0,
         }
@@ -182,7 +179,6 @@ fn render_list(
             }
             return Ok(Projection {
                 stdout: json_lines(&rows)?,
-                session_table: false,
                 stderr: incomplete.then_some(stderr),
                 exit: i32::from(incomplete),
             });
@@ -229,7 +225,6 @@ fn render_list(
         ));
         return Ok(Projection {
             stdout: output,
-            session_table: false,
             stderr: (!stderr.is_empty()).then_some(stderr),
             exit: 0,
         });
@@ -270,7 +265,6 @@ fn render_list(
     output.push_str(&format!("\nTotal: {} sessions\n", sessions.len()));
     Ok(Projection {
         stdout: output,
-        session_table: true,
         stderr: None,
         exit: 0,
     })
@@ -409,7 +403,6 @@ fn render_status(
         ));
         return Ok(Projection {
             stdout: output,
-            session_table: true,
             stderr: None,
             exit: 0,
         });
@@ -427,7 +420,6 @@ fn render_status(
     };
     Ok(Projection {
         stdout: summary,
-        session_table: true,
         stderr: None,
         exit: 0,
     })
@@ -1676,10 +1668,9 @@ mod tests {
         assert_eq!(outcome.exit, 1);
     }
 
-    /// The per-profile listing closes on its own count, the way it always did,
-    /// and only the human listing is the kind of output a notice follows.
+    /// The per-profile listing closes on its own count.
     #[test]
-    fn the_human_listing_closes_on_its_count_and_asks_for_a_notice() {
+    fn the_human_listing_closes_on_its_count() {
         let value = snapshot(vec![
             session("a", WireStatus::Waiting),
             session("b", WireStatus::Idle),
@@ -1690,16 +1681,11 @@ mod tests {
             state: StateFilter::All,
         };
         let projection = render_list(&args, &value, &source(), false).unwrap();
-        assert!(projection.session_table);
         assert!(
             projection.stdout.ends_with("\nTotal: 2 sessions\n"),
             "{}",
             projection.stdout
         );
-
-        let empty = snapshot(vec![]);
-        let empty_projection = render_list(&args, &empty, &source(), false).unwrap();
-        assert!(!empty_projection.session_table);
     }
     #[test]
     fn home_collapse_matches_only_exact_path_boundary() {

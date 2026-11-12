@@ -29,7 +29,6 @@ describe("buildSidebar", () => {
       "systemd",
       "sound",
       "-- System",
-      "updates",
       "logging",
       "logs",
       "plugins",

@@ -374,7 +374,6 @@ async fn run(
             return exit_zero(cli::skill::run(command).await)
         }
         Some(Commands::Uninstall(args)) => return exit_zero(cli::uninstall::run(args).await),
-        Some(Commands::Update(args)) => return exit_zero(cli::update::run(args).await),
         Some(Commands::Migrate(args)) => return exit_zero(cli::migrate::run(&args).await),
 
         Some(Commands::Add(args)) => {

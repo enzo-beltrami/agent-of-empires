@@ -3837,13 +3837,10 @@ fn cli_serve_daemon_profile_reaches_the_served_layer() {
     let mut h = TuiTestHarness::new_in_tmp("serve_served_profile");
     h.stop_daemon_on_drop();
     let app = crate::harness::app_dir_in(h.home_path());
-    let version = env!("CARGO_PKG_VERSION");
 
     // Pin the machine default to `default` so the daemon's `--profile work`
     // is unambiguously the operator's choice and not the machine's.
-    let machine_config = format!(
-        "default_profile = \"default\"\n\n[updates]\nupdate_check_mode = \"off\"\n\n[session]\ndefault_tool = \"claude\"\n\n[app_state]\nhas_seen_welcome = true\nhas_acknowledged_agent_hooks = true\nlast_seen_version = \"{version}\"\n"
-    );
+    let machine_config = "default_profile = \"default\"\n\n[session]\ndefault_tool = \"claude\"\n\n[app_state]\nhas_seen_welcome = true\nhas_acknowledged_agent_hooks = true\n";
     std::fs::write(app.join("config.toml"), machine_config).expect("write machine config.toml");
     std::fs::create_dir_all(app.join("profiles").join("default")).expect("default profile dir");
     let work = app.join("profiles").join("work");

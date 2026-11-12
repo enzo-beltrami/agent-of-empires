@@ -190,7 +190,6 @@ test("Settings, its tabs, and settings search are curated to the CityHall subset
   await page.goto("/settings/plugins");
   await expect(page.getByText("Acme").first()).toBeVisible();
   await expect(page.getByTestId("plugins-tab-marketplace")).toHaveCount(0);
-  await expect(page.getByTestId("plugins-check-updates")).toHaveCount(0);
   await expect(page.getByRole("switch", { name: /Enable Acme/ })).toHaveCount(0);
   await expect(page.getByTestId("plugin-uninstall-acme")).toHaveCount(0);
 });

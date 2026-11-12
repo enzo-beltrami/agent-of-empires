@@ -60,23 +60,10 @@ async function setup(page: Page, opts: SetupOpts = {}) {
   const structuredView = opts.structuredView ?? true;
   const acpWorkerState = opts.acpWorkerState ?? "running";
   await page.route("**/api/login/status*", (r) => r.fulfill({ json: { required: false, authenticated: true } }));
-  for (const path of [
-    "settings",
-    "themes",
-    "agents",
-    "profiles",
-    "groups",
-    "devices",
-    "docker/status",
-    "about",
-    "system/update-status",
-  ]) {
+  for (const path of ["settings", "themes", "agents", "profiles", "groups", "devices", "docker/status", "about"]) {
     await page.route(`**/api/${path}`, (r) =>
       r.fulfill({
-        json:
-          path === "docker/status" || path === "about" || path === "settings" || path === "system/update-status"
-            ? {}
-            : [],
+        json: path === "docker/status" || path === "about" || path === "settings" ? {} : [],
       }),
     );
   }

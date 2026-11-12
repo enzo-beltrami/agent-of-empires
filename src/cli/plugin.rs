@@ -44,16 +44,6 @@ pub enum PluginCommands {
         #[arg(long)]
         dev: bool,
     },
-    /// Update an installed external plugin from its recorded source and restart
-    /// its worker in a running daemon. Prompts to re-approve capabilities if the
-    /// update changes the capability set.
-    Update {
-        /// Plugin id
-        id: String,
-        /// Re-approve a changed capability set without prompting
-        #[arg(long)]
-        yes: bool,
-    },
     /// Uninstall an external plugin, removing its files and capability grant
     Uninstall {
         /// Plugin id
@@ -70,8 +60,6 @@ pub enum PluginCommands {
         /// Optional free-text term to narrow the search
         query: Option<String>,
     },
-    /// List installed external plugins that have an update available
-    Outdated,
 }
 
 pub async fn run(command: PluginCommands) -> Result<()> {
@@ -82,11 +70,9 @@ pub async fn run(command: PluginCommands) -> Result<()> {
         PluginCommands::Enable { id } => run_set_enabled(&id, true).await,
         PluginCommands::Disable { id } => run_set_enabled(&id, false).await,
         PluginCommands::Install { source, yes, dev } => run_install(&source, yes, dev).await,
-        PluginCommands::Update { id, yes } => run_update(&id, yes).await,
         PluginCommands::Uninstall { id } => run_uninstall(&id),
         PluginCommands::Hash { path } => run_hash(&path),
         PluginCommands::Discover { query } => run_discover(query.as_deref()).await,
-        PluginCommands::Outdated => run_outdated().await,
     }
 }
 
@@ -228,20 +214,6 @@ async fn run_install(source: &str, yes: bool, dev: bool) -> Result<()> {
     Ok(())
 }
 
-async fn run_update(id: &str, yes: bool) -> Result<()> {
-    use crate::plugin::install::LiveRestart;
-    let report = crate::plugin::install::update(id, yes).await?;
-    print_report(&report, "Updated");
-    match crate::plugin::install::restart_worker_live(id).await {
-        LiveRestart::Daemon => println!("  the running daemon reloaded the plugin."),
-        LiveRestart::NoDaemon => {}
-        LiveRestart::DaemonStale { reason } => println!(
-            "  warning: a daemon is running but did not reload the plugin ({reason}); its worker keeps the previous build until the daemon restarts."
-        ),
-    }
-    Ok(())
-}
-
 fn run_uninstall(id: &str) -> Result<()> {
     crate::plugin::install::uninstall(id)?;
     println!("Uninstalled {id}.");
@@ -266,30 +238,6 @@ async fn run_discover(query: Option<&str>) -> Result<()> {
         );
     }
     println!("\nInstall with:\n  aoe plugin install <source>");
-    Ok(())
-}
-
-async fn run_outdated() -> Result<()> {
-    let statuses = crate::plugin::update_check::outdated().await;
-    if statuses.is_empty() {
-        println!("No external plugins installed.");
-        return Ok(());
-    }
-    let mut any_outdated = false;
-    for s in &statuses {
-        if let Some(err) = &s.error {
-            println!("error         {:<20} {}", s.id, err);
-        } else if s.needs_update {
-            any_outdated = true;
-            let available = s.available.as_deref().unwrap_or("modified");
-            println!("needs update  {:<20} {} -> {}", s.id, s.current, available);
-        } else {
-            println!("up to date    {:<20} {}", s.id, s.current);
-        }
-    }
-    if any_outdated {
-        println!("\nUpdate with:\n  aoe plugin update <id>");
-    }
     Ok(())
 }
 

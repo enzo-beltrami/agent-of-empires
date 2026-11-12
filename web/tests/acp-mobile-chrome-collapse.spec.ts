@@ -73,24 +73,12 @@ test.describe("mobile conversation chrome collapse", () => {
     await expect.poll(() => mock.promptBodies.map((b) => b.text)).toContain("still typing");
   });
 
-  // The handles overlay content, so their hit area must equal the painted tab; a larger wrapper once ate the update banner's dismiss taps.
+  // The handles overlay content, so their hit area must equal the painted tab.
   test("each handle's clickable area is the tab you can see, so it intercepts nothing around it", async ({ page }) => {
     const mock = await mockAcpSession(page, {
       title: "story-collapse-hit",
       initialEvents: [agentMessageChunk("hello from the agent")],
     });
-    await page.route("**/api/system/update-status", (r) =>
-      r.fulfill({
-        json: {
-          update_check_mode: "notify",
-          current_version: "0.5.0",
-          latest_version: "0.6.0",
-          update_available: true,
-          release_url: "https://example.invalid/releases/v0.6.0",
-          error: null,
-        },
-      }),
-    );
     await openStructuredSession(page, mock);
     await waitForComposerConnected(page);
 
@@ -123,11 +111,6 @@ test.describe("mobile conversation chrome collapse", () => {
         expect(await handleAt(x, y), `${testId} at ${x},${y}`).toBeNull();
       }
     }
-
-    // A real click proves nothing covers the banner's dismiss control in the same corner.
-    const dismiss = page.getByRole("button", { name: "Dismiss update notice" });
-    await dismiss.click({ timeout: 5_000 });
-    await expect(page.getByRole("status", { name: /Update available/i })).toHaveCount(0);
   });
 
   // Phone-only: crossing to desktop restores both regions without losing the draft.

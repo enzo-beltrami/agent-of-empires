@@ -126,7 +126,6 @@ export async function mockWizardApis(page: Page, opts: WizardMockOptions = {}) {
   for (const path of ["themes", "groups", "devices"])
     await page.route(`**/api/${path}`, (r) => r.fulfill({ json: [] }));
   await page.route("**/api/about", (r) => r.fulfill({ json: { profile: opts.servedProfile ?? "default" } }));
-  await page.route("**/api/system/update-status", (r) => r.fulfill({ json: {} }));
   await page.route("**/api/settings**", (r) => {
     const profile = new URL(r.request().url()).searchParams.get("profile");
     return r.fulfill({ json: (profile && opts.profileSettings?.[profile]) || opts.settings || {} });

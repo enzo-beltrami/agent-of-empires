@@ -197,7 +197,6 @@ struct Configured {
     default_image: String,
     images: Vec<String>,
     runtime: ContainerRuntimeName,
-    checks_enabled: bool,
     enabled_by_default: bool,
     allow_image_pull: bool,
     dismissed_digest: Option<String>,
@@ -234,7 +233,6 @@ fn load_configured() -> anyhow::Result<Configured> {
         default_image,
         images,
         runtime: config.sandbox.container_runtime,
-        checks_enabled: config.updates.update_check_mode.is_enabled(),
         enabled_by_default: config.sandbox.enabled_by_default,
         allow_image_pull: config.sandbox.allow_image_pull,
         dismissed_digest: config.app_state.dismissed_image_digest,
@@ -294,9 +292,8 @@ pub struct ImageStatusResponse {
     #[serde(flatten)]
     state: ImageState,
     dismissed: bool,
-    /// False when update checks are off; the state is then `unknown` and no registry is asked.
-    checks_enabled: bool,
-    /// `sandbox.enabled_by_default`, or a sandboxed Session exists. The banner shows only then.
+    /// `sandbox.enabled_by_default`, or a sandboxed Session exists. Only then is a registry
+    /// asked; otherwise the state is `unknown`.
     sandbox_in_use: bool,
     pull: PullState,
     /// `read_only`, `cityhall` or `disabled` when the dashboard can't pull; `pull_command` is
@@ -321,14 +318,6 @@ pub async fn sandbox_image_status(
     };
     let runtime = ContainerRuntime::from(configured.runtime);
     let key = configured.key(image.clone());
-    let image_state = if configured.checks_enabled {
-        image_state(configured.runtime, key.clone(), query.fresh).await
-    } else {
-        ImageState::Unknown {
-            reason: "checks_off",
-        }
-    };
-    let dismissed = is_dismissed(&image_state, configured.dismissed_digest.as_deref());
     let sandbox_in_use = configured.enabled_by_default
         || state
             .instances
@@ -336,6 +325,14 @@ pub async fn sandbox_image_status(
             .await
             .iter()
             .any(|i| i.is_sandboxed());
+    let image_state = if sandbox_in_use {
+        image_state(configured.runtime, key.clone(), query.fresh).await
+    } else {
+        ImageState::Unknown {
+            reason: "sandbox_unused",
+        }
+    };
+    let dismissed = is_dismissed(&image_state, configured.dismissed_digest.as_deref());
     Json(ImageStatusResponse {
         pull: pull_state(&key),
         pull_blocked: pull_blocked(&state, &configured),
@@ -344,7 +341,6 @@ pub async fn sandbox_image_status(
         image,
         state: image_state,
         dismissed,
-        checks_enabled: configured.checks_enabled,
         sandbox_in_use,
     })
     .into_response()
@@ -715,7 +711,6 @@ mod tests {
             default_image: "img".into(),
             images: Vec::new(),
             runtime,
-            checks_enabled: true,
             enabled_by_default: false,
             allow_image_pull: true,
             dismissed_digest: None,
@@ -860,7 +855,6 @@ mod tests {
     async fn status_gate_refusals_and_dismissal_without_contacting_a_registry() {
         let _app = crate::session::test_support::isolate_app_dir();
         crate::session::update_config(|c| {
-            c.updates.update_check_mode = crate::session::config::UpdateCheckMode::Off;
             c.sandbox.allow_image_pull = false;
         })
         .unwrap();
@@ -879,10 +873,9 @@ mod tests {
         assert_eq!(code, StatusCode::OK);
         let default_image = crate::session::Config::load_or_warn().sandbox.default_image;
         assert_eq!(body["image"], default_image.as_str());
-        // Checks off: no registry request, and never "current".
+        // No sandbox in use: no registry request, and never "current".
         assert_eq!(body["state"], "unknown");
-        assert_eq!(body["reason"], "checks_off");
-        assert_eq!(body["checks_enabled"], false);
+        assert_eq!(body["reason"], "sandbox_unused");
         assert_eq!(body["sandbox_in_use"], false);
         assert_eq!(body["pull_blocked"], "disabled");
         assert!(

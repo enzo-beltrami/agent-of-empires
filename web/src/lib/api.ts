@@ -647,37 +647,6 @@ export function fetchPluginCommands(): Promise<PluginCommandsResponse | null> {
   return fetchJson<PluginCommandsResponse>("/api/plugins/commands");
 }
 
-/** One plugin's update status (`GET /api/plugins/updates`). An on-demand
- *  network check, kept off the always-on plugin list. `available` is a short
- *  commit for an outdated GitHub source, "modified" for a changed local tree,
- *  or null when current. `error` is set when the check could not run. */
-export interface PluginUpdateStatus {
-  id: string;
-  source: string;
-  current: string;
-  available: string | null;
-  needs_update: boolean;
-  error: string | null;
-}
-
-export type PluginUpdatesResult = { kind: "ok"; updates: PluginUpdateStatus[] } | { kind: "error"; message: string };
-
-/** Check installed plugins for updates. Returns a discriminated result (like
- *  discoverPlugins) so this explicit action can report why it failed instead of
- *  silently doing nothing on an HTTP/network/JSON error. */
-export async function fetchPluginUpdates(): Promise<PluginUpdatesResult> {
-  try {
-    return await kindRequest(
-      "/api/plugins/updates",
-      { headers: ACCEPT_JSON },
-      (p) => (Array.isArray(p.updates) ? { kind: "ok" as const, updates: p.updates as PluginUpdateStatus[] } : null),
-      "Update check failed",
-    );
-  } catch {
-    return { kind: "error", message: "Network error." };
-  }
-}
-
 /** One discovery result (`GET /api/plugins/discover`). Repo-level: the dashboard
  *  has no install path, so it shows `install_command` for the user to copy. */
 export interface PluginDiscoveryResult {
@@ -756,108 +725,15 @@ export async function fetchPluginDetails(source: string): Promise<PluginDetailRe
   }
 }
 
-/** One UI slot disclosed in an update consent (mirrors the engine `UiView`). */
+/** One UI slot disclosed in an install consent (mirrors the engine `UiView`). */
 export interface PluginUpdateUiView {
   slot: string;
   id: string;
 }
 
-/** One changelog item between the installed and target version: a release's
- *  notes, or a single commit subject. Mirrors Rust `ChangelogEntry`. */
-export type PluginChangelogEntry =
-  | { kind: "release"; tag: string; body: string | null; published_at: string | null }
-  | { kind: "commit"; sha: string; subject: string; url: string | null };
-
-/** What changed between the installed version and the update target, mirroring
- *  Rust `UpdateChangelog`. `unavailable_reason` distinguishes "could not load"
- *  from "no entries" (both leave `entries` empty); `truncated` flags that more
- *  existed than are shown. */
-export interface PluginUpdateChangelog {
-  entries: PluginChangelogEntry[];
-  truncated: boolean;
-  unavailable_reason: string | null;
-  /** GitHub URL for the full history (releases page or compare view), shown when
-   *  the changelog is truncated. */
-  more_url: string | null;
-}
-
 export interface PluginAgentIntegration {
   tool: string;
   command?: string;
-}
-
-/** Structured disclosure for a capability-expanding plugin update, mirroring the
- *  Rust `UpdateConsent`. Drives the consent modal. */
-export interface PluginUpdateConsent {
-  id: string;
-  from_version: string;
-  to_version: string;
-  prior_capabilities: string[];
-  new_capabilities: string[];
-  added_capabilities: string[];
-  removed_capabilities: string[];
-  ui: PluginUpdateUiView[];
-  agent_integrations: PluginAgentIntegration[];
-  build_steps: string[];
-  runtime_change: string | null;
-  trust_downgrade: boolean;
-  fingerprint: string;
-  stays_active_if_declined: boolean;
-  changelog: PluginUpdateChangelog;
-}
-
-/** Result of `GET /api/plugins/{id}/update/preview`: a tagged union mirroring the
- *  Rust `UpdatePreview`. */
-export type PluginUpdatePreview =
-  | { kind: "no_update" }
-  | { kind: "safe_update"; to_version: string; fingerprint: string; changelog: PluginUpdateChangelog }
-  | { kind: "consent_required"; consent: PluginUpdateConsent; dismissed: boolean };
-
-export type PluginUpdatePreviewResult =
-  | { kind: "ok"; preview: PluginUpdatePreview }
-  | { kind: "error"; message: string };
-
-/** Validate a preview payload against the discriminated union, so a drifted
- *  server response is rejected rather than passed on: a safe_update must carry a
- *  string fingerprint (else the apply would send no pin) and a consent_required
- *  must carry a consent object (else the modal path would blow up). */
-function isValidPreview(payload: Payload): payload is PluginUpdatePreview {
-  switch (payload.kind) {
-    case "no_update":
-      return true;
-    case "safe_update":
-      return typeof payload.fingerprint === "string";
-    case "consent_required":
-      return typeof payload.consent === "object" && payload.consent !== null;
-    default:
-      return false;
-  }
-}
-
-/** Classify the available update for one installed plugin (no install happens).
- *  When consent is required the payload carries the full disclosure. */
-export async function previewPluginUpdate(id: string): Promise<PluginUpdatePreviewResult> {
-  try {
-    return await kindRequest(
-      `/api/plugins/${encodeURIComponent(id)}/update/preview`,
-      { headers: ACCEPT_JSON },
-      (p) => (isValidPreview(p) ? { kind: "ok" as const, preview: p } : null),
-      "Update preview failed",
-    );
-  } catch {
-    return { kind: "error", message: "Network error." };
-  }
-}
-
-/** Start a host-side update job, pinned to the fingerprint the user saw. The
- *  update runs as a job (like install/uninstall) so its build is observable;
- *  poll the returned job id with `fetchPluginJob`. A fingerprint mismatch (the
- *  remote moved since the preview) surfaces as a failed job, which the UI
- *  recovers from by re-previewing. */
-export async function applyPluginUpdate(id: string, expectedFingerprint: string | null): Promise<PluginJobStartResult> {
-  return startPluginJob(`/api/plugins/${encodeURIComponent(id)}/update/apply`, {
-    expected_fingerprint: expectedFingerprint,
-  });
 }
 
 /** Structured install disclosure (`POST /api/plugins/install/preview`),
@@ -937,7 +813,7 @@ export type PluginJobState = { state: "running" } | { state: "succeeded" } | { s
 export interface PluginJob {
   job: {
     id: string;
-    kind: "install" | "update" | "uninstall";
+    kind: "install" | "uninstall";
     target: string;
     status: PluginJobState;
     started_at: number;
@@ -970,21 +846,6 @@ export async function fetchPluginJob(jobId: string, tail = 200): Promise<PluginJ
     return { kind: "error", status, message: stringField(payload, "message") ?? `Job status failed (HTTP ${status}).` };
   } catch {
     return { kind: "error", status: 0, message: "Network error." };
-  }
-}
-
-export type PluginDismissResult = { kind: "ok" } | { kind: "error"; message: string };
-
-/** Record an in-app decline of an available update so it stops nagging until the
- *  next version. */
-export async function dismissPluginUpdate(id: string, fingerprint: string): Promise<PluginDismissResult> {
-  try {
-    const res = await fetch(`/api/plugins/${encodeURIComponent(id)}/update/dismiss`, jsonInit("POST", { fingerprint }));
-    if (res.ok) return { kind: "ok" };
-    const payload = (await res.json().catch(() => null)) as Payload | null;
-    return { kind: "error", message: stringField(payload, "message") ?? `Dismiss failed (HTTP ${res.status}).` };
-  } catch {
-    return { kind: "error", message: "Network error." };
   }
 }
 
@@ -1481,41 +1342,6 @@ export function isDebugBuild(about: ServerAbout | null | undefined): boolean {
   if (!about) return false;
   return about.build_flavor === "debug";
 }
-export type UpdateCheckMode = "auto" | "notify" | "off";
-
-/** How the Daemon's own binary was installed. */
-export type InstallMethod = "homebrew" | "release" | "cargo" | "nix" | "unknown";
-
-export interface UpdateStatus {
-  update_check_mode: UpdateCheckMode;
-  current_version: string;
-  latest_version: string | null;
-  update_available: boolean;
-  release_url: string | null;
-  error: string | null;
-  /** Version the user already dismissed the banner for, persisted server-side
-   *  in app_state so the acknowledgement is once-per-account, not per device. */
-  dismissed_version: string | null;
-  /** Absent from an older Daemon; treated as "unknown". */
-  install_method?: InstallMethod;
-  /** What to run on the Daemon's machine to update; absent alongside `install_method`. */
-  update_command?: string;
-}
-
-export function fetchUpdateStatus(): Promise<UpdateStatus | null> {
-  return fetchJson<UpdateStatus>("/api/system/update-status");
-}
-
-/** Persist that the update banner was dismissed for `version`, server-side, so
- *  it stays dismissed across devices (and matches the TUI). Returns true on
- *  success; the banner optimistically hides regardless. */
-export async function dismissUpdate(version: string): Promise<boolean> {
-  try {
-    return await fetchOk("/api/app-state/dismiss-update", jsonInit("POST", { version }));
-  } catch {
-    return false;
-  }
-}
 
 // --- Sandbox image ---
 
@@ -1525,14 +1351,13 @@ export type SandboxImagePull = { state: "idle" | "running" | "done" } | { state:
 export type SandboxImageState =
   | { state: "available"; remote_digest: string }
   | { state: "current" }
-  /** `pinned`, `not_pulled`, `no_local_digest`, `runtime_unavailable`, `unparseable` or `checks_off`: the Daemon can't tell. */
+  /** `pinned`, `not_pulled`, `no_local_digest`, `runtime_unavailable`, `unparseable` or `sandbox_unused`: the Daemon can't tell. */
   | { state: "unknown"; reason: string }
   | { state: "check_failed"; error: string };
 
 export type SandboxImageStatus = SandboxImageState & {
   image: string;
   dismissed: boolean;
-  checks_enabled: boolean;
   sandbox_in_use: boolean;
   pull: SandboxImagePull;
   /** Why the dashboard can't pull; `pull_command` is then what to run instead. */

@@ -10,7 +10,6 @@ export const SECTION_TO_TAB: Record<string, TabId> = {
   sound: "sound",
   tmux: "tmux",
   systemd: "systemd",
-  updates: "updates",
   logging: "logging",
   web: "notifications",
   acp: "structured-view",

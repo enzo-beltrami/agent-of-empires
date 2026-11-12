@@ -403,17 +403,17 @@ mod tests {
 
     #[test]
     fn test_profile_config_serialization_partial() {
-        let config = profile_from(json!({"updates": {"update_check_mode": "off"}}));
+        let config = profile_from(json!({"worktree": {"auto_cleanup": false}}));
         let serialized = toml::to_string_pretty(&config).unwrap();
-        assert!(serialized.contains("[updates]"));
-        assert!(serialized.contains("update_check_mode = \"off\""));
+        assert!(serialized.contains("[worktree]"));
+        assert!(serialized.contains("auto_cleanup = false"));
     }
 
     #[test]
     fn test_profile_config_deserialization() {
         let toml = r#"
-            [updates]
-            update_check_mode = "off"
+            [worktree]
+            auto_cleanup = false
 
             [sandbox]
             enabled_by_default = true
@@ -421,7 +421,7 @@ mod tests {
 
         let config: ProfileConfig = toml::from_str(toml).unwrap();
         let ov = serde_json::to_value(&config).unwrap();
-        assert_eq!(ov["updates"]["update_check_mode"], json!("off"));
+        assert_eq!(ov["worktree"]["auto_cleanup"], json!(false));
         assert_eq!(ov["sandbox"]["enabled_by_default"], json!(true));
     }
 
@@ -431,29 +431,22 @@ mod tests {
         let profile = ProfileConfig::default();
         let merged = merge_configs(global.clone(), &profile);
 
-        assert_eq!(
-            merged.updates.update_check_mode,
-            global.updates.update_check_mode
-        );
+        assert_eq!(merged.worktree.auto_cleanup, global.worktree.auto_cleanup);
         assert_eq!(merged.worktree.enabled, global.worktree.enabled);
     }
 
     #[test]
     fn test_merge_configs_with_overrides() {
-        use crate::session::config::UpdateCheckMode;
         let global = Config::default();
         let profile = profile_from(json!({
-            "updates": {"update_check_mode": "off"},
             "worktree": {"enabled": true},
         }));
 
-        let merged = merge_configs(global, &profile);
+        let merged = merge_configs(global.clone(), &profile);
 
-        assert_eq!(merged.updates.update_check_mode, UpdateCheckMode::Off);
-        // auto_update_plugins should retain the global default since it is
-        // not overridden.
-        assert!(!merged.updates.auto_update_plugins);
         assert!(merged.worktree.enabled);
+        // Fields the profile does not override keep the global value.
+        assert_eq!(merged.worktree.auto_cleanup, global.worktree.auto_cleanup);
     }
 
     #[test]

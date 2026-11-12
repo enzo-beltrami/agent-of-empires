@@ -54,11 +54,9 @@ This document contains the help content for the `aoe` command-line program.
 * [`aoe plugin enable`↴](#aoe-plugin-enable)
 * [`aoe plugin disable`↴](#aoe-plugin-disable)
 * [`aoe plugin install`↴](#aoe-plugin-install)
-* [`aoe plugin update`↴](#aoe-plugin-update)
 * [`aoe plugin uninstall`↴](#aoe-plugin-uninstall)
 * [`aoe plugin hash`↴](#aoe-plugin-hash)
 * [`aoe plugin discover`↴](#aoe-plugin-discover)
-* [`aoe plugin outdated`↴](#aoe-plugin-outdated)
 * [`aoe profile`↴](#aoe-profile)
 * [`aoe profile list`↴](#aoe-profile-list)
 * [`aoe profile create`↴](#aoe-profile-create)
@@ -135,7 +133,6 @@ This document contains the help content for the `aoe` command-line program.
 * [`aoe acp switch-account`↴](#aoe-acp-switch-account)
 * [`aoe acp switch-provider`↴](#aoe-acp-switch-provider)
 * [`aoe uninstall`↴](#aoe-uninstall)
-* [`aoe update`↴](#aoe-update)
 * [`aoe migrate`↴](#aoe-migrate)
 * [`aoe completion`↴](#aoe-completion)
 
@@ -180,7 +177,6 @@ Run `aoe serve` to start the daemon and web dashboard.
 * `url` — Print the URL of a running `aoe serve` daemon
 * `acp` — Manage the ACP structured-view workers (doctor, ps, logs, prompt, approve, ...)
 * `uninstall` — Uninstall Agent of Empires
-* `update` — Update aoe to the latest release
 * `migrate` — Run pending migrations or restore complete original lifecycle authority. Stop the daemon with `aoe serve --stop` first. By default, also move eligible sandbox stores and retry deferred ownership recovery
 * `completion` — Generate shell completions
 
@@ -910,11 +906,9 @@ Manage plugins (list, info, enable, disable, install, update, uninstall)
 * `enable` — Enable a plugin's contributions
 * `disable` — Disable a plugin; its settings stay on disk for re-enabling
 * `install` — Install an external plugin from a `gh:owner/repo[@ref]` slug or a local directory. With no `@ref`, installs the repo's latest release; an explicit `@ref` installs unverified, un-audited code. Community plugins run at your own risk
-* `update` — Update an installed external plugin from its recorded source and restart its worker in a running daemon. Prompts to re-approve capabilities if the update changes the capability set
 * `uninstall` — Uninstall an external plugin, removing its files and capability grant
 * `hash` — Print the deterministic source tree hash for a plugin directory, the value a maintainer pins in the featured index
 * `discover` — Search GitHub's `aoe-plugin` topic for installable plugins
-* `outdated` — List installed external plugins that have an update available
 
 
 
@@ -991,22 +985,6 @@ Install an external plugin from a `gh:owner/repo[@ref]` slug or a local director
 
 
 
-## `aoe plugin update`
-
-Update an installed external plugin from its recorded source and restart its worker in a running daemon. Prompts to re-approve capabilities if the update changes the capability set
-
-**Usage:** `aoe plugin update [OPTIONS] <ID>`
-
-###### **Arguments:**
-
-* `<ID>` — Plugin id
-
-###### **Options:**
-
-* `--yes` — Re-approve a changed capability set without prompting
-
-
-
 ## `aoe plugin uninstall`
 
 Uninstall an external plugin, removing its files and capability grant
@@ -1040,14 +1018,6 @@ Search GitHub's `aoe-plugin` topic for installable plugins
 ###### **Arguments:**
 
 * `<QUERY>` — Optional free-text term to narrow the search
-
-
-
-## `aoe plugin outdated`
-
-List installed external plugins that have an update available
-
-**Usage:** `aoe plugin outdated`
 
 
 
@@ -2119,20 +2089,6 @@ Uninstall Agent of Empires
 * `--keep-tmux-config` — Keep tmux configuration
 * `--dry-run` — Show what would be removed without removing
 * `-y` — Skip confirmation prompts
-
-
-
-## `aoe update`
-
-Update aoe to the latest release
-
-**Usage:** `aoe update [OPTIONS]`
-
-###### **Options:**
-
-* `-y`, `--yes` — Skip confirmation prompt
-* `--check` — Print update status and exit (no install)
-* `--dry-run` — Detect install method and print what would happen, no download
 
 
 

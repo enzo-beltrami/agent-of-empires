@@ -1,8 +1,6 @@
 //! Plugin registry, installation, contributions, discovery, and worker host.
 
 pub mod agent_integration;
-pub mod auto_update;
-pub mod changelog;
 pub mod contributions;
 pub mod discover;
 pub mod featured;
@@ -12,7 +10,6 @@ pub mod integrity;
 pub mod lockfile;
 pub mod registry;
 pub mod source;
-pub mod update_check;
 pub mod view;
 pub mod worker_logs;
 

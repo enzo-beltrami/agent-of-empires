@@ -235,11 +235,9 @@ async fn sensitive_routes_are_blocked() {
         (Method::GET, "/api/plugins/x/icon", ""),
         (Method::GET, "/api/plugins/commands", ""),
         (Method::GET, "/api/plugins/ui-state", ""),
-        (Method::GET, "/api/plugins/updates", ""),
         (Method::GET, "/api/plugins/discover", ""),
         (Method::GET, "/api/plugins/details?source=gh%3Ao%2Fr", ""),
         (Method::GET, "/api/plugins/jobs/job-1", ""),
-        (Method::GET, "/api/plugins/x/update/preview", ""),
         // Import discovery exposes native session titles and paths for every agent.
         (Method::GET, "/api/importable-sessions?agent=claude", ""),
         (Method::GET, "/api/importable-sessions?agent=codex", ""),

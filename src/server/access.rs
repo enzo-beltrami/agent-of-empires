@@ -425,7 +425,6 @@ pub(super) const CITYHALL_MUTATION_ALLOW: &[(&str, &str)] = &[
     ("POST", "/api/presence"),
     // Per-device UI preferences / client log.
     ("PATCH", "/api/app-state/web-ui-state"),
-    ("POST", "/api/app-state/dismiss-update"),
     ("POST", "/api/app-state/tip-seen"),
     ("POST", "/api/app-state/volume-ignores-globs-acknowledged"),
     ("POST", "/api/app-state/web-tour-seen"),
@@ -506,8 +505,6 @@ pub(super) const CITYHALL_MUTATION_DENY: &[(&str, &str)] = &[
     ("POST", "/api/plugins/{id}/enabled"),
     ("POST", "/api/plugins/{id}/worker/restart"),
     ("POST", "/api/plugins/{id}/uninstall"),
-    ("POST", "/api/plugins/{id}/update/apply"),
-    ("POST", "/api/plugins/{id}/update/dismiss"),
     ("POST", "/api/plugins/commands/{fqid}/invoke"),
     // ACP agent / worker lifecycle + config.
     ("DELETE", "/api/sessions/{id}/acp"),

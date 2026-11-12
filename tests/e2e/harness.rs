@@ -365,7 +365,7 @@ impl TuiTestHarness {
             }
         }
 
-        // Pre-seed config.toml to skip update checks.
+        // Pre-seed config.toml.
         // On Linux and macOS the app uses $XDG_CONFIG_HOME/agent-of-empires[-dev]/
         // (set below); other platforms use $HOME/.agent-of-empires[-dev]/. The
         // `-dev` suffix kicks in on debug builds, which is what `cargo test`
@@ -373,10 +373,7 @@ impl TuiTestHarness {
         let config_dir = app_dir_in(home_dir.path());
         std::fs::create_dir_all(&config_dir).expect("create config dir");
         let config_content = format!(
-            r#"[updates]
-update_check_mode = "off"
-
-[acp]
+            r#"[acp]
 structured_view = "off"
 
 {SYSTEMD_OFF}

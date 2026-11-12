@@ -27,7 +27,6 @@ function status(overrides: Partial<SandboxImageStatus> = {}): SandboxImageStatus
     state: "available",
     remote_digest: "sha256:new",
     dismissed: false,
-    checks_enabled: true,
     sandbox_in_use: true,
     pull: { state: "idle" },
     pull_blocked: null,
@@ -66,11 +65,10 @@ afterEach(() => {
 });
 
 describe("SandboxImageBanner", () => {
-  it("shows only an undismissed available update, and only when checks are on and a Sandbox is in use", async () => {
+  it("shows only an undismissed available update, and only when a Sandbox is in use", async () => {
     const cases: [string, Partial<SandboxImageStatus>, string | null][] = [
       ["available", {}, "Sandbox image update available"],
       ["no Sandbox in use", { sandbox_in_use: false }, null],
-      ["update checks off", { checks_enabled: false }, null],
       ["dismissed for this digest", { dismissed: true }, null],
       ["current", { state: "current" } as Partial<SandboxImageStatus>, null],
       // The Daemon can't tell, so the banner says nothing rather than "up to date".

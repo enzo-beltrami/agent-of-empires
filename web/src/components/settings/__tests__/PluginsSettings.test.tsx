@@ -3,43 +3,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
-import type {
-  PluginInstallPreviewResult,
-  PluginJobResult,
-  PluginListResponse,
-  PluginUpdateChangelog,
-  PluginUpdatePreviewResult,
-  PluginUpdateStatus,
-  PluginView,
-} from "../../../lib/api";
+import type { PluginInstallPreviewResult, PluginJobResult, PluginListResponse, PluginView } from "../../../lib/api";
 
 const api = vi.hoisted(() => ({
   fetchPlugins: vi.fn(),
   setPluginEnabled: vi.fn(),
-  fetchPluginUpdates: vi.fn(),
   discoverPlugins: vi.fn(),
   fetchPluginDetails: vi.fn(),
-  previewPluginUpdate: vi.fn(),
-  applyPluginUpdate: vi.fn(),
-  dismissPluginUpdate: vi.fn(),
   previewPluginInstall: vi.fn(),
   startPluginInstall: vi.fn(),
   startPluginUninstall: vi.fn(),
   fetchPluginJob: vi.fn(),
 }));
-const reportInfo = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/api", () => api);
-vi.mock("../../../lib/toastBus", () => ({ reportInfo }));
 
 import { PluginsSettings } from "../PluginsSettings";
-
-const changelog = (over: Partial<PluginUpdateChangelog> = {}): PluginUpdateChangelog => ({
-  entries: [],
-  truncated: false,
-  unavailable_reason: null,
-  more_url: null,
-  ...over,
-});
 
 const STATUS: PluginView = {
   id: "aoe.status",
@@ -122,15 +100,12 @@ const WIDGET = {
 
 beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset());
-  reportInfo.mockReset();
   api.fetchPlugins.mockResolvedValue(list());
-  api.fetchPluginUpdates.mockResolvedValue({ kind: "ok", updates: [] });
   api.discoverPlugins.mockResolvedValue({ kind: "ok", results: [WIDGET] });
   api.fetchPluginDetails.mockResolvedValue({
     kind: "ok",
     detail: { source: "gh:example/plugin", manifest: null, manifest_error: null, release_tags: [] },
   });
-  api.applyPluginUpdate.mockResolvedValue({ kind: "ok", jobId: "job1" });
   api.startPluginInstall.mockResolvedValue({ kind: "ok", jobId: "job1" });
   api.startPluginUninstall.mockResolvedValue({ kind: "ok", jobId: "job1" });
   api.fetchPluginJob.mockResolvedValue(jobResult("succeeded", "done"));
@@ -213,7 +188,6 @@ describe("installed plugins", () => {
     expect(api.setPluginEnabled).toHaveBeenCalledTimes(1);
     expect(api.setPluginEnabled).toHaveBeenLastCalledWith("aoe.web", false);
     expect(screen.queryByTestId("web-dashboard-off-dialog")).toBeNull();
-    expect(reportInfo).not.toHaveBeenCalled();
 
     // Turning it back on needs no confirm.
     api.setPluginEnabled.mockResolvedValue({ kind: "ok", data: list([web]) });
@@ -303,213 +277,6 @@ describe("detail modal", () => {
     await waitFor(() => expect(body.queryByTestId("plugin-detail-lightbox")).toBeNull());
     fireEvent.error(imgs[0]!);
     expect(imgs[0]!.closest("figure")!.className).toContain("hidden");
-  });
-});
-
-describe("updates", () => {
-  const outdated = (status: Partial<PluginUpdateStatus>) =>
-    api.fetchPluginUpdates.mockResolvedValue({
-      kind: "ok",
-      updates: [
-        {
-          id: "example.plugin",
-          source: "gh:example/plugin",
-          current: "abc1234",
-          available: "def5678",
-          needs_update: true,
-          error: null,
-          ...status,
-        },
-      ],
-    });
-  const consentPreview = (over: Record<string, unknown> = {}): PluginUpdatePreviewResult =>
-    ({
-      kind: "ok",
-      preview: {
-        kind: "consent_required",
-        dismissed: false,
-        consent: {
-          id: "example.plugin",
-          from_version: "0.1.0",
-          to_version: "0.2.0",
-          prior_capabilities: ["net"],
-          new_capabilities: ["net", "fs.read"],
-          added_capabilities: ["fs.read"],
-          removed_capabilities: [],
-          ui: [],
-          build_steps: ["sh build.sh"],
-          agent_integrations: [{ tool: "session-agent", command: "TOKEN=local agent --flag" }],
-          runtime_change: null,
-          trust_downgrade: false,
-          fingerprint: "treeB||community",
-          stays_active_if_declined: true,
-          changelog: changelog({
-            entries: [{ kind: "release", tag: "v0.2.0", body: "Added a thing.", published_at: null }],
-          }),
-          ...over,
-        },
-      },
-    }) as PluginUpdatePreviewResult;
-  const safePreview = (log = changelog()): PluginUpdatePreviewResult => ({
-    kind: "ok",
-    preview: { kind: "safe_update", to_version: "0.2.0", fingerprint: "treeC||community", changelog: log },
-  });
-
-  async function openReview(preview: PluginUpdatePreviewResult | { kind: "error"; message: string }) {
-    outdated({});
-    api.previewPluginUpdate.mockResolvedValue(preview);
-    renderWith();
-    await click("plugins-check-updates");
-    await click("plugin-update-example.plugin");
-  }
-
-  it("Check for updates badges an outdated plugin with its versions", async () => {
-    outdated({});
-    renderWith();
-    await click("plugins-check-updates");
-    await screen.findByTestId("plugin-update-available-example.plugin");
-    expect(screen.getByTestId("plugin-example.plugin").textContent).toContain("abc1234 → def5678");
-  });
-
-  it("Check for updates surfaces a per-plugin error", async () => {
-    outdated({ current: "", available: null, needs_update: false, error: "git not found" });
-    renderWith();
-    await click("plugins-check-updates");
-    expect(await screen.findByText(/Update check failed: git not found/)).toBeTruthy();
-  });
-
-  it("a consent-required update discloses the new access and changelog, then applies pinned to its fingerprint", async () => {
-    await openReview(consentPreview());
-    await waitFor(() => expect(api.previewPluginUpdate).toHaveBeenCalledWith("example.plugin"));
-    expect((await screen.findByTestId("plugin-update-added-caps")).textContent).toContain("fs.read");
-    expect(screen.getByTestId("plugin-update-build-steps").textContent).toContain("sh build.sh");
-    expect(screen.getByTestId("plugin-update-agent-integrations").textContent).toContain(
-      "session-agent: TOKEN=local agent --flag",
-    );
-    expect(screen.getByTestId("plugin-update-changelog").textContent).toContain("v0.2.0");
-    await click("plugin-update-approve");
-    await waitFor(() => expect(api.applyPluginUpdate).toHaveBeenCalledWith("example.plugin", "treeB||community"));
-    await waitFor(() => expect(screen.queryByTestId("plugin-update-consent-modal")).toBeNull());
-    await screen.findByTestId("plugin-job-modal");
-  });
-  it("discloses plugin agent commands when they are the only update access", async () => {
-    await openReview(
-      consentPreview({
-        prior_capabilities: [],
-        new_capabilities: [],
-        added_capabilities: [],
-        removed_capabilities: [],
-        ui: [],
-        build_steps: [],
-        agent_integrations: [{ tool: "session-agent", command: "TOKEN=local agent --flag" }],
-      }),
-    );
-    expect((await screen.findByTestId("plugin-update-agent-integrations")).textContent).toContain(
-      "session-agent: TOKEN=local agent --flag",
-    );
-  });
-  it("shows a fallback when an update agent integration declares no command, and approves", async () => {
-    await openReview(
-      consentPreview({
-        prior_capabilities: [],
-        new_capabilities: [],
-        added_capabilities: [],
-        removed_capabilities: [],
-        ui: [],
-        build_steps: [],
-        agent_integrations: [{ tool: "session-agent" }],
-      }),
-    );
-    expect((await screen.findByTestId("plugin-update-agent-integrations")).textContent).toContain(
-      "session-agent: No launch command declared",
-    );
-    await click("plugin-update-approve");
-    await waitFor(() => expect(api.applyPluginUpdate).toHaveBeenCalledWith("example.plugin", "treeB||community"));
-  });
-
-  it("renders removed caps, runtime change, trust downgrade, and an empty changelog", async () => {
-    await openReview(
-      consentPreview({
-        added_capabilities: [],
-        removed_capabilities: ["fs.read"],
-        ui: [{ slot: "status-bar", id: "s" }],
-        build_steps: [],
-        runtime_change: "the worker is now a downloaded release binary",
-        trust_downgrade: true,
-        changelog: changelog(),
-      }),
-    );
-    expect((await screen.findByTestId("plugin-update-runtime-change")).textContent).toContain("release binary");
-    await screen.findByTestId("plugin-update-trust-downgrade");
-    await screen.findByTestId("plugin-update-changelog-empty");
-  });
-
-  it.each([
-    [{ kind: "ok" }, false],
-    [{ kind: "error", message: "Dashboard is read-only." }, true],
-  ])("declining with %j never applies; a failure keeps the modal and badge", async (result, failed) => {
-    api.dismissPluginUpdate.mockResolvedValue(result);
-    await openReview(consentPreview());
-    await click("plugin-update-decline");
-    await waitFor(() => expect(api.dismissPluginUpdate).toHaveBeenCalledWith("example.plugin", "treeB||community"));
-    expect(api.applyPluginUpdate).not.toHaveBeenCalled();
-    if (failed) {
-      expect((await screen.findByTestId("plugin-update-consent-error")).textContent).toContain("read-only");
-      expect(screen.getByTestId("plugin-update-consent-modal")).toBeTruthy();
-      await screen.findByTestId("plugin-update-available-example.plugin");
-    } else {
-      await waitFor(() => expect(screen.queryByTestId("plugin-update-consent-modal")).toBeNull());
-    }
-  });
-
-  it("a safe update reviews a truncated changelog before applying", async () => {
-    await openReview(
-      safePreview(
-        changelog({
-          entries: [{ kind: "commit", sha: "abcdef1234", subject: "fix: a bug", url: null }],
-          truncated: true,
-          more_url: "https://github.com/example/plugin/compare/aaa...bbb",
-        }),
-      ),
-    );
-    expect((await screen.findByTestId("plugin-update-changelog")).textContent).toContain("fix: a bug");
-    expect(screen.getByTestId("plugin-update-changelog-more").getAttribute("href")).toBe(
-      "https://github.com/example/plugin/compare/aaa...bbb",
-    );
-    expect(screen.queryByTestId("plugin-update-added-caps")).toBeNull();
-    expect(api.applyPluginUpdate).not.toHaveBeenCalled();
-    await click("plugin-update-approve");
-    await waitFor(() => expect(api.applyPluginUpdate).toHaveBeenCalledWith("example.plugin", "treeC||community"));
-    await screen.findByTestId("plugin-job-modal");
-  });
-
-  it("an apply error stays in the open review modal", async () => {
-    api.applyPluginUpdate.mockResolvedValue({ kind: "error", message: "changed since it was shown" });
-    await openReview(consentPreview());
-    await click("plugin-update-approve");
-    expect((await screen.findByTestId("plugin-update-consent-error")).textContent).toContain(
-      "changed since it was shown",
-    );
-  });
-
-  it("no update reports up to date and clears the badge", async () => {
-    await openReview({ kind: "ok", preview: { kind: "no_update" } });
-    await waitFor(() => expect(reportInfo).toHaveBeenCalled());
-    await waitFor(() => expect(screen.queryByTestId("plugin-update-available-example.plugin")).toBeNull());
-  });
-
-  it("surfaces a preview error inline", async () => {
-    await openReview({ kind: "error", message: "no published release" });
-    expect(await screen.findByText("no published release")).toBeTruthy();
-  });
-
-  it("does not close while an apply is in flight", async () => {
-    api.applyPluginUpdate.mockReturnValue(new Promise(() => {}));
-    await openReview(consentPreview());
-    await click("plugin-update-approve");
-    fireEvent.keyDown(window, { key: "Escape" });
-    await click("plugin-update-consent-close");
-    expect(screen.queryByTestId("plugin-update-consent-modal")).not.toBeNull();
   });
 });
 

@@ -155,7 +155,7 @@ impl Fixture {
         }
         std::fs::write(
             app_dir.join("config.toml"),
-            format!("default_profile = \"{PROFILE}\"\n\n[updates]\nupdate_check_mode = \"off\"\n[systemd]\nenabled = false\n"),
+            format!("default_profile = \"{PROFILE}\"\n\n[systemd]\nenabled = false\n"),
         )
         .expect("config");
         let base = home.clone();

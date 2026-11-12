@@ -64,7 +64,6 @@ export const HOST_STATE_VARS = new Set([
   "AOE_SESSION_SOURCE",
   // Host endpoints for the daemon's outbound calls.
   "AOE_UPDATE_API_BASE",
-  "AOE_UPDATE_BASE_URL",
   // The session the runner was launched from, and its agent process and capture markers.
   "AOE_AGENT_BIN",
   "AOE_AGENT_PID",

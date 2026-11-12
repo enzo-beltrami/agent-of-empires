@@ -1206,22 +1206,6 @@ pub(crate) async fn start_server(
         host.start(&crate::plugin::registry()).await;
     }
 
-    // Opt-in clean-only plugin auto-update sweep (off by default).
-    let update_notifier = state
-        .plugin_host
-        .clone()
-        .map(|h| h as std::sync::Arc<dyn crate::plugin::auto_update::UpdateNotifier>);
-    state
-        .runtime
-        .work
-        .spawn("server.plugin_auto_update", async move {
-            crate::plugin::auto_update::run_if_enabled(
-                &crate::session::Config::load_or_warn(),
-                update_notifier,
-            )
-            .await;
-        });
-
     rate_limiter.spawn_cleanup_task(state.shutdown.clone());
     login_manager.spawn_cleanup_task(state.shutdown.clone());
 

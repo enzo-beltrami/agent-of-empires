@@ -354,9 +354,6 @@ pub const INIT_TEMPLATE: &str = r#"# Agent of Empires - Repository Configuration
 
 # [worktree]
 # auto_cleanup = true
-
-# [updates]
-# update_check_mode = "off"
 "#;
 
 #[cfg(test)]
@@ -535,7 +532,6 @@ mod tests {
             ("sandbox", "cap_drop", false),
             ("sandbox", "security_opt", false),
             ("sandbox", "extra_run_args", false),
-            ("updates", "auto_update_plugins", false),
             ("acp", "auto_approve", false),
             ("tmux", "status_bar", false),
             ("tmux", "mouse", false),
@@ -550,7 +546,6 @@ mod tests {
             ("sandbox", "not_a_real_field", false),
             ("session", "not_a_real_field", false),
             ("worktree", "not_a_real_field", false),
-            ("updates", "not_a_real_field", false),
         ];
         for (section, field, expected) in cases {
             assert_eq!(
@@ -642,7 +637,6 @@ mod tests {
                 "workspace_path_template": "/tmp/{branch}",
                 "auto_cleanup": false,
             },
-            "updates": { "auto_update_plugins": true },
         }));
         let mut base = Config::default();
         base.worktree.enabled = false;
@@ -655,11 +649,9 @@ mod tests {
         assert_eq!(merged.worktree.bare_repo_path_template, "../{branch}");
         assert_eq!(merged.worktree.workspace_path_template, "../ws/{branch}");
         assert!(!merged.worktree.auto_cleanup);
-        assert!(!merged.updates.auto_update_plugins);
         assert_eq!(
             rejected(&repo),
             vec![
-                "updates.auto_update_plugins",
                 "worktree.bare_repo_path_template",
                 "worktree.enabled",
                 "worktree.path_template",

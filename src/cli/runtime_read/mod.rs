@@ -286,26 +286,11 @@ async fn finish(
     source: &ReadRequestSource,
 ) -> ReadOutcome {
     match result {
-        Ok(projection) => {
-            let notice = if projection.session_table {
-                crate::update::update_notice().await
-            } else {
-                None
-            };
-            let stderr = match (projection.stderr, notice) {
-                (Some(mut diagnostics), Some(notice)) => {
-                    diagnostics.push_str(&notice);
-                    Some(diagnostics)
-                }
-                (diagnostics, None) => diagnostics,
-                (None, notice) => notice,
-            };
-            ReadOutcome {
-                stdout: Some(projection.stdout),
-                stderr,
-                exit: projection.exit,
-            }
-        }
+        Ok(projection) => ReadOutcome {
+            stdout: Some(projection.stdout),
+            stderr: projection.stderr,
+            exit: projection.exit,
+        },
         Err(mut error) => {
             if error.exact.is_none()
                 && source.explicit_url.is_none()
@@ -1035,7 +1020,6 @@ mod tests {
             let deadline = Instant::now() + CONNECTION_BUDGET;
             let projection = render::Projection {
                 stdout: "rows\n".into(),
-                session_table: false,
                 stderr: None,
                 exit: 0,
             };

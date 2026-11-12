@@ -56,10 +56,10 @@ pub use crate::status_hooks::StatusHookConfig;
 pub(crate) use anchored_fs::AnchoredDir;
 pub(crate) use capture::is_valid_session_id;
 pub use config::{
-    get_update_settings, load_config, update_app_state, update_config, validate_snooze_duration,
-    AgentRuntimeConfig, CapabilityGrant, Config, ContainerRuntimeName, DefaultTerminalMode,
-    GroupByMode, PluginConfig, RowTagMode, SandboxConfig, SessionConfig, ThemeConfig,
-    TmuxSettingMode, UpdatesConfig, VolumeIgnoresStrategy, WorktreeConfig,
+    load_config, update_app_state, update_config, validate_snooze_duration, AgentRuntimeConfig,
+    CapabilityGrant, Config, ContainerRuntimeName, DefaultTerminalMode, GroupByMode, PluginConfig,
+    RowTagMode, SandboxConfig, SessionConfig, ThemeConfig, TmuxSettingMode, VolumeIgnoresStrategy,
+    WorktreeConfig,
 };
 pub(crate) use environment::user_shell;
 pub use environment::{validate_env_entries, validate_env_entry};

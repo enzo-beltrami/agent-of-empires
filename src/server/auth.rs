@@ -1208,10 +1208,9 @@ mod tests {
             (Method::PATCH, "/api/projects/myproj"),
             (Method::POST, "/api/push/subscribe"),
             (Method::POST, "/api/push/unsubscribe"),
-            // Cosmetic UI state and the update banner grant no capability; the
-            // handlers still enforce read_only.
+            // Cosmetic UI state grants no capability; the handlers still
+            // enforce read_only.
             (Method::POST, "/api/app-state/web-tour-seen"),
-            (Method::POST, "/api/app-state/dismiss-update"),
             (Method::PATCH, "/api/app-state/web-ui-state"),
             // Read-only GETs, even on settings and profile paths.
             (Method::GET, "/api/settings"),

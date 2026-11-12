@@ -236,12 +236,7 @@ async fn a_served_read_still_runs_the_shared_preflight() {
     let xdg = home.join(".config");
     let app_dir = xdg.join(APP_DIR_NAME_XDG);
     std::fs::create_dir_all(&app_dir).expect("app dir");
-    std::fs::write(
-        app_dir.join("config.toml"),
-        // Disable update checks while exercising unknown-key diagnostics.
-        "not_a_real_key = 3\n\n[updates]\nupdate_check_mode = \"off\"\n",
-    )
-    .expect("config");
+    std::fs::write(app_dir.join("config.toml"), "not_a_real_key = 3\n").expect("config");
 
     let state =
         build_test_app_state_with_policy(Vec::new(), hosts(), Vec::new(), Some(TOKEN.to_string()));

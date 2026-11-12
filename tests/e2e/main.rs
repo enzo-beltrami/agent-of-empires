@@ -53,4 +53,3 @@ mod settings;
 #[cfg(target_os = "linux")]
 mod systemd_scope;
 mod tool_sessions;
-mod update_command;

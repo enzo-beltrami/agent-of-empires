@@ -99,25 +99,10 @@ test("skills panel adopts, edits, creates, and deletes skills", async ({ page, s
       writeFileSync(join(skill, "SKILL.md"), original);
     },
   });
-  // #3263: the update banner is also role=status, so force it on to keep status queries honest.
-  await page.route("**/api/system/update-status", (route) =>
-    route.fulfill({
-      json: {
-        update_check_mode: "notify",
-        current_version: "0.0.1",
-        latest_version: "99.0.0",
-        update_available: true,
-        release_url: null,
-        error: null,
-        dismissed_version: null,
-      },
-    }),
-  );
   const notice = (text: string) => page.getByRole("status").filter({ hasText: text });
   const content = page.getByLabel("SKILL.md content");
 
   await page.goto(`${serve.baseUrl}/settings/skills`);
-  await expect(page.getByRole("status", { name: /^Update available/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Skills Library" })).toBeVisible();
   // Anchored: the "Preview" toggle also contains "review".
   await page.getByRole("button", { name: /^review/i }).click();

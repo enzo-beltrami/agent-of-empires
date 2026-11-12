@@ -315,7 +315,6 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
             post(api::invoke_plugin_command).layer(read_only.clone()),
         )
         .route("/api/plugins/ui-state", get(api::plugin_ui_state))
-        .route("/api/plugins/updates", get(api::plugin_updates))
         .route("/api/plugins/discover", get(api::plugin_discover))
         .route("/api/plugins/details", get(api::plugin_details))
         .route(
@@ -346,22 +345,9 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
         )
         .route("/api/plugins/jobs/{job_id}", get(api::plugin_job_status))
         .route(
-            "/api/plugins/{id}/update/preview",
-            get(api::plugin_update_preview),
-        )
-        .route(
-            "/api/plugins/{id}/update/apply",
-            post(api::apply_plugin_update).layer(read_only.clone()),
-        )
-        .route(
-            "/api/plugins/{id}/update/dismiss",
-            post(api::dismiss_plugin_update).layer(read_only.clone()),
-        )
-        .route(
             "/api/app-state/web-tour-seen",
             post(api::mark_web_tour_seen),
         )
-        .route("/api/app-state/dismiss-update", post(api::dismiss_update))
         .route(
             "/api/app-state/web-ui-state",
             get(api::get_web_ui_state).patch(api::patch_web_ui_state),
@@ -425,8 +411,6 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/devices", get(login::devices_handler))
         // About (version, auth status, read-only state)
         .route("/api/about", get(api::get_about))
-        // Update status (latest release, available flag)
-        .route("/api/system/update-status", get(api::get_update_status))
         .route(
             "/api/log-level",
             get(api::get_log_level).patch(api::patch_log_level),

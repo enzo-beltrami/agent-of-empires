@@ -53,7 +53,6 @@ const skill = {
   provenance: { kind: "aoe-managed" },
   content: "",
 };
-const preview = { kind: "consent_required", dismissed: false, consent: { id: "p" } };
 
 describe("project container override serialization", () => {
   it.each([true, false, undefined])("serializes %s without turning inherit into false", async (override) => {
@@ -166,12 +165,6 @@ const requestCases: RequestCase[] = [
     "GET /api/about",
     () => api.fetchAbout(),
     { respond: json({ build_flavor: "debug" }), result: { build_flavor: "debug" } },
-  ],
-  ["GET /api/system/update-status", () => api.fetchUpdateStatus()],
-  [
-    "POST /api/app-state/dismiss-update",
-    () => api.dismissUpdate("1.2.3"),
-    { body: { version: "1.2.3" }, result: true },
   ],
   ["POST /api/app-state/web-tour-seen", () => api.markWebTourSeen(), { result: true }],
   ["GET /api/git/branches?path=%2Frepo", () => api.fetchBranches("/repo")],
@@ -596,11 +589,6 @@ const requestCases: RequestCase[] = [
     { body: { enabled: false }, respond: json(plugins), result: { kind: "ok", data: plugins } },
   ],
   [
-    "GET /api/plugins/updates",
-    () => api.fetchPluginUpdates(),
-    { respond: json({ updates: [] }), result: { kind: "ok", updates: [] } },
-  ],
-  [
     "GET /api/plugins/discover?q=foo",
     () => api.discoverPlugins(" foo "),
     { respond: json({ results: [] }), result: { kind: "ok", results: [] } },
@@ -612,26 +600,12 @@ const requestCases: RequestCase[] = [
     { respond: json({ source: "gh:a/b" }), result: { kind: "ok", detail: { source: "gh:a/b" } } },
   ],
   [
-    "GET /api/plugins/acme.plugin/update/preview",
-    () => api.previewPluginUpdate("acme.plugin"),
-    { respond: json(preview), result: { kind: "ok", preview } },
-  ],
-  [
     "POST /api/plugins/install/preview",
     () => api.previewPluginInstall("gh:a/b"),
     {
       body: { source: "gh:a/b" },
       respond: json({ fingerprint: "f" }),
       result: { kind: "ok", consent: { fingerprint: "f" } },
-    },
-  ],
-  [
-    "POST /api/plugins/acme.plugin/update/apply",
-    () => api.applyPluginUpdate("acme.plugin", "fp"),
-    {
-      body: { expected_fingerprint: "fp" },
-      respond: json({ job_id: "job1" }, 202),
-      result: { kind: "ok", jobId: "job1" },
     },
   ],
   [
@@ -648,11 +622,6 @@ const requestCases: RequestCase[] = [
     "GET /api/plugins/jobs/j%2F1?tail=200",
     () => api.fetchPluginJob("j/1"),
     { respond: json({ job: { id: "j" } }), result: { kind: "ok", job: { job: { id: "j" } } } },
-  ],
-  [
-    "POST /api/plugins/p/update/dismiss",
-    () => api.dismissPluginUpdate("p", "fp"),
-    { body: { fingerprint: "fp" }, result: { kind: "ok" } },
   ],
   ["POST /api/sandbox/image-pull", () => api.pullSandboxImage(), { result: { ok: true } }],
   // A refusal carries the Daemon's reason for the banner to show.
@@ -1426,14 +1395,10 @@ it("skill mutations keep the status and message", async () => {
 
 describe("plugin results", () => {
   const cases: [string, () => Promise<unknown>, string, unknown][] = [
-    ["fetchPluginUpdates", () => api.fetchPluginUpdates(), "Update check failed (HTTP 500).", {}],
     ["discoverPlugins", () => api.discoverPlugins("q"), "Discovery failed (HTTP 500).", {}],
     ["fetchPluginDetails", () => api.fetchPluginDetails("s"), "Details failed (HTTP 500).", {}],
-    ["previewPluginUpdate", () => api.previewPluginUpdate("p"), "Update preview failed (HTTP 500).", { kind: "bogus" }],
     ["previewPluginInstall", () => api.previewPluginInstall("s"), "Install preview failed (HTTP 500).", {}],
-    ["applyPluginUpdate", () => api.applyPluginUpdate("p", null), "Request failed (HTTP 500).", { nope: true }],
     ["setPluginEnabled", () => api.setPluginEnabled("p", true), "Failed to enable plugin (500).", { nope: true }],
-    ["dismissPluginUpdate", () => api.dismissPluginUpdate("p", "f"), "Dismiss failed (HTTP 500).", undefined],
   ];
 
   it.each(cases)("%s maps failures to an error message", async (_name, call, statusMessage, malformed) => {
@@ -1447,19 +1412,6 @@ describe("plugin results", () => {
       fetchSpy.mockResolvedValueOnce(json(malformed));
       expect(await call()).toMatchObject({ kind: "error" });
     }
-  });
-
-  it("previewPluginUpdate rejects payloads missing per-kind fields", async () => {
-    for (const bad of [
-      { kind: "safe_update", to_version: "2" },
-      { kind: "consent_required", dismissed: false },
-    ]) {
-      fetchSpy.mockResolvedValueOnce(json(bad));
-      expect((await api.previewPluginUpdate("p")).kind).toBe("error");
-    }
-    const noUpdate = { kind: "no_update" };
-    fetchSpy.mockResolvedValueOnce(json(noUpdate));
-    expect(await api.previewPluginUpdate("p")).toEqual({ kind: "ok", preview: noUpdate });
   });
 
   it("fetchPluginJob keeps the HTTP status on failure", async () => {
@@ -1638,7 +1590,6 @@ describe("header-complete operations", () => {
     ["terminal", () => api.ensureTerminal("s1"), { ok: true }],
     ["summary", () => api.summarizeSession("s1"), { ok: true }],
     ["smart rename", () => api.smartRenameSession("s1"), { ok: true }],
-    ["dismiss plugin update", () => api.dismissPluginUpdate("p", "fingerprint"), { kind: "ok" }],
     ["refused plugin action", () => api.invokePluginAction("p.action", "s1"), null, 403],
   ] as const)("settles %s without waiting for an open response body", async (_name, call, expected, status = 200) => {
     let controller!: ReadableStreamDefaultController<Uint8Array>;

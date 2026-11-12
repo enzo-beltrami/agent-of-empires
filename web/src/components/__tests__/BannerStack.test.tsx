@@ -3,17 +3,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import type { ServerAbout, UpdateStatus } from "../../lib/api";
+import type { ServerAbout } from "../../lib/api";
 import type { PushHealth } from "../../lib/pushHealth";
 import { setServerDown } from "../../lib/connectionState";
 import type { ConnectionBannerState } from "../../hooks/useConnectionBanner";
 
-const fetchUpdateStatus = vi.fn();
 const fetchAbout = vi.fn();
 vi.mock("../../lib/api", () => ({
-  fetchUpdateStatus: (...args: unknown[]) => fetchUpdateStatus(...args),
   fetchAbout: (...args: unknown[]) => fetchAbout(...args),
-  dismissUpdate: () => Promise.resolve(true),
   fetchSandboxImageStatus: () => Promise.resolve(null),
 }));
 
@@ -26,7 +23,6 @@ vi.mock("../../hooks/usePushSubscription", () => ({
 let forced: {
   connection: ConnectionBannerState | null;
   dashboard: boolean;
-  update: boolean;
   sandbox?: boolean;
 } | null = null;
 vi.mock("../../hooks/useConnectionBanner", async (importOriginal) => {
@@ -40,15 +36,6 @@ vi.mock("../../hooks/useDashboardUpdate", async (importOriginal) => {
     useDashboardUpdate: () => (forced ? (forced.dashboard ? "1.22.3" : null) : mod.useDashboardUpdate()),
   };
 });
-vi.mock("../../hooks/useUpdateBanner", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../../hooks/useUpdateBanner")>();
-  return {
-    ...mod,
-    useUpdateBanner: () =>
-      forced ? (forced.update ? { status: status(), dismiss: () => {} } : null) : mod.useUpdateBanner(),
-  };
-});
-
 vi.mock("../../hooks/useSandboxImageBanner", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../../hooks/useSandboxImageBanner")>();
   return {
@@ -64,19 +51,6 @@ vi.mock("../../hooks/useSandboxImageBanner", async (importOriginal) => {
 
 import { BannerStack } from "../BannerStack";
 
-function status(overrides?: Partial<UpdateStatus>): UpdateStatus {
-  return {
-    update_check_mode: "notify",
-    current_version: "1.0.0",
-    latest_version: "1.1.0",
-    update_available: true,
-    release_url: null,
-    error: null,
-    dismissed_version: null,
-    ...overrides,
-  };
-}
-
 function about(webBuildId: string): ServerAbout {
   return { web_build_id: webBuildId } as ServerAbout;
 }
@@ -87,7 +61,6 @@ const NAMES: [RegExp, string][] = [
   [/Dashboard updated/, "dashboard updated"],
   [/Reconnected/, "reconnected"],
   [/Sandbox image/, "sandbox image"],
-  [/Update available/, "update available"],
   [/Notifications stopped/, "push"],
 ];
 
@@ -104,7 +77,6 @@ beforeEach(() => {
   script.type = "module";
   script.src = "/assets/index-PageBuild.js";
   document.head.appendChild(script);
-  fetchUpdateStatus.mockReset();
   fetchAbout.mockReset();
   pushHealth = "healthy";
   forced = null;
@@ -119,23 +91,22 @@ afterEach(() => {
 
 describe("BannerStack", () => {
   it("shows one connection or update banner, most urgent first, and push only while connected", () => {
-    // (connection, dashboard updated, update available, sandbox image, push unhealthy, banners top to bottom)
-    const cases: [ConnectionBannerState | null, boolean, boolean, boolean, boolean, string[]][] = [
-      [null, false, false, false, false, []],
-      [null, false, true, false, true, ["update available", "push"]],
-      // The sandbox image banner waits behind the AoE update, as in the TUI.
-      [null, false, true, true, false, ["update available"]],
-      [null, false, false, true, true, ["sandbox image", "push"]],
-      ["down", true, true, true, true, ["disconnected"]],
-      ["reconnected", false, true, false, true, ["reconnected", "push"]],
-      ["reconnected", true, true, false, false, ["dashboard updated"]],
-      [null, true, true, true, true, ["dashboard updated", "push"]],
+    // (connection, dashboard updated, sandbox image, push unhealthy, banners top to bottom)
+    const cases: [ConnectionBannerState | null, boolean, boolean, boolean, string[]][] = [
+      [null, false, false, false, []],
+      [null, false, false, true, ["push"]],
+      [null, false, true, false, ["sandbox image"]],
+      [null, false, true, true, ["sandbox image", "push"]],
+      ["down", true, true, true, ["disconnected"]],
+      ["reconnected", false, true, true, ["reconnected", "push"]],
+      ["reconnected", true, false, false, ["dashboard updated"]],
+      [null, true, true, true, ["dashboard updated", "push"]],
     ];
-    for (const [connection, dashboard, update, sandbox, pushUnhealthy, want] of cases) {
-      forced = { connection, dashboard, update, sandbox };
+    for (const [connection, dashboard, sandbox, pushUnhealthy, want] of cases) {
+      forced = { connection, dashboard, sandbox };
       pushHealth = pushUnhealthy ? "revoked" : "healthy";
       const { container, unmount } = render(<BannerStack />);
-      expect(shown(container), JSON.stringify({ connection, dashboard, update, sandbox, pushUnhealthy })).toEqual(want);
+      expect(shown(container), JSON.stringify({ connection, dashboard, sandbox, pushUnhealthy })).toEqual(want);
       unmount();
     }
   });
@@ -149,35 +120,31 @@ describe("BannerStack", () => {
     ];
     const retry = vi.fn();
     for (const [connection, want] of cases) {
-      forced = { connection, dashboard: true, update: true, sandbox: true };
+      forced = { connection, dashboard: true, sandbox: true };
       pushHealth = "revoked";
       const { container, unmount } = render(<BannerStack onRetryServerSettings={retry} />);
       expect(shown(container), String(connection)).toEqual(want);
       unmount();
     }
-    forced = { connection: null, dashboard: false, update: false, sandbox: false };
+    forced = { connection: null, dashboard: false, sandbox: false };
     render(<BannerStack onRetryServerSettings={retry} />);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it("re-checks both updates once on reconnect, and a new bundle replaces the stale offer", async () => {
-    fetchUpdateStatus.mockResolvedValue(status());
+  it("re-checks the bundle once on reconnect", async () => {
     fetchAbout.mockResolvedValue(about("index-PageBuild.js"));
     const { container } = render(<BannerStack />);
-    await screen.findByRole("status", { name: /Update available/ });
-    expect([fetchUpdateStatus.mock.calls.length, fetchAbout.mock.calls.length]).toEqual([1, 1]);
+    await waitFor(() => expect(fetchAbout).toHaveBeenCalledTimes(1));
 
     act(() => setServerDown(true));
     expect(shown(container)).toEqual(["disconnected"]);
 
-    // The Daemon restarted into the update: the offer is gone and the bundle changed. The reconnect lands
-    // inside the about check's 30 s throttle, so only the forced re-check can see it.
-    fetchUpdateStatus.mockResolvedValue(status({ update_available: false }));
+    // The Daemon restarted with a new bundle. The reconnect lands inside the about check's 30 s
+    // throttle, so only the forced re-check can see it.
     fetchAbout.mockResolvedValue(about("index-NewerBuild.js"));
     act(() => setServerDown(false));
     await screen.findByRole("status", { name: "Dashboard update available" });
-    await waitFor(() => expect(fetchUpdateStatus).toHaveBeenCalledTimes(2));
     expect(fetchAbout).toHaveBeenCalledTimes(2);
     expect(shown(container)).toEqual(["dashboard updated"]);
   });

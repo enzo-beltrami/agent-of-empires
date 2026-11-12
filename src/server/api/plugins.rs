@@ -350,18 +350,6 @@ pub async fn plugin_ui_state(
         .into_response()
 }
 
-/// `GET /api/plugins/updates`: which installed external plugins have an update
-/// available. An explicit, on-demand network check (the dashboard "Check for
-/// updates" button), kept off the always-on `GET /api/plugins` list path so a
-/// settings render never blocks on git/network. Allowed in read-only mode: it
-/// reads remote state and mutates nothing.
-pub async fn plugin_updates(State(state): State<std::sync::Arc<AppState>>) -> Response {
-    if let Some(resp) = super::cityhall_block(&state) {
-        return resp;
-    }
-    Json(json!({ "updates": plugin::update_check::outdated().await })).into_response()
-}
-
 #[derive(Deserialize)]
 pub struct DiscoverQuery {
     #[serde(default)]
@@ -637,103 +625,6 @@ fn strip_composer_snapshot_without_capability(plugin_id: &str, params: &mut serd
     }
 }
 
-/// `GET /api/plugins/{id}/update/preview`: classify the available update for one
-/// installed external plugin (no_update / safe_update / consent_required) and,
-/// when consent is required, return the structured disclosure the dashboard and
-/// TUI render. Gated on read-write mode only, NOT elevation: it mutates no host
-/// state and it powers the approval UI, so a non-elevated session must be able
-/// to fetch the capability diff before deciding (elevation is required on the
-/// actual apply). Network failures (no release, dead remote) surface as a 502.
-pub async fn plugin_update_preview(
-    State(state): State<std::sync::Arc<AppState>>,
-    Path(id): Path<String>,
-) -> Response {
-    if let Some(resp) = super::cityhall_block(&state) {
-        return resp;
-    }
-    if state.read_only {
-        return super::read_only_response();
-    }
-    match plugin::install::preview_update(&id).await {
-        Ok(preview) => Json(preview).into_response(),
-        Err(e) => api_error(StatusCode::BAD_GATEWAY, "preview_failed", format!("{e:#}")),
-    }
-}
-
-#[derive(Deserialize)]
-pub struct ApplyUpdateBody {
-    /// The fingerprint the user approved, from the preview. Pins the apply to
-    /// exactly what was shown: if the remote moved since, the apply is refused.
-    #[serde(default)]
-    pub expected_fingerprint: Option<String>,
-}
-
-/// `POST /api/plugins/{id}/update/apply`: apply an update the user approved in
-/// the dashboard, granting whatever the fetched manifest declares. A privileged
-/// host mutation (it can expand the capability set and run build steps), so it
-/// is gated on read-write mode AND elevation, like enable/disable. Runs as a
-/// host-side job so the build is observable; returns a `job_id` the dashboard
-/// polls for the live log. A fingerprint mismatch (the remote moved since the
-/// preview) surfaces as a failed job, which the UI recovers from by
-/// re-previewing.
-pub async fn apply_plugin_update(
-    State(state): State<std::sync::Arc<AppState>>,
-    session: Option<axum::Extension<AuthenticatedSession>>,
-    loopback: Option<axum::Extension<Principal>>,
-    Path(id): Path<String>,
-    Json(body): Json<ApplyUpdateBody>,
-) -> Response {
-    if let Err(resp) = mutation_gate(&state, session.as_deref(), loopback.as_deref()).await {
-        return resp;
-    }
-    let plugin_id = id.clone();
-    let fingerprint = body.expected_fingerprint;
-    let host = state.plugin_host.clone();
-    start_job(state, PluginJobKind::Update, id, move |log| async move {
-        plugin::install::apply_update(&plugin_id, fingerprint, &log).await?;
-        if let Some(host) = host {
-            host.restart_worker(&plugin_id, &plugin::registry()).await;
-        }
-        Ok(())
-    })
-    .await
-}
-
-#[derive(Deserialize)]
-pub struct DismissUpdateBody {
-    /// The fingerprint of the update the user declined, from the preview.
-    pub fingerprint: String,
-}
-
-/// `POST /api/plugins/{id}/update/dismiss`: record that the user declined an
-/// available update, so the popup and the auto-update notification stop nagging
-/// until the next version. Mutates host config and suppresses a security
-/// signal, so it is gated like apply (read-write + elevation).
-pub async fn dismiss_plugin_update(
-    State(state): State<std::sync::Arc<AppState>>,
-    session: Option<axum::Extension<AuthenticatedSession>>,
-    loopback: Option<axum::Extension<Principal>>,
-    Path(id): Path<String>,
-    Json(body): Json<DismissUpdateBody>,
-) -> Response {
-    if let Err(resp) = mutation_gate(&state, session.as_deref(), loopback.as_deref()).await {
-        return resp;
-    }
-    let plugin = id.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        plugin::install::dismiss_update(&id, &body.fingerprint)
-    })
-    .await;
-    match result {
-        Ok(Ok(())) => {
-            tracing::debug!(target: "plugin.host", %plugin, "plugin update dismissed");
-            (StatusCode::OK, Json(json!({ "ok": true }))).into_response()
-        }
-        Ok(Err(e)) => api_error(StatusCode::BAD_REQUEST, "plugin_error", format!("{e:#}")),
-        Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()),
-    }
-}
-
 #[derive(Deserialize)]
 pub struct SetEnabledBody {
     pub enabled: bool,
@@ -816,7 +707,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[serde(rename_all = "snake_case")]
 pub enum PluginJobKind {
     Install,
-    Update,
     Uninstall,
 }
 
@@ -1152,7 +1042,7 @@ mod tests {
         // The guard is released, so a new job can begin and a failure records
         // its message.
         let (id2, _) = reg
-            .begin(PluginJobKind::Update, "gh:c/d".into())
+            .begin(PluginJobKind::Uninstall, "gh:c/d".into())
             .expect("job begins after the prior one finished");
         reg.finish(&id2, Err(anyhow::anyhow!("boom")));
         match reg.get(&id2).unwrap().status {

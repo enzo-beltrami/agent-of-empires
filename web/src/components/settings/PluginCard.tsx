@@ -1,33 +1,20 @@
-import type { PluginUpdateStatus, PluginView } from "../../lib/api";
+import type { PluginView } from "../../lib/api";
 import { PluginIdentityIcon } from "./PluginIdentityIcon";
 import { uniqueSlots } from "./uniqueSlots";
 
 interface Props {
   plugin: PluginView;
-  update: PluginUpdateStatus | undefined;
   readOnly: boolean;
   toggleBusy: boolean;
-  updating: boolean;
   onOpen: () => void;
   onToggle: (enabled: boolean) => void;
-  onUpdate: () => void;
   onUninstall: () => void;
 }
 
 const PILL = "rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide";
 
-/** One installed plugin: identity, badges, access, update state, and controls. */
-export function PluginCard({
-  plugin,
-  update,
-  readOnly,
-  toggleBusy,
-  updating,
-  onOpen,
-  onToggle,
-  onUpdate,
-  onUninstall,
-}: Props) {
+/** One installed plugin: identity, badges, access, and controls. */
+export function PluginCard({ plugin, readOnly, toggleBusy, onOpen, onToggle, onUninstall }: Props) {
   const ui = plugin.ui_contributions ?? [];
   return (
     <div className="rounded border border-surface-700 bg-surface-850 p-3" data-testid={`plugin-${plugin.id}`}>
@@ -62,14 +49,6 @@ export function PluginCard({
                 needs approval
               </span>
             )}
-            {update?.needs_update && (
-              <span
-                className={`${PILL} bg-accent-500/20 text-accent-500`}
-                data-testid={`plugin-update-available-${plugin.id}`}
-              >
-                update available
-              </span>
-            )}
           </div>
           <p className="mt-1 text-xs text-text-dim">{plugin.description}</p>
           {plugin.capabilities.length > 0 && (
@@ -81,28 +60,9 @@ export function PluginCard({
           {ui.length > 0 && <p className="mt-1 text-[11px] text-text-dim">UI: {uniqueSlots(ui)}</p>}
           {plugin.needs_reapproval && (
             <p className="mt-1 text-[11px] text-status-warning">
-              Installed but inactive. Re-approve with <code>aoe plugin update {plugin.id}</code>.
+              Installed but inactive until its access is re-approved.
             </p>
           )}
-          {update?.needs_update && (
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="text-[11px] text-text-dim">
-                Update available ({update.current} → {update.available ?? "modified"}).
-              </span>
-              {!readOnly && (
-                <button
-                  type="button"
-                  className="rounded border border-surface-700 px-2 py-0.5 text-[11px] hover:bg-surface-800 disabled:opacity-50"
-                  disabled={updating}
-                  onClick={onUpdate}
-                  data-testid={`plugin-update-${plugin.id}`}
-                >
-                  {updating ? "Checking…" : "Update"}
-                </button>
-              )}
-            </div>
-          )}
-          {update?.error && <p className="mt-1 text-[11px] text-status-error">Update check failed: {update.error}</p>}
         </div>
         {!readOnly && (
           <div className="flex shrink-0 flex-col items-end gap-2">

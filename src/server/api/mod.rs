@@ -55,11 +55,10 @@ pub use mcp::{
 };
 pub use plugin_settings::resolve_options;
 pub use plugins::{
-    apply_plugin_update, dismiss_plugin_update, invoke_plugin_action, invoke_plugin_command,
-    list_plugins, mint_plugin_page_ticket, plugin_commands, plugin_details, plugin_discover,
-    plugin_job_status, plugin_sessions, plugin_ui_state, plugin_update_preview, plugin_updates,
-    preview_plugin_install, restart_plugin_worker, serve_plugin_icon, serve_plugin_page,
-    set_plugin_enabled, start_plugin_install, start_plugin_uninstall,
+    invoke_plugin_action, invoke_plugin_command, list_plugins, mint_plugin_page_ticket,
+    plugin_commands, plugin_details, plugin_discover, plugin_job_status, plugin_sessions,
+    plugin_ui_state, preview_plugin_install, restart_plugin_worker, serve_plugin_icon,
+    serve_plugin_page, set_plugin_enabled, start_plugin_install, start_plugin_uninstall,
 };
 pub use projects::{create_project, delete_project, list_projects, update_project};
 pub use sandbox_image::{sandbox_image_dismiss, sandbox_image_pull, sandbox_image_status};
@@ -87,13 +86,13 @@ pub use skills::{
 
 pub use system::{
     apply_cityhall_bundle, browse_filesystem, create_profile, default_profile, delete_profile,
-    dismiss_update, docker_status, filesystem_home, get_about, get_cityhall_bundle,
-    get_current_theme, get_profile_settings, get_resolved_theme, get_settings,
-    get_settings_resolved, get_settings_schema, get_tips, get_update_status, get_web_ui_state,
-    list_agents, list_groups, list_profiles, list_sounds, list_themes, mark_tip_seen,
-    mark_volume_ignores_globs_acknowledged, mark_web_tour_seen, patch_web_ui_state,
-    post_dashboard_presence, rename_profile, serve_sound_file, set_show_tips, system_health,
-    update_profile_settings, update_settings, update_theme,
+    docker_status, filesystem_home, get_about, get_cityhall_bundle, get_current_theme,
+    get_profile_settings, get_resolved_theme, get_settings, get_settings_resolved,
+    get_settings_schema, get_tips, get_web_ui_state, list_agents, list_groups, list_profiles,
+    list_sounds, list_themes, mark_tip_seen, mark_volume_ignores_globs_acknowledged,
+    mark_web_tour_seen, patch_web_ui_state, post_dashboard_presence, rename_profile,
+    serve_sound_file, set_show_tips, system_health, update_profile_settings, update_settings,
+    update_theme,
 };
 
 /// A clone of the live instance with this id.
@@ -529,7 +528,6 @@ mod tests {
                 "create_profile",
                 "default_profile",
                 "delete_profile",
-                "dismiss_update",
                 "mark_tip_seen",
                 "mark_volume_ignores_globs_acknowledged",
                 "mark_web_tour_seen",
@@ -583,8 +581,6 @@ mod tests {
             "plugins.rs",
             include_str!("plugins.rs"),
             &[
-                "apply_plugin_update",
-                "dismiss_plugin_update",
                 "invoke_plugin_action",
                 "invoke_plugin_command",
                 "preview_plugin_install",
@@ -1752,8 +1748,6 @@ mod tests {
             (Method::POST, "/api/plugins/missing/uninstall"),
             (Method::POST, "/api/plugins/install/preview"),
             (Method::POST, "/api/plugins/install"),
-            (Method::POST, "/api/plugins/missing/update/apply"),
-            (Method::POST, "/api/plugins/missing/update/dismiss"),
             (Method::PATCH, "/api/theme"),
             (Method::POST, "/api/sandbox/image-pull"),
             (Method::POST, "/api/sandbox/image-dismiss"),

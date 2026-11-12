@@ -25,9 +25,6 @@ pub struct Config {
     pub theme: ThemeConfig,
 
     #[serde(default)]
-    pub updates: UpdatesConfig,
-
-    #[serde(default)]
     pub skills: SkillsConfig,
 
     #[serde(default)]
@@ -188,13 +185,6 @@ pub struct PluginConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grant: Option<CapabilityGrant>,
 
-    /// An available update the user declined in-app, recorded by its content
-    /// fingerprint so the popup and auto-update notification stop nagging until
-    /// the next version. Cleared on any successful apply or uninstall. Absent
-    /// when no update has been dismissed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dismissed_update: Option<String>,
-
     /// Installed with `--dev` from a local directory: may claim a reserved
     /// namespace, is never featured, and is refused under remote exposure.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -232,7 +222,6 @@ impl Default for PluginConfig {
             source: None,
             settings: toml::Table::new(),
             grant: None,
-            dismissed_update: None,
             dev: false,
         }
     }
@@ -876,14 +865,6 @@ pub struct AppStateConfig {
     /// re-show the tour.
     #[serde(default)]
     pub has_seen_web_tour: bool,
-
-    /// Latest version for which the user dismissed the update banner. The
-    /// banner stays hidden as long as the latest available version equals
-    /// this value; it returns automatically when a newer release ships.
-    /// Cleared by switching `update_check_mode` or upgrading past the
-    /// snoozed version.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dismissed_update_version: Option<String>,
 
     /// Registry digest of the sandbox image the user dismissed the
     /// "image update available" banner for. The banner stays hidden while the
@@ -2190,77 +2171,6 @@ impl Default for ThemeConfig {
 
 fn default_idle_decay_minutes() -> u64 {
     0
-}
-
-/// Controls how the TUI and CLI surface update availability. See #1140.
-///
-/// `Auto` quietly installs new releases in the background on next launch
-/// after detection (mid-session restart is intentionally out of scope, the
-/// new binary is picked up next time `aoe` starts). `Notify` is the
-/// default: shows the TUI banner and the CLI eprintln nag. `Off`
-/// suppresses every check, banner, and fetch.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum UpdateCheckMode {
-    /// Silently install detected updates; user picks them up next launch.
-    Auto,
-    /// Surface the banner / CLI notice (default).
-    #[default]
-    Notify,
-    /// Skip every check, banner, and fetch.
-    Off,
-}
-
-impl UpdateCheckMode {
-    /// True when the runtime should call `check_for_update` at all.
-    /// Both `Auto` and `Notify` need the check to fire; only `Off`
-    /// short-circuits.
-    pub fn is_enabled(self) -> bool {
-        !matches!(self, UpdateCheckMode::Off)
-    }
-
-    /// True when the user should see a TUI banner / CLI notice once a
-    /// newer version is detected.
-    pub fn notifies(self) -> bool {
-        matches!(self, UpdateCheckMode::Notify)
-    }
-
-    /// True when the runtime should kick off a background install on
-    /// detection (no banner; binary picked up next launch).
-    pub fn auto_installs(self) -> bool {
-        matches!(self, UpdateCheckMode::Auto)
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, SettingsSection)]
-#[setting_section(name = "updates", category = "Updates")]
-pub struct UpdatesConfig {
-    /// auto = install in background on detection (picked up next launch).
-    /// notify = show banner / CLI notice (default). off = skip every check.
-    #[serde(default)]
-    #[setting(
-        label = "When a new version is out",
-        widget = "select",
-        options = "auto:auto,notify:notify,off:off",
-        summary = "Tell me shows a banner in the Web dashboard and the terminal app. Install in the background works only in the terminal app, for a binary from the install script. Don't check turns checks off."
-    )]
-    pub update_check_mode: UpdateCheckMode,
-
-    /// Auto-update installed external plugins at TUI and `aoe serve` startup.
-    /// Off by default. The sweep applies only updates that need no new consent;
-    /// any version that changes capabilities, build steps, or UI slots is left
-    /// for a manual `aoe plugin update` so its new grant is reviewed.
-    // global_only: the startup sweep reads the global config
-    // (`Config::load_or_warn`), so a profile/repo override would be silently
-    // ignored; show it but do not offer non-global scopes.
-    #[serde(default)]
-    #[setting(
-        label = "Update plugins automatically",
-        widget = "toggle",
-        global_only,
-        summary = "When AoE starts. Installs plugin updates that don't ask for anything new. Updates that need new permissions still wait for you. Applies to every Profile."
-    )]
-    pub auto_update_plugins: bool,
 }
 
 fn default_true() -> bool {
@@ -3656,10 +3566,6 @@ pub fn effective_profile(profile: &str) -> String {
     }
 }
 
-pub fn get_update_settings() -> UpdatesConfig {
-    Config::load_or_warn().updates
-}
-
 /// Wrap a value so the launching shell passes it through literally.
 ///
 /// Only quotes when the value contains something a shell would interpret, so
@@ -4135,26 +4041,6 @@ mod tests {
         );
     }
 
-    /// Regression: earlier schemas had `check_enabled`, `auto_update`,
-    /// `check_interval_hours`, `notify_in_cli`, and
-    /// `web_poll_interval_minutes` on UpdatesConfig. All are gone now;
-    /// the on-disk migration runs at startup, but configs read between
-    /// upgrade and migration must still deserialize cleanly with the
-    /// unknown fields silently dropped by serde.
-    #[test]
-    fn test_legacy_updates_fields_are_ignored() {
-        let old_toml = r#"
-            check_enabled = false
-            auto_update = true
-            check_interval_hours = 12
-            notify_in_cli = true
-            web_poll_interval_minutes = 30
-        "#;
-        let updates: UpdatesConfig =
-            toml::from_str(old_toml).expect("legacy fields should not error");
-        assert_eq!(updates.update_check_mode, UpdateCheckMode::Notify);
-    }
-
     /// The `[worktree]` defaults and the keys config.toml may set. A config
     /// predating `init_submodules` keeps initializing them recursively (#942).
     #[test]
@@ -4567,7 +4453,7 @@ mod tests {
 
         update_app_state(|s| s.has_seen_web_tour = true).unwrap();
         let mut external = AppStateConfig::load().unwrap();
-        external.dismissed_update_version = Some("1.0.0".to_string());
+        external.dismissed_image_digest = Some("sha256:1".to_string());
         let table = toml::Table::try_from(&external).unwrap();
         super::super::atomic_write(
             &state_path().unwrap(),
@@ -4578,8 +4464,8 @@ mod tests {
         let state = AppStateConfig::load().unwrap();
         assert!(!state.has_seen_web_tour);
         assert_eq!(
-            state.dismissed_update_version.as_deref(),
-            Some("1.0.0"),
+            state.dismissed_image_digest.as_deref(),
+            Some("sha256:1"),
             "state.toml external edit lost"
         );
     }

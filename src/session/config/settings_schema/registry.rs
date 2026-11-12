@@ -3,7 +3,7 @@
 use super::FieldDescriptor;
 use crate::session::config::{
     AcpConfig, AuthConfig, DiffConfig, LoggingConfig, SandboxConfig, SessionConfig, SkillsConfig,
-    SystemdSettings, ThemeConfig, TmuxConfig, UpdatesConfig, WebConfig, WorktreeConfig,
+    SystemdSettings, ThemeConfig, TmuxConfig, WebConfig, WorktreeConfig,
 };
 use crate::sound::SoundConfig;
 use crate::status_hooks::StatusHookConfig;
@@ -22,7 +22,6 @@ pub fn schema_ref() -> &'static [FieldDescriptor] {
 fn build_schema() -> Vec<FieldDescriptor> {
     let mut out = Vec::new();
     out.extend(ThemeConfig::settings_descriptors());
-    out.extend(UpdatesConfig::settings_descriptors());
     out.extend(WorktreeConfig::settings_descriptors());
     out.extend(SandboxConfig::settings_descriptors());
     out.extend(TmuxConfig::settings_descriptors());

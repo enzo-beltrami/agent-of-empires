@@ -55,17 +55,12 @@ fn write_config(xdg: &Path, session_toml: &str) {
     });
     std::fs::create_dir_all(&app).expect("create app dir");
     let config = format!(
-        r#"[updates]
-update_check_mode = "off"
-
-[app_state]
+        r#"[app_state]
 has_seen_welcome = true
-last_seen_version = "{}"
 
 [session]
 {}
 "#,
-        env!("CARGO_PKG_VERSION"),
         session_toml
     );
     std::fs::write(app.join("config.toml"), config).expect("write config");

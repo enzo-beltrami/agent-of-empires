@@ -157,7 +157,7 @@ export function useSandboxImageBanner(): SandboxImageBannerView | null {
       ? null
       : { kind: "config_unreadable", onDismiss: () => setConfigNoticeDismissed(true) };
   }
-  if (!status || !status.checks_enabled || !status.sandbox_in_use) return null;
+  if (!status || !status.sandbox_in_use) return null;
 
   if (refusal !== null && !noticeDismissed) {
     return { kind: "failed", error: refusal, onRetry: update, onDismiss: () => setNoticeDismissed(true) };

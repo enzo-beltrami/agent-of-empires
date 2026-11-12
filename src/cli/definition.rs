@@ -31,7 +31,6 @@ use super::status::StatusArgs;
 use super::theme::ThemeCommands;
 use super::tmux::TmuxCommands;
 use super::uninstall::UninstallArgs;
-use super::update::UpdateArgs;
 use super::url::UrlArgs;
 use super::worktree::WorktreeCommands;
 
@@ -267,9 +266,6 @@ pub enum Commands {
 
     /// Uninstall Agent of Empires
     Uninstall(UninstallArgs),
-
-    /// Update aoe to the latest release
-    Update(UpdateArgs),
 
     /// Run pending migrations or restore complete original lifecycle authority.
     /// Stop the daemon with `aoe serve --stop` first. By default, also move

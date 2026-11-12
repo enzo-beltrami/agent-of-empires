@@ -155,19 +155,10 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
   };
 
   await page.route("**/api/login/status*", (r) => r.fulfill({ json: { required: false, authenticated: true } }));
-  for (const path of [
-    "settings",
-    "themes",
-    "agents",
-    "profiles",
-    "groups",
-    "devices",
-    "docker/status",
-    "system/update-status",
-  ]) {
+  for (const path of ["settings", "themes", "agents", "profiles", "groups", "devices", "docker/status"]) {
     await page.route(`**/api/${path}`, (r) =>
       r.fulfill({
-        json: path === "docker/status" || path === "settings" || path === "system/update-status" ? {} : [],
+        json: path === "docker/status" || path === "settings" ? {} : [],
       }),
     );
   }
