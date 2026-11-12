@@ -72,6 +72,8 @@ pub struct Deploy {
     pub ticket: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    #[serde(default)]
+    pub tested: bool,
     pub added_at: chrono::DateTime<chrono::Utc>,
     /// Unset while the pull request still waits to be deployed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -90,6 +92,7 @@ pub struct NewDeploy {
     pub session_id: Option<String>,
     pub ticket: Option<String>,
     pub note: Option<String>,
+    pub tested: Option<bool>,
 }
 
 /// The deploy list, oldest first.
@@ -123,6 +126,9 @@ pub fn add_deploy(new: NewDeploy) -> Result<Deploy> {
                     *field = value;
                 }
             }
+            if let Some(tested) = new.tested {
+                existing.tested = tested;
+            }
             return Ok(existing.clone());
         }
         let deploy = Deploy {
@@ -132,6 +138,7 @@ pub fn add_deploy(new: NewDeploy) -> Result<Deploy> {
             session_id,
             ticket,
             note,
+            tested: new.tested.unwrap_or(false),
             added_at: chrono::Utc::now(),
             deployed_at: None,
         };
@@ -141,11 +148,24 @@ pub fn add_deploy(new: NewDeploy) -> Result<Deploy> {
     .map(|(_, deploy)| deploy)
 }
 
-/// Marks a deploy deployed (or pending again); `None` when there is no such id.
-pub fn set_deployed(id: &str, deployed: bool) -> Result<Option<Deploy>> {
+/// Flags to change on a deploy; `None` keeps the current value.
+#[derive(Debug, Default, Clone, Copy, Deserialize)]
+pub struct DeployChange {
+    /// False moves it back to pending.
+    pub deployed: Option<bool>,
+    pub tested: Option<bool>,
+}
+
+/// Applies `change` to a deploy; `None` when there is no such id.
+pub fn update_deploy(id: &str, change: DeployChange) -> Result<Option<Deploy>> {
     update(DEPLOYS, |list: &mut DeployList| {
         Ok(list.deploys.iter_mut().find(|d| d.id == id).map(|d| {
-            d.deployed_at = deployed.then(|| d.deployed_at.unwrap_or_else(chrono::Utc::now));
+            if let Some(deployed) = change.deployed {
+                d.deployed_at = deployed.then(|| d.deployed_at.unwrap_or_else(chrono::Utc::now));
+            }
+            if let Some(tested) = change.tested {
+                d.tested = tested;
+            }
             d.clone()
         }))
     })
@@ -160,6 +180,24 @@ pub fn remove_deploy(id: &str) -> Result<bool> {
         Ok(list.deploys.len() != before)
     })
     .map(|(_, removed)| removed)
+}
+
+/// The user's notes, shared with the coordinator, which keeps what it is asked to remember here.
+const NOTES: &str = "NOTES.md";
+
+/// The notes; empty when there are none.
+pub fn notes() -> Result<String> {
+    match std::fs::read_to_string(coordinator_dir()?.join(NOTES)) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        other => Ok(other?),
+    }
+}
+
+pub fn set_notes(text: &str) -> Result<()> {
+    let _files = FILES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    write_atomic(&coordinator_dir()?, NOTES, text.as_bytes())
 }
 
 /// Serializes read-modify-write of the coordinator's files across dashboard and MCP callers.
@@ -181,13 +219,18 @@ where
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let dir = coordinator_dir()?;
-    std::fs::create_dir_all(&dir)?;
     let mut value: T = load(name);
     let result = change(&mut value)?;
-    let tmp = dir.join(format!("{name}.tmp"));
-    std::fs::write(&tmp, serde_json::to_vec_pretty(&value)?)?;
-    std::fs::rename(tmp, dir.join(name))?;
+    write_atomic(&dir, name, &serde_json::to_vec_pretty(&value)?)?;
     Ok((value, result))
+}
+
+fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!("{name}.tmp"));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(tmp, dir.join(name))?;
+    Ok(())
 }
 
 pub fn coordinator_dir() -> Result<PathBuf> {
@@ -258,6 +301,15 @@ mod tests {
 
     #[test]
     #[serial]
+    fn notes_round_trip_and_start_empty() {
+        let _home = crate::session::test_support::isolate_app_dir();
+        assert_eq!(notes().unwrap(), "");
+        set_notes("- ship PI-1921 Friday\n").unwrap();
+        assert_eq!(notes().unwrap(), "- ship PI-1921 Friday\n");
+    }
+
+    #[test]
+    #[serial]
     fn watchlist_round_trips_and_tolerates_a_missing_file() {
         let _home = crate::session::test_support::isolate_app_dir();
         assert_eq!(watchlist(), Watchlist::default());
@@ -281,6 +333,7 @@ mod tests {
             session_id: None,
             ticket: None,
             note: Some("first".into()),
+            tested: None,
         };
         let first = add_deploy(new(" https://x/pull/1 ")).unwrap();
         assert_eq!(first.url, "https://x/pull/1");
@@ -305,19 +358,34 @@ mod tests {
         add_deploy(new("https://x/pull/2")).unwrap();
         assert_eq!(deploys().len(), 2);
 
-        let deployed = set_deployed(&first.id, true).unwrap().unwrap();
+        let set = |deployed, tested| {
+            update_deploy(&first.id, DeployChange { deployed, tested })
+                .unwrap()
+                .unwrap()
+        };
+        let deployed = set(Some(true), None);
         let at = deployed.deployed_at.unwrap();
-        let again = set_deployed(&first.id, true).unwrap().unwrap();
+        assert!(!deployed.tested, "new deploys are untested");
+        let again = set(Some(true), Some(true));
         assert_eq!(
             again.deployed_at,
             Some(at),
             "re-marking keeps the first time"
         );
+        assert!(again.tested);
+        let pending = set(Some(false), None);
+        assert_eq!(pending.deployed_at, None);
+        assert!(pending.tested, "an omitted flag is kept");
+        let untested = add_deploy(NewDeploy {
+            tested: Some(false),
+            ..new("https://x/pull/1")
+        })
+        .unwrap();
+        assert!(!untested.tested, "re-adding can set the flag");
         assert_eq!(
-            set_deployed(&first.id, false).unwrap().unwrap().deployed_at,
+            update_deploy("nope", DeployChange::default()).unwrap(),
             None
         );
-        assert_eq!(set_deployed("nope", true).unwrap(), None);
 
         assert!(remove_deploy(&first.id).unwrap());
         assert!(!remove_deploy(&first.id).unwrap());

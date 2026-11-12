@@ -784,8 +784,16 @@ async fn coordination_tools_summarize_sessions_and_keep_a_deploy_list() {
     .await;
     assert_eq!(linked["id"], id, "re-adding a URL updates it");
     assert_eq!(linked["ticket"], "PI-1921");
+    assert_eq!(linked["tested"], false);
+    let tested = call(&app, "set_deployed", json!({"id": id, "tested": true})).await;
+    assert_eq!(tested["tested"], true);
+    assert!(
+        tested["deployed_at"].is_null(),
+        "tested alone keeps it pending"
+    );
     let deployed = call(&app, "set_deployed", json!({"id": id})).await;
     assert!(deployed["deployed_at"].is_string());
+    assert_eq!(deployed["tested"], true);
     let listed = call(&app, "list_deploys", json!({})).await;
     assert_eq!(listed["deploys"][0]["session_id"], "busy");
     assert_eq!(listed["deploys"][0]["session_title"], "busy");

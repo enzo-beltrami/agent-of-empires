@@ -22,14 +22,17 @@ pub(super) struct AddDeployParams {
     ticket: Option<String>,
     /// What it changes, in a sentence, for whoever deploys it.
     note: Option<String>,
+    /// Whether its change has been tested. New entries default to untested.
+    tested: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(super) struct SetDeployedParams {
     id: String,
-    /// False moves it back to pending. Defaults to true.
-    #[serde(default = "yes")]
-    deployed: bool,
+    /// False moves it back to pending. Defaults to true unless only `tested` is given.
+    deployed: Option<bool>,
+    /// Marks it tested or untested.
+    tested: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -44,10 +47,6 @@ pub(super) struct MessageParams {
     /// True when you are blocked until someone decides.
     #[serde(default)]
     needs_decision: bool,
-}
-
-fn yes() -> bool {
-    true
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -100,6 +99,7 @@ impl McpServer {
             session_id: p.session_id,
             ticket: p.ticket,
             note: p.note,
+            tested: p.tested,
         };
         blocking(move || coordinator::add_deploy(new))
             .await
@@ -108,14 +108,21 @@ impl McpServer {
             .map_err(|e| tool_error("invalid_request", format!("{e:#}")))
     }
 
-    #[rmcp::tool(description = "Mark a deploy as deployed, or as pending with `deployed: false`.")]
+    #[rmcp::tool(
+        description = "Mark a deploy as deployed, or as pending with `deployed: false`. Pass \
+            `tested` to mark it tested or untested; given alone, it leaves the deployed state."
+    )]
     async fn set_deployed(
         &self,
         Parameters(p): Parameters<SetDeployedParams>,
     ) -> Result<Json<Deploy>, CallToolResult> {
         self.writable().map_err(|e| *e)?;
         let id = p.id.clone();
-        match blocking(move || coordinator::set_deployed(&p.id, p.deployed))
+        let change = coordinator::DeployChange {
+            deployed: p.deployed.or(p.tested.is_none().then_some(true)),
+            tested: p.tested,
+        };
+        match blocking(move || coordinator::update_deploy(&p.id, change))
             .await
             .map_err(|e| *e)?
         {

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink, X } from "lucide-react";
 
 import {
+  fetchCoordinatorNotes,
   fetchCoordinatorSummary,
   fetchDeploys,
   removeDeploy,
-  setDeployDeployed,
+  saveCoordinatorNotes,
+  updateDeploy,
   type CoordinatorSummary,
   type CoordinatorSummaryRow,
   type Deploy,
@@ -13,12 +15,14 @@ import {
 import { deployGroups, deployLabel, isCoordinatorPath, ticketLabel } from "../lib/coordinator";
 
 const REFRESH_MS = 5000;
+const NOTES_SAVE_MS = 600;
 
-type Tab = "sessions" | "deploys";
+type Tab = "sessions" | "deploys" | "notes";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "sessions", label: "Sessions" },
   { id: "deploys", label: "Deploys" },
+  { id: "notes", label: "Notes" },
 ];
 
 type BucketId = keyof CoordinatorSummary;
@@ -53,7 +57,8 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
     return () => window.clearInterval(timer);
   }, [refresh]);
 
-  const toggle = (deploy: Deploy) => void setDeployDeployed(deploy.id, !deploy.deployed_at).then(refresh);
+  const toggle = (deploy: Deploy) => void updateDeploy(deploy.id, { deployed: !deploy.deployed_at }).then(refresh);
+  const toggleTested = (deploy: Deploy) => void updateDeploy(deploy.id, { tested: !deploy.tested }).then(refresh);
   const remove = (deploy: Deploy) => void removeDeploy(deploy.id).then(refresh);
   const pending = deploys.filter((d) => !d.deployed_at).length;
 
@@ -80,7 +85,8 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
             onKeyDown={(e) => {
               if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
               e.preventDefault();
-              const next = TABS[(TABS.findIndex((x) => x.id === tab) + 1) % TABS.length]!.id;
+              const step = e.key === "ArrowLeft" ? -1 : 1;
+              const next = TABS[(TABS.findIndex((x) => x.id === tab) + step + TABS.length) % TABS.length]!.id;
               setTab(next);
               document.getElementById(`coordinator-tab-${next}`)?.focus();
             }}
@@ -152,14 +158,99 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
               </h3>
               <ul className="flex flex-col gap-1.5">
                 {g.deploys.map((d) => (
-                  <DeployCard key={d.id} deploy={d} onToggle={toggle} onRemove={remove} onOpenSession={onOpenSession} />
+                  <DeployCard
+                    key={d.id}
+                    deploy={d}
+                    onToggle={toggle}
+                    onToggleTested={toggleTested}
+                    onRemove={remove}
+                    onOpenSession={onOpenSession}
+                  />
                 ))}
               </ul>
             </div>
           ))
         )}
       </section>
+
+      <section
+        role="tabpanel"
+        id="coordinator-panel-notes"
+        aria-labelledby="coordinator-tab-notes"
+        hidden={tab !== "notes"}
+        className="flex min-h-0 flex-1 flex-col p-3"
+      >
+        <NotesEditor />
+      </section>
     </aside>
+  );
+}
+
+const NOTES_STATUS = { saved: "Saved", saving: "Saving…", error: "Could not save; edit again to retry" } as const;
+
+/** Edits the coordinator's `NOTES.md`, saving as the user types and picking up the coordinator's edits while idle. */
+function NotesEditor() {
+  const [text, setText] = useState<string | null>(null);
+  const [status, setStatus] = useState<keyof typeof NOTES_STATUS>("saved");
+  const latest = useRef<string | null>(null);
+  const edits = useRef(0);
+  const unsaved = useRef(false);
+  const focused = useRef(false);
+  const timer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const load = () =>
+      void fetchCoordinatorNotes().then((remote) => {
+        if (remote === null || unsaved.current || focused.current) return;
+        latest.current = remote;
+        setText(remote);
+      });
+    load();
+    const poll = window.setInterval(load, REFRESH_MS);
+    return () => {
+      window.clearInterval(poll);
+      window.clearTimeout(timer.current);
+      if (unsaved.current && latest.current !== null) void saveCoordinatorNotes(latest.current);
+    };
+  }, []);
+
+  const save = async () => {
+    const edit = edits.current;
+    setStatus("saving");
+    const ok = await saveCoordinatorNotes(latest.current ?? "");
+    if (edits.current !== edit) return;
+    unsaved.current = !ok;
+    setStatus(ok ? "saved" : "error");
+  };
+
+  const edit = (value: string) => {
+    latest.current = value;
+    edits.current += 1;
+    unsaved.current = true;
+    setText(value);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => void save(), NOTES_SAVE_MS);
+  };
+
+  return (
+    <>
+      <textarea
+        aria-label="Notes"
+        value={text ?? ""}
+        disabled={text === null}
+        onChange={(e) => edit(e.target.value)}
+        onFocus={() => (focused.current = true)}
+        onBlur={() => (focused.current = false)}
+        placeholder="Anything to keep track of. The coordinator reads these and adds what you ask it to remember."
+        className="min-h-0 flex-1 resize-none rounded-md border border-surface-700/60 bg-surface-900 p-2 font-mono text-[13px] leading-relaxed text-text-primary placeholder:text-text-dim focus:border-surface-600 focus:outline-none"
+      />
+      <p
+        data-testid="notes-status"
+        className={`mt-1.5 text-[11px] ${status === "error" ? "text-status-error-text" : "text-text-dim"}`}
+      >
+        {NOTES_STATUS[status]}
+      </p>
+    </>
   );
 }
 
@@ -189,11 +280,13 @@ function SessionRows({ rows, onOpen }: { rows: CoordinatorSummaryRow[]; onOpen: 
 function DeployCard({
   deploy,
   onToggle,
+  onToggleTested,
   onRemove,
   onOpenSession,
 }: {
   deploy: Deploy;
   onToggle: (d: Deploy) => void;
+  onToggleTested: (d: Deploy) => void;
   onRemove: (d: Deploy) => void;
   onOpenSession: (id: string) => void;
 }) {
@@ -231,6 +324,18 @@ function DeployCard({
         </button>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-5 font-mono text-[11px] text-text-dim">
+        <button
+          type="button"
+          onClick={() => onToggleTested(deploy)}
+          aria-label={`${deploy.tested ? "Tested" : "Untested"}: mark ${label} ${deploy.tested ? "untested" : "tested"}`}
+          className={`rounded-full border px-1.5 leading-4 cursor-pointer transition-colors ${
+            deploy.tested
+              ? "border-status-running/30 bg-status-running/10 text-status-running hover:bg-status-running/20"
+              : "border-status-waiting/30 bg-status-waiting/10 text-status-waiting hover:bg-status-waiting/15"
+          }`}
+        >
+          {deploy.tested ? "tested" : "untested"}
+        </button>
         {pr !== label && (
           <a
             href={deploy.url}

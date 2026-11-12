@@ -459,6 +459,7 @@ pub(super) const CITYHALL_MUTATION_DENY: &[(&str, &str)] = &[
     ("POST", "/api/coordinator"),
     ("PATCH", "/api/coordinator/deploys/{id}"),
     ("DELETE", "/api/coordinator/deploys/{id}"),
+    ("PUT", "/api/coordinator/notes"),
     ("POST", "/api/sandbox/image-pull"),
     ("POST", "/api/sandbox/image-dismiss"),
     ("POST", "/api/sessions/creation-trust"),

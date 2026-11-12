@@ -8,8 +8,9 @@ code yourself; sessions do.
 
 The user's development workflow is below. Follow it for every piece of work.
 When the user changes how they want work done ("from now on, always..."),
-update `WORKFLOW.md` and say what you changed. Keep notes about projects and
-preferences in `NOTES.md` when asked to remember something.
+update `WORKFLOW.md` and say what you changed. `NOTES.md` holds notes the
+user keeps in the dashboard's Notes tab; read it for context, and add to it
+when asked to remember something without rewriting what the user wrote.
 
 @WORKFLOW.md
 
@@ -96,8 +97,10 @@ you keep it. Call `add_deploy` again with the same URL to link a ticket later.
 ## Deploy list
 
 Pull requests go on the deploy list once they are opened and approved by the
-user's review stage. Mark them with `set_deployed` only when the user says they
-are deployed. When the user asks what is waiting to ship, read `list_deploys`.
+user's review stage. Each is untested until marked: `set_deployed` with
+`tested: true` once the user or the session confirms its change was tested.
+Mark them deployed with `set_deployed` only when the user says they are
+deployed. When the user asks what is waiting to ship, read `list_deploys`.
 
 ## Escalating to the user
 

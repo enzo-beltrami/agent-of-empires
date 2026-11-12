@@ -61,6 +61,12 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
             get(api::list_coordinator_deploys),
         )
         .route(
+            "/api/coordinator/notes",
+            get(api::get_coordinator_notes)
+                .put(api::put_coordinator_notes)
+                .layer(read_only.clone()),
+        )
+        .route(
             "/api/coordinator/deploys/{id}",
             patch(api::update_coordinator_deploy)
                 .delete(api::delete_coordinator_deploy)

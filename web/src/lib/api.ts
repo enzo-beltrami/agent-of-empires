@@ -3329,6 +3329,7 @@ export interface Deploy {
   /** A key such as `PI-1921`, or a URL. */
   ticket?: string;
   note?: string;
+  tested: boolean;
   added_at: string;
   deployed_at?: string;
 }
@@ -3351,8 +3352,22 @@ export async function fetchDeploys(): Promise<Deploy[] | null> {
   }
 }
 
-export async function setDeployDeployed(id: string, deployed: boolean): Promise<boolean> {
-  return fetchOk(`/api/coordinator/deploys/${encodeURIComponent(id)}`, jsonInit("PATCH", { deployed }));
+export async function updateDeploy(id: string, change: { deployed?: boolean; tested?: boolean }): Promise<boolean> {
+  return fetchOk(`/api/coordinator/deploys/${encodeURIComponent(id)}`, jsonInit("PATCH", change));
+}
+
+/** The coordinator's `NOTES.md`, shared between the user and the coordinator. */
+export async function fetchCoordinatorNotes(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/coordinator/notes", { headers: ACCEPT_JSON });
+    return res.ok ? ((await res.json()) as { text: string }).text : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveCoordinatorNotes(text: string): Promise<boolean> {
+  return fetchOk("/api/coordinator/notes", jsonInit("PUT", { text }));
 }
 
 export async function removeDeploy(id: string): Promise<boolean> {

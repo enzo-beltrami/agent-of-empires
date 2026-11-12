@@ -196,25 +196,23 @@ pub async fn list_coordinator_deploys(State(state): State<Arc<AppState>>) -> Res
     }
 }
 
-#[derive(serde::Deserialize)]
-pub struct UpdateDeployBody {
-    pub deployed: bool,
-}
-
 pub async fn update_coordinator_deploy(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(id): axum::extract::Path<String>,
-    body: Result<Json<UpdateDeployBody>, axum::extract::rejection::JsonRejection>,
+    body: Result<
+        Json<crate::session::coordinator::DeployChange>,
+        axum::extract::rejection::JsonRejection,
+    >,
 ) -> Response {
     if state.read_only {
         return super::read_only_response();
     }
-    let Json(body) = match body {
+    let Json(change) = match body {
         Ok(body) => body,
         Err(rejection) => return rejection.into_response(),
     };
     let result = tokio::task::spawn_blocking(move || {
-        crate::session::coordinator::set_deployed(&id, body.deployed)
+        crate::session::coordinator::update_deploy(&id, change)
     })
     .await;
     match result {
@@ -235,6 +233,35 @@ pub async fn delete_coordinator_deploy(
     {
         Ok(Ok(true)) => StatusCode::NO_CONTENT.into_response(),
         Ok(Ok(false)) => deploy_not_found(),
+        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[derive(Serialize, serde::Deserialize)]
+pub struct NotesBody {
+    pub text: String,
+}
+
+pub async fn get_coordinator_notes() -> Response {
+    match tokio::task::spawn_blocking(crate::session::coordinator::notes).await {
+        Ok(Ok(text)) => Json(NotesBody { text }).into_response(),
+        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn put_coordinator_notes(
+    State(state): State<Arc<AppState>>,
+    body: Result<Json<NotesBody>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if state.read_only {
+        return super::read_only_response();
+    }
+    let Json(NotesBody { text }) = match body {
+        Ok(body) => body,
+        Err(rejection) => return rejection.into_response(),
+    };
+    match tokio::task::spawn_blocking(move || crate::session::coordinator::set_notes(&text)).await {
+        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
         _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
