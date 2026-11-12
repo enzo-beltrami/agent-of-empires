@@ -3,7 +3,6 @@
 use agent_of_empires::cli::{self, Cli, Commands};
 use agent_of_empires::logging::{self, LogConfig, ProcessContext, SubscriberTarget};
 use agent_of_empires::migrations;
-use agent_of_empires::tui;
 use anyhow::Result;
 use clap::{CommandFactory, FromArgMatches, Parser};
 use clap_complete::generate;
@@ -70,7 +69,7 @@ fn main() -> Result<()> {
     let mut a = args;
     if helper.as_deref() == Some("__vt-pipe") {
         let sock = a.next().unwrap_or_default();
-        return agent_of_empires::tui::run_vt_pipe(&sock).map_err(Into::into);
+        return agent_of_empires::tmux::run_vt_pipe(&sock).map_err(Into::into);
     }
 
     // Hidden smart-rename helper bypasses clap.
@@ -106,6 +105,10 @@ fn main() -> Result<()> {
         }
     };
 
+    if cli.command.is_none() {
+        Cli::command().print_help()?;
+        return Ok(());
+    }
     cli.command = cli.command.map(Commands::resolve_daemon_alias);
     if let Some(Commands::PrimeRunner(args)) = cli.command {
         return tokio::runtime::Runtime::new()?
@@ -142,19 +145,15 @@ async fn run_cli(mut cli: Cli, read_source: cli::runtime_read::ReadRequestSource
     // Before anything calls `get_app_dir()`, which would create the dev dir.
     let debug_namespace_drift = agent_of_empires::session::debug_namespace_drift();
 
-    let mut debug_log_warning: Option<String> = None;
     let env_cfg = LogConfig::from_env();
     let env_filter = env_cfg.filter_string();
     let is_serve = is_serve_command(&cli);
     let is_daemon_child = is_serve_daemon_child(&cli);
-    let is_tui = cli.command.is_none();
 
     let ctx = if is_daemon_child {
         ProcessContext::ServeDaemonChild
     } else if is_serve {
         ProcessContext::ServeForeground
-    } else if is_tui {
-        ProcessContext::Tui
     } else {
         ProcessContext::OneShotCli
     };
@@ -162,7 +161,7 @@ async fn run_cli(mut cli: Cli, read_source: cli::runtime_read::ReadRequestSource
     // `should_init` also decides which config warnings stay on stderr (see `run`).
     let should_init = matches!(
         ctx,
-        ProcessContext::Tui | ProcessContext::ServeForeground | ProcessContext::ServeDaemonChild
+        ProcessContext::ServeForeground | ProcessContext::ServeDaemonChild
     ) || env_filter.is_some();
     // One-shot commands log to the file too, but never create the app dir
     // (`aoe completion`, `aoe init` on read-only installs).
@@ -243,8 +242,8 @@ async fn run_cli(mut cli: Cli, read_source: cli::runtime_read::ReadRequestSource
     if let Some(c) = init.controller.clone() {
         logging::install_controller(c);
     }
-    if let Some(msg) = init.warning {
-        debug_log_warning = Some(msg);
+    if let Some(msg) = init.warning.filter(|_| !is_daemon_child) {
+        eprintln!("warning: {msg}");
     }
     if let (Some(_), Some(path), Some(lvl)) = (
         init.controller.as_ref(),
@@ -261,7 +260,6 @@ async fn run_cli(mut cli: Cli, read_source: cli::runtime_read::ReadRequestSource
         is_daemon_child,
         should_init,
         debug_namespace_drift,
-        debug_log_warning,
         read_source,
     )
     .await
@@ -315,16 +313,13 @@ async fn run(
     is_daemon_child: bool,
     should_init: bool,
     debug_namespace_drift: Option<(std::path::PathBuf, std::path::PathBuf)>,
-    debug_log_warning: Option<String>,
     read_source: cli::runtime_read::ReadRequestSource,
 ) -> Result<i32> {
-    if cli.command.is_some() {
-        if let Some((release, dev)) = debug_namespace_drift.as_ref() {
-            eprintln!(
-                "\n{}\n",
-                agent_of_empires::session::format_debug_namespace_warning(release, dev),
-            );
-        }
+    if let Some((release, dev)) = debug_namespace_drift.as_ref() {
+        eprintln!(
+            "\n{}\n",
+            agent_of_empires::session::format_debug_namespace_warning(release, dev),
+        );
     }
 
     // Settings and MCP commands must resolve migrated configuration.
@@ -411,12 +406,10 @@ async fn run(
         _ => None,
     };
 
-    if cli.command.is_some() {
-        run_startup_migrations(command_name, is_daemon_child, serve_lock.as_ref()).await?;
-        agent_of_empires::session::poller::configure_session_id_poller_max_threads(
-            agent_of_empires::session::poller::configured_session_id_poller_max_threads(&profile),
-        );
-    }
+    run_startup_migrations(command_name, is_daemon_child, serve_lock.as_ref()).await?;
+    agent_of_empires::session::poller::configure_session_id_poller_max_threads(
+        agent_of_empires::session::poller::configured_session_id_poller_max_threads(&profile),
+    );
 
     // Unknown keys are only reported here; parse failures only when no subscriber is up.
     // Hidden machine-spawned subcommands never print into a worker's redirected stderr.
@@ -463,18 +456,6 @@ async fn run(
         Some(Commands::Hooks { command }) => cli::hooks::run(&profile, command),
         Some(Commands::Acp { command }) => cli::acp::run(command).await,
         Some(Commands::AcpRunner(args)) => agent_of_empires::process::runner::run(*args).await,
-        None => {
-            let drift_msg = debug_namespace_drift.as_ref().map(|(release, dev)| {
-                agent_of_empires::session::format_debug_namespace_warning(release, dev)
-            });
-            let combined = match (debug_log_warning, drift_msg) {
-                (Some(a), Some(b)) => Some(format!("{a}\n\n{b}")),
-                (Some(a), None) => Some(a),
-                (None, Some(b)) => Some(b),
-                (None, None) => None,
-            };
-            tui::run(&profile, combined).await
-        }
         _ => anyhow::bail!("internal error: runtime read reached local dispatch"),
     };
     exit_zero(result)

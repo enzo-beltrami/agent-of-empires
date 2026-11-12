@@ -8,12 +8,9 @@ edition = "2021"
 rust-version = "1.95"
 authors = ["Agent of Empires Contributors"]
 description = "Terminal session manager for AI coding agents"
-# MIT throughout, except the OSC 8 emission state machine in
-# src/tui/hyperlink.rs, which is derived from herdr under Apache-2.0.
-# See THIRD_PARTY_NOTICES.md.
-license = "MIT AND Apache-2.0"
+license = "MIT"
 repository = "https://github.com/agent-of-empires/agent-of-empires"
-keywords = ["tmux", "tui", "ai", "claude", "terminal"]
+keywords = ["tmux", "ai", "claude", "terminal"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
@@ -21,21 +18,10 @@ categories = ["command-line-utilities", "development-tools"]
 clap = { version = "4.6", features = ["derive", "env", "string"] }
 clap_complete = "4.6"
 
-# TUI
-ratatui = { version = "0.30", features = ["crossterm"] }
-crossterm = { version = "0.29", features = ["event-stream"] }
-ansi-to-tui = "8.0"
 # In-process VT emulator for the default live-preview path (`src/tmux/vt.rs`,
-# opt out with `AOE_VT_LIVE=0`): parse a pane's raw byte stream into an owned
+# opt out with `[tmux] vt_live = false`): parse a pane's raw byte stream into an owned
 # grid instead of scraping `capture-pane` snapshots.
 vt100 = "0.18"
-ratatui-textarea = "0.9"
-tui-input = "0.15"
-# Markdown parsing for the structured view transcript. We map events to ratatui
-# Lines ourselves (see src/tui/structured_view/render.rs) so raw markers are
-# stripped and styling tracks the app theme; default-features = false
-# drops the unused HTML renderer.
-pulldown-cmark = { version = "0.13", default-features = false }
 
 # Async runtime
 tokio = { version = "1.52", features = ["full"] }
@@ -59,9 +45,6 @@ dotenv-ng-core = "1.0"
 
 # File watching
 notify = "8.2"
-
-# Fuzzy matching
-nucleo-matcher = "0.3"
 
 # Shell-style splitting of custom-agent ACP command strings into argv
 shell-words = "1.1"
@@ -106,22 +89,13 @@ tokio-util = { version = "0.7", features = ["codec", "compat", "io-util"] }
 unicode-general-category = "1"
 unicode-normalization = "0.1"
 unicode-segmentation = "1"
-# 0.2.3 widens U+FF9E/U+FF9F to one cell, which ratatui-core 0.1.2's `CellWidth`
-# already adds, so every halfwidth dakuten counts twice. Lift once ratatui-core
-# stops compensating.
-unicode-width = "=0.2.2"
-
-# Terminal spinners
-rattles = "0.3"
+unicode-width = "0.2"
 
 # Regex
 regex = "1.10"
 
 # Git operations
 git2 = "0.21"
-
-# Diff computation
-similar = "3.1"
 
 # Hashing
 sha2 = "0.11"
@@ -130,7 +104,7 @@ sha2 = "0.11"
 fs2 = "0.4"
 parking_lot = "0.13"
 
-# Stream utilities (for crossterm EventStream)
+# Stream utilities
 futures-util = "0.3"
 
 # Temporary files and directories
@@ -146,15 +120,14 @@ axum = { version = "0.8", features = ["ws"] }
 # hyper/TokioIo reuse the UID/PID-verified UnixStream, including builds without `web`.
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
-# Cross-platform browser launcher: `aoe serve --open`, the plugin host's
-# `ui.open_url`, and structured-view link activation.
+# Cross-platform browser launcher for `aoe serve --open`.
 webbrowser = "1"
 tower-http = { version = "0.7", features = ["compression-gzip", "compression-zstd", "fs"] }
 # Embedded dashboard bundle, behind `web`.
 rust-embed = { version = "8", features = ["debug-embed"], optional = true }
 # Content type for the session file-read endpoint.
 mime_guess = "2.0"
-# QR of the dashboard URL (TUI serve dialog, tunnel startup). Behind `web`:
+# QR of the dashboard URL at tunnel startup. Behind `web`:
 # scanning it is only useful when there is a dashboard to open.
 qrcode = { version = "0.14", optional = true }
 argon2 = "0.6"
@@ -163,7 +136,7 @@ subtle = "2"
 # `vendored` feature, from the system otherwise.
 webauthn-rs = "0.5"
 
-# TUI OSC 52 clipboard writes and Web Push payload encoding.
+# OSC 52 clipboard decoding and Web Push payload encoding.
 base64 = "0.23"
 
 # Web Push (VAPID + payload encryption).

@@ -29,9 +29,9 @@ pub mod terminal;
 /// Shared exclusion for the participating server/session environment guards.
 #[cfg(any(test, debug_assertions))]
 pub(crate) mod test_env_lock;
+pub mod theme;
 pub mod tips;
 pub mod tmux;
-pub mod tui;
 pub mod update;
 mod util;
 mod yaml;

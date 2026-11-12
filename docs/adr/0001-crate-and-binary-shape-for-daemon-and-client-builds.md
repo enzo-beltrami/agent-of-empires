@@ -1,6 +1,6 @@
 # One `aoe` binary, split into Daemon and Client workspace crates
 
-Status: proposed. Decides #4398 (part of #2734). Terms follow `CONTEXT.md`: **Daemon** is the `aoe serve` process, a **Client** is the TUI, CLI or Web dashboard that pilots it.
+Status: proposed; the TUI Client it plans was later removed from this fork, so bare `aoe` prints help. Decides #4398 (part of #2734). Terms follow `CONTEXT.md`: **Daemon** is the `aoe serve` process, a **Client** is the TUI, CLI or Web dashboard that pilots it.
 
 The Daemon and the Clients must build separately so a Client-only build, first the CLI on Windows, never compiles `nix`, tmux or axum. We keep one `aoe` binary and one command name, and draw the boundary with workspace crates, not with runtime dispatch or `cfg` on a single crate.
 

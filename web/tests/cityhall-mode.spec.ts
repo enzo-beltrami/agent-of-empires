@@ -13,7 +13,6 @@ const SCHEMA = [
     label: "Theme",
     widget: { kind: "select", options: [{ value: "dark", label: "dark" }] },
   },
-  { section: "theme", field: "color_mode", label: "Color mode", widget: { kind: "select", options: [] } },
   { section: "theme", field: "idle_decay_minutes", label: "Idle decay", widget: { kind: "number" } },
   { section: "session", field: "delete_to_trash", label: "Delete to Trash", widget: { kind: "toggle" } },
   { section: "session", field: "confirm_delete", label: "Confirm Before Delete", widget: { kind: "toggle" } },
@@ -179,7 +178,6 @@ test("Settings, its tabs, and settings search are curated to the CityHall subset
 
   await page.goto("/settings/theme");
   await expect(page.locator("button:visible", { hasText: "Theme" }).first()).toBeVisible();
-  await expect(page.getByText("Color mode")).toHaveCount(0);
   await expect(page.getByText("Idle decay")).toHaveCount(0);
 
   // MCP and Plugins render read-only.

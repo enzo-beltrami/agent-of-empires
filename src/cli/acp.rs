@@ -171,14 +171,6 @@ pub enum AcpCommands {
         #[arg(long, default_value = "0")]
         since: u64,
     },
-    /// Open the TUI structured view directly for a known session id.
-    /// Combine with `AOE_DAEMON_URL` (+ `AOE_DAEMON_TOKEN`, or
-    /// `AOE_DAEMON_PASSPHRASE` against a `--auth=passphrase` daemon) to
-    /// attach across machines without going through the home session list.
-    Attach {
-        /// Acp session id.
-        session: String,
-    },
     /// Switch an agent session to a different ACP agent, keeping the
     /// transcript. Valid targets are built-in registry agents and any
     /// custom agent configured in `[session.agent_acp_cmd]`. The new
@@ -271,7 +263,6 @@ pub async fn run(command: AcpCommands) -> Result<()> {
         } => approve(&session, &nonce, always, deny, option).await,
         AcpCommands::Cancel { session } => cancel(&session).await,
         AcpCommands::Tail { session, since } => tail(&session, since).await,
-        AcpCommands::Attach { session } => attach(&session).await,
         AcpCommands::SwitchAgent {
             session,
             target,
@@ -641,7 +632,7 @@ async fn doctor(json: bool, fix: bool, adapter: Vec<String>, all_adapters: bool)
     println!("======================");
     println!();
     println!("The structured view is the ACP-based structured rendering. It is the default");
-    println!("in the web dashboard; `aoe add` and the TUI default to the terminal view.");
+    println!("in the web dashboard; `aoe add` defaults to the terminal view.");
     println!("Pass --structured-view or --agent to opt a CLI session in (or flip a session");
     println!("from the session view).");
     println!();
@@ -1237,10 +1228,6 @@ async fn switch_provider(session: &str, provider: &str) -> Result<()> {
         println!("model pick replaced by the provider's default; model ids are provider-specific");
     }
     Ok(())
-}
-
-async fn attach(session: &str) -> Result<()> {
-    crate::tui::structured_view::run_standalone(session).await
 }
 
 async fn tail(session: &str, since: u64) -> Result<()> {

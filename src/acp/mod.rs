@@ -28,7 +28,6 @@ pub mod protocol;
 pub mod runner_lifecycle;
 pub mod sandbox;
 pub mod session_listing;
-pub mod session_paths;
 pub mod session_tee;
 pub mod state;
 pub mod supervisor;

@@ -105,6 +105,7 @@ pub fn resolve_global_profile_hooks(profile: &str) -> Option<HooksConfig> {
 }
 
 /// Trusted repo hooks replace global ones per type (not append).
+#[cfg(test)]
 fn merge_hooks_with_config(profile: &str, repo_hooks: HooksConfig) -> Option<HooksConfig> {
     let mut base = profile_config::resolve_config_or_warn(profile).hooks;
     if !repo_hooks.on_create.is_empty() {
@@ -128,14 +129,6 @@ pub fn apply_repo_hook_overrides(mut base: HooksConfig, repo_hooks: &HooksConfig
         }
     }
     base
-}
-
-/// Every command that will run, for the trust dialog.
-pub fn merge_hooks_for_display(profile: &str, repo_hooks: &HooksConfig) -> HooksConfig {
-    apply_repo_hook_overrides(
-        profile_config::resolve_config_or_warn(profile).hooks,
-        repo_hooks,
-    )
 }
 
 pub struct HookDisplayGroup {
@@ -205,6 +198,7 @@ impl ResolvedHooks {
 
     /// Trusted hooks read from `repo_root` (a [`RepoTrust::project_path`](super::RepoTrust))
     /// over global and profile.
+    #[cfg(test)]
     pub fn with_repo(profile: &str, repo_root: &Path, repo_hooks: HooksConfig) -> Option<Self> {
         merge_hooks_with_config(profile, repo_hooks).map(|hooks| Self {
             hooks,

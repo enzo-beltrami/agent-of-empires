@@ -1,6 +1,6 @@
 # Adding a Setting
 
-Settings are single-source: a field is declared once on its `Config` sub-struct, and the TUI, web dashboard, server validation, profile and repo overrides, and `config.toml` all derive from that declaration. In the common case, adding one is a single edit.
+Settings are single-source: a field is declared once on its `Config` sub-struct, and the web dashboard, server validation, profile and repo overrides, and `config.toml` all derive from that declaration. In the common case, adding one is a single edit.
 
 ## The one-edit case
 
@@ -13,13 +13,13 @@ Add the field to the relevant `#[derive(SettingsSection)]` struct (in `src/sessi
 pub my_setting: bool,
 ```
 
-The `SettingsSection` derive turns it into a `FieldDescriptor` in `settings_schema::schema()`, and from there the TUI builds its row (`src/tui/settings/fields.rs`), the web renders the matching control from `GET /api/settings/schema`, the server validates PATCH leaves against the field's `web_write` policy and `validation` rule, profile and repo overrides merge generically, and `config.toml` round-trips through serde. Run `cargo xtask gen-settings-keys` to refresh `web/src/lib/generated/settingsKeys.ts` (CI fails if it is stale; a renamed field then fails `tsc` wherever the dashboard still reads the old name), then `cargo test` and `cargo build --features web`; the field is live everywhere.
+The `SettingsSection` derive turns it into a `FieldDescriptor` in `settings_schema::schema()`, and from there the web renders the matching control from `GET /api/settings/schema`, the server validates PATCH leaves against the field's `web_write` policy and `validation` rule, profile and repo overrides merge generically, and `config.toml` round-trips through serde. Run `cargo xtask gen-settings-keys` to refresh `web/src/lib/generated/settingsKeys.ts` (CI fails if it is stale; a renamed field then fails `tsc` wherever the dashboard still reads the old name), then `cargo test` and `cargo build --features web`; the field is live everywhere.
 
 ## Section and widget
 
-The section comes from the struct's `#[setting_section(name = "...", category = "...")]`: `name` is the `[section]` table in `config.toml`, `category` the TUI tab, and an optional `repo_default = "allow" | "deny"` sets the repo-config policy its fields inherit.
+The section comes from the struct's `#[setting_section(name = "...", category = "...")]`: `name` is the `[section]` table in `config.toml`, `category` its settings category, and an optional `repo_default = "allow" | "deny"` sets the repo-config policy its fields inherit.
 
-A new section struct is not the one-edit case: add it to `build_schema` in `settings_schema/registry.rs`, which every surface and the PATCH policy read, give a new `category` a `SettingsCategory` tab in `src/tui/settings/`, and give the section a web tab in `SettingsView.tsx` plus its `SECTION_TO_TAB` entry.
+A new section struct is not the one-edit case: add it to `build_schema` in `settings_schema/registry.rs`, which every surface and the PATCH policy read and give the section a web tab in `SettingsView.tsx` plus its `SECTION_TO_TAB` entry.
 
 | Widget | Backing type | Control |
 |--------|--------------|---------|
@@ -41,11 +41,11 @@ Beyond `label`, `desc` (defaults to the doc comment), `widget`, `options`, `min`
 - `validate`: the server-authoritative check (`range:MIN[:MAX]`, `nonempty`, `memory_limit`, `volume_list`, `env_list`, `port_mapping_list`, `capability_list`, `security_opt_list`, `network`, `systemd_slice`). If none fits, add a `ValidationKind` variant and a `validate=` keyword; that one rule drives both the client UX validator and the server gate.
 - `web`: `elevation:<reason>` (passphrase step-up to save from the web) or `local_only:<reason>` (a host-execution surface the server rejects and the dashboard never renders, such as a binary path or command argv). Omit for a plain allow.
 - `repo`: `allow` or `deny`, defaulting to the section's `repo_default`. Global-only fields are never repo-settable.
-- `category` overrides the section's TUI tab, `advanced` groups the field under an Advanced fold, `tui_only` marks a field only the TUI reads so the web folds it under "Terminal UI", `global_only` shows it but makes it non-overridable per profile, and `skip` excludes it from the schema entirely.
+- `category` overrides the section's category, `advanced` groups the field under an Advanced fold, `global_only` shows it but makes it non-overridable per profile, and `skip` excludes it from the schema entirely.
 
 ## Custom widgets
 
-For a field with no flat representation (a tagged enum, a float, a nested map), use `widget = "custom:<id>"` and register the id on **both** surfaces: `custom_value_from_json` / `custom_value_to_json` (plus the `validate()` and edit paths if needed) in `src/tui/settings/fields.rs`, and a component in `web/src/components/settings/customWidgets.tsx` wired into `customWidgetRegistry.ts`. An unregistered web id renders a visible "no control" placeholder rather than dropping the field silently.
+For a field with no flat representation (a tagged enum, a float, a nested map), use `widget = "custom:<id>"` and register a component in `web/src/components/settings/customWidgets.tsx` wired into `customWidgetRegistry.ts`. An unregistered web id renders a visible "no control" placeholder rather than dropping the field silently.
 
 Existing examples: `theme-name` (dynamic select plus repaint), `sound-volume` (a float slider), `logging-targets` (a per-target matrix), and `acp-defaults` (a validated JSON-object editor). For a cross-surface side effect after a save, pass `onAfterSave` to the web `SchemaSection`.
 
@@ -54,8 +54,7 @@ Existing examples: `theme-name` (dynamic select plus repaint), `sound-volume` (a
 `#[setting(skip)]` is for fields that are not user-facing settings. Some things are deliberately unschematized:
 
 - **`hooks`** has no `SettingsSection` at all. Hooks are arbitrary commands, so the hard exclusion is defense in depth against a future policy change making them web-writable.
-- **`Config.environment`** is a root-level `Vec<String>` with no section, so it is TUI and `config.toml` only. Surfacing it would need a config-layout migration.
-- **`diff`** is schema-backed for the TUI, but the web Diff tab is intentionally client-local.
+- **`Config.environment`** is a root-level `Vec<String>` with no section, so it is `config.toml` only. Surfacing it would need a config-layout migration.
 - **`telemetry`** is in the schema, but the web toggle uses a dedicated consent endpoint that records "has responded" and honors `DO_NOT_TRACK`.
 - **`app_state`** is global-only runtime bookkeeping persisted to `state.toml` (see the [configuration reference](../guides/configuration.md#file-locations)). Read and write it through `update_app_state` / `AppStateConfig::load`, never `update_config`, which writes `config.toml` and strips `app_state` on save. Before adding a field shaped like this, reconsider whether it is a setting at all.
 
@@ -65,4 +64,4 @@ Renaming or relocating a stored field is a breaking change to `config.toml`, so 
 
 ## Tests
 
-The schema, server policy, and validators have unit tests under `src/session/config/settings_schema/`. A custom widget needs a TUI round-trip test and a web contract test (`web/src/components/settings/__tests__/customWidgets.test.tsx`). A user-facing dashboard settings flow must also update `web/tests/coverage-matrix.json` and add or extend the matching test; see `web/AGENTS.md`.
+The schema, server policy, and validators have unit tests under `src/session/config/settings_schema/`. A custom widget needs a web contract test (`web/src/components/settings/__tests__/customWidgets.test.tsx`). A user-facing dashboard settings flow must also update `web/tests/coverage-matrix.json` and add or extend the matching test; see `web/AGENTS.md`.

@@ -364,22 +364,6 @@ impl GitWorktree {
         }
     }
 
-    /// The branch's short upstream (e.g. `origin/hi`), used to warn that a
-    /// rename leaves the remote branch behind.
-    pub fn branch_upstream(&self, branch: &str) -> Option<String> {
-        let refname = format!("refs/heads/{branch}");
-        let output = run_git(
-            &self.repo_path,
-            ["for-each-ref", "--format=%(upstream:short)", &refname],
-        )
-        .ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        let upstream = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        (!upstream.is_empty()).then_some(upstream)
-    }
-
     /// `git branch -m`, which also updates a worktree that has `old` checked out.
     pub fn rename_branch(&self, old: &str, new: &str) -> Result<()> {
         tracing::info!(target: "git.worktree",

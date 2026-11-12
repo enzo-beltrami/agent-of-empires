@@ -1,20 +1,14 @@
 //! Acp daemon client.
 //!
-//! HTTP + WebSocket client for talking to an `aoe serve` daemon. Used
-//! by:
-//!
-//! - The `aoe acp *` CLI verbs (history, status, prompt, approve,
-//!   cancel, tail, attach).
-//! - The TUI structured view (`src/tui/structured_view/`).
+//! HTTP + WebSocket client for talking to an `aoe serve` daemon, used by the
+//! CLI verbs (`aoe acp history`, `status`, `prompt`, `approve`, `tail`, ...).
 //!
 //! Clients share endpoint discovery, bounded HTTP decoding and authenticated
 //! WebSocket transport. An explicit `AOE_DAEMON_URL` takes precedence; otherwise
 //! discovery selects the live local daemon through its owner-verified Unix socket.
 //! [`daemon_manager::locate_daemon`] never spawns. [`daemon_manager::require_daemon`]
-//! may autostart a loopback daemon for CLI commands. Native TUI bootstrap uses
-//! [`daemon_manager::ensure_native_daemon`] to keep Core-only exposure.
+//! may autostart a loopback daemon for CLI commands.
 
-pub(crate) mod autostart;
 pub mod daemon_manager;
 pub mod discovery;
 pub mod http;

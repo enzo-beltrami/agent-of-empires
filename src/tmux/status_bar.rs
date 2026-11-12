@@ -1,21 +1,17 @@
 //! tmux status bar configuration for aoe sessions
 
+use crate::theme::{Color, Theme};
 use anyhow::Result;
-use ratatui::style::Color;
-
-use crate::tui::styles::Theme;
 
 /// Information about a sandboxed session for status bar display.
 pub struct SandboxDisplay {
     pub container_name: String,
 }
 
-/// Convert a ratatui Color to a tmux-compatible hex color string (e.g. "#0f172a").
+/// Convert a theme color to a tmux hex color string (e.g. "#0f172a").
 fn color_to_tmux(color: Color) -> String {
-    match color {
-        Color::Rgb(r, g, b) => format!("#{:02x}{:02x}{:02x}", r, g, b),
-        _ => "default".to_string(),
-    }
+    let Color::Rgb(r, g, b) = color;
+    format!("#{:02x}{:02x}{:02x}", r, g, b)
 }
 
 /// Apply aoe-styled status bar configuration to a tmux session.
@@ -170,12 +166,11 @@ pub fn apply_all_tmux_options(
     profile: &str,
 ) {
     use crate::session::config::{resolve_tmux_setting, TmuxSetting, TmuxSettingAction};
-    use crate::tui::styles::load_theme;
+    use crate::theme::load_theme;
 
     let config = crate::tmux::tmux_option_config(profile);
 
     if resolve_tmux_setting(TmuxSetting::StatusBar, &config) == TmuxSettingAction::Apply {
-        // tmux takes hex colors itself, so palette mode does not apply here.
         let theme = load_theme(&crate::session::config::resolve_theme_name());
 
         if let Err(e) = apply_status_bar(session_name, title, branch, sandbox, &theme) {
@@ -284,7 +279,6 @@ fn get_session_option(session_name: &str, option: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::styles::{builtin_theme_names, load_theme};
 
     #[test]
     fn test_color_to_tmux_rgb() {
@@ -294,37 +288,11 @@ mod tests {
     }
 
     #[test]
-    fn test_color_to_tmux_non_rgb_fallback() {
-        assert_eq!(color_to_tmux(Color::Red), "default");
-    }
-
-    #[test]
     fn status_left_hint_follows_the_clients_attach_path() {
         assert_eq!(
             status_left_format("Ctrl+b", "#111111", "#222222", "#333333"),
             " #[fg=#111111,bold]#S#[fg=#222222,nobold] \u{2502} #[fg=#333333]Ctrl+b \
              #{?client_last_session,L back to aoe,d to detach} "
         );
-    }
-
-    #[test]
-    fn test_all_themes_produce_valid_status_bar_colors() {
-        for theme_name in builtin_theme_names() {
-            let theme = load_theme(theme_name);
-            let colors = [
-                ("background", color_to_tmux(theme.background)),
-                ("text", color_to_tmux(theme.text)),
-                ("accent", color_to_tmux(theme.accent)),
-                ("branch", color_to_tmux(theme.branch)),
-                ("sandbox", color_to_tmux(theme.sandbox)),
-                ("dimmed", color_to_tmux(theme.dimmed)),
-            ];
-            for (field, hex) in &colors {
-                assert!(
-                    hex.starts_with('#'),
-                    "{theme_name}: {field} should be hex, got {hex}"
-                );
-            }
-        }
     }
 }

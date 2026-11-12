@@ -3,7 +3,7 @@
 Install Rust and tmux. Node.js and npm are needed only for the web dashboard.
 
 ```sh
-cargo build                         # debug: TUI + daemon, no Node
+cargo build                         # debug: CLI + daemon, no Node
 cargo build --release               # shipping build with LTO
 cargo build --profile dev-release   # optimized, without LTO
 cargo build --features web          # include the web dashboard
@@ -61,7 +61,7 @@ enforces it, and an unlisted root only reaches the file at `warn` and above.
 Dependency crates log at `warn` regardless of `default_level`. Clearing one override in
 Settings > Logging restores inheritance without clearing other targets.
 
-Filter changes saved in Settings > Logging apply to the TUI, running daemon and structured runners in the same app namespace. Sink and rotation changes require restart. No-op and unrelated saves preserve temporary runtime filters.
+Filter changes saved in Settings > Logging apply to the running daemon and structured runners in the same app namespace. Sink and rotation changes require restart. No-op and unrelated saves preserve temporary runtime filters.
 
 Debug builds are isolated from installed release state:
 

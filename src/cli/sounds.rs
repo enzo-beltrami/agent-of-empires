@@ -46,10 +46,9 @@ async fn install_bundled() -> Result<()> {
                 }
 
                 println!("\n💡 Next steps:");
-                println!("  1. Launch the TUI: aoe");
-                println!("  2. Press 's' to open Settings");
-                println!("  3. Navigate to Sound category");
-                println!("  4. Enable sounds and configure transitions");
+                println!("  1. Open Settings in the web dashboard");
+                println!("  2. Navigate to the Sound category");
+                println!("  3. Enable sounds and configure transitions");
 
                 println!("\n🎮 Want Age of Empires II sounds instead?");
                 println!("   If you own AoE II, copy the taunt .wav files from:");

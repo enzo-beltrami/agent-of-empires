@@ -212,16 +212,15 @@ async fn profile_settings_reject_global_only_fields_without_writing() {
     let uri = "/api/profiles/main/settings";
     for (section, field, value) in [
         ("theme", "name", json!("dracula")),
-        ("theme", "color_mode", json!("palette")),
-        ("session", "confirm_before_quit", json!(false)),
-        ("session", "sidebar_position", json!("right")),
+        ("session", "favorites_first", json!(false)),
+        ("session", "show_session_colors", json!(false)),
         ("session", "session_id_poller_max_threads", json!(12)),
         ("web", "notify_on_idle", json!(true)),
         ("logging", "targets", json!({})),
         ("acp", "allow_agent_install", json!(true)),
         ("tmux", "socket_name", json!("custom")),
         ("telemetry", "enabled", json!(true)),
-        ("session", "sidebar_position", Value::Null),
+        ("session", "show_session_colors", Value::Null),
     ] {
         let response = patch(
             &app,

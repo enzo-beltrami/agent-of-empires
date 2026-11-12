@@ -116,18 +116,6 @@ impl Instance {
         }
     }
 
-    pub fn auxiliary_presence(&self, target: &AuxiliaryTarget) -> PanePresence {
-        self.auxiliary
-            .iter()
-            .find(|observation| &observation.target == target)
-            .map_or(PanePresence::Unknown, |observation| observation.pane.state)
-    }
-
-    pub fn tool_presence(&self, name: &str) -> PanePresence {
-        self.auxiliary.iter().find(|observation| matches!(&observation.target, AuxiliaryTarget::Tool { tool_name } if tool_name == name))
-            .map_or(PanePresence::Unknown, |observation| observation.pane.state)
-    }
-
     /// Inject the live FileWatchService Arc into this Instance for
     /// in-process Local fast-path notifications during subsequent storage
     /// mutations. Called by `Storage::load*` automatically; manual call

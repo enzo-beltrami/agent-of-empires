@@ -14,7 +14,7 @@
 ## Commands
 
 ```sh
-cargo build                         # TUI + daemon, no Node needed
+cargo build                         # CLI + daemon, no Node needed
 cargo build --features web          # web dashboard, requires Node and npm
 cargo build --profile dev-release   # optimized local build without LTO
 cargo test

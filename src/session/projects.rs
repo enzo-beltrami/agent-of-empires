@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -416,27 +416,6 @@ pub(crate) fn canonical_key<'a>(path: impl Into<std::borrow::Cow<'a, str>>) -> S
         .unwrap_or_else(|_| path.into_owned())
 }
 
-/// Display label for a repo path: its final path segment, with readable
-/// fallbacks for the root and empty cases. This is the header a project
-/// renders under in the project-grouped view, so a registered project and
-/// the sessions living in the same repo collapse under one header.
-///
-/// Shared so the TUI's session-derived grouping and the empty-project
-/// injection below agree on the label, and so a future server endpoint can
-/// reuse the same derivation instead of re-implementing it in TypeScript.
-pub fn repo_label(path: &str) -> String {
-    let p = Path::new(path);
-    p.file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| {
-            if path == "/" || path.is_empty() {
-                "(root)".to_string()
-            } else {
-                path.to_string()
-            }
-        })
-}
-
 /// A registered project that has no live session keeping its header alive in
 /// the project-grouped view, so a surface can render it as an empty header.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -446,39 +425,6 @@ pub struct UnpopulatedProject {
     /// Canonical repo path, used to unpin the entry and to launch new
     /// sessions under it.
     pub path: String,
-}
-
-/// Given the set of project-header labels that already have at least one live
-/// session and the registered projects, return the registered projects whose
-/// header would otherwise be invisible. Deduped by canonical path (the stable
-/// repo identity), so two repos that merely share a basename are not folded
-/// into one entry. A registered project whose label collides with a populated
-/// header is omitted, the populated header already carries it (and the pin
-/// indicator is derived separately, against the header's own repo path).
-///
-/// Pure and side-effect free so it can be unit-tested directly and reused by
-/// any surface that wants to show pinned-but-empty projects.
-pub fn unpopulated_projects(
-    populated_labels: &HashSet<String>,
-    registered: &[Project],
-) -> Vec<UnpopulatedProject> {
-    let mut out = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-    for p in registered {
-        // Only pinned projects surface as empty headers.
-        if !p.pinned {
-            continue;
-        }
-        let label = repo_label(&p.path);
-        if populated_labels.contains(&label) || !seen.insert(canonical_key(&p.path)) {
-            continue;
-        }
-        out.push(UnpopulatedProject {
-            label,
-            path: p.path.clone(),
-        });
-    }
-    out
 }
 
 // Freeze aliases before acquiring flocks; lock global before profile.
@@ -1305,14 +1251,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn repo_label_uses_basename_with_root_fallbacks() {
-        assert_eq!(repo_label("/home/me/myrepo"), "myrepo");
-        assert_eq!(repo_label("/home/me/myrepo/"), "myrepo");
-        assert_eq!(repo_label("/"), "(root)");
-        assert_eq!(repo_label(""), "(root)");
-    }
-
     #[cfg(unix)]
     #[test]
     #[serial]
@@ -1340,62 +1278,6 @@ mod tests {
                 Some(libc::ELOOP)
             );
         }
-    }
-
-    #[test]
-    fn unpopulated_projects_skips_populated_and_keys_on_path() {
-        let registered = vec![
-            Project::new("alpha", "/work/alpha", ProjectScope::Global).with_pinned(true),
-            Project::new("beta", "/work/beta", ProjectScope::Global).with_pinned(true),
-            // Same basename as the first beta entry but a distinct repo: it
-            // must NOT be folded away by the shared basename, the identity is
-            // the path.
-            Project::new("beta-other", "/other/beta", ProjectScope::Profile).with_pinned(true),
-        ];
-        // `alpha` has a live session keeping its header alive, so only the
-        // two distinct beta repos surface as empty headers.
-        let populated: HashSet<String> = ["alpha".to_string()].into_iter().collect();
-
-        let empties = unpopulated_projects(&populated, &registered);
-        let paths: Vec<&str> = empties.iter().map(|p| p.path.as_str()).collect();
-        assert_eq!(paths, vec!["/work/beta", "/other/beta"]);
-        assert!(empties.iter().all(|p| p.label == "beta"));
-    }
-
-    #[test]
-    fn unpopulated_projects_dedupes_same_path() {
-        let registered = vec![
-            Project::new("beta", "/work/beta", ProjectScope::Global).with_pinned(true),
-            // Same canonical path registered again (e.g. global + profile
-            // shadow): collapse to a single header.
-            Project::new("beta", "/work/beta", ProjectScope::Profile).with_pinned(true),
-        ];
-        let populated: HashSet<String> = HashSet::new();
-        let empties = unpopulated_projects(&populated, &registered);
-        assert_eq!(empties.len(), 1);
-        assert_eq!(empties[0].path, "/work/beta");
-    }
-
-    #[test]
-    fn unpopulated_projects_empty_when_all_populated() {
-        let registered =
-            vec![Project::new("alpha", "/work/alpha", ProjectScope::Global).with_pinned(true)];
-        let populated: HashSet<String> = ["alpha".to_string()].into_iter().collect();
-        assert!(unpopulated_projects(&populated, &registered).is_empty());
-    }
-
-    #[test]
-    fn unpopulated_projects_skips_unpinned() {
-        // A saved-but-unpinned project (the new default) is not forced into the
-        // sidebar; only pinned ones surface as empty headers. See #2208.
-        let registered = vec![
-            Project::new("pinned", "/work/pinned", ProjectScope::Global).with_pinned(true),
-            Project::new("saved", "/work/saved", ProjectScope::Global),
-        ];
-        let populated: HashSet<String> = HashSet::new();
-        let empties = unpopulated_projects(&populated, &registered);
-        let paths: Vec<&str> = empties.iter().map(|p| p.path.as_str()).collect();
-        assert_eq!(paths, vec!["/work/pinned"]);
     }
 
     #[test]

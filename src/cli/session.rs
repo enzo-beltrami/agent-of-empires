@@ -136,8 +136,8 @@ pub struct ImportArgs {
     #[arg(long, conflicts_with = "paths")]
     pub all: bool,
 
-    /// Import as structured-view sessions (rendered in the web dashboard and
-    /// the structured TUI view) instead of terminal/tmux sessions. Structured
+    /// Import as structured-view sessions (rendered in the web dashboard)
+    /// instead of terminal/tmux sessions. Structured
     /// sessions replay their transcript under `aoe serve`.
     #[arg(long)]
     pub structured: bool,

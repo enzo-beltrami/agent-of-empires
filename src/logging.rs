@@ -16,7 +16,6 @@ use crate::session::config::{LoggingConfig, RotationKind};
 /// Contexts whose stdout is the UI or discarded force the file sink.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessContext {
-    Tui,
     ServeDaemonChild,
     ServeForeground,
     Runner,
@@ -42,10 +41,7 @@ pub fn resolve_sink(cfg: &LoggingConfig, app_dir: &Path, ctx: ProcessContext) ->
 
     let force_file = matches!(
         ctx,
-        ProcessContext::Tui
-            | ProcessContext::ServeDaemonChild
-            | ProcessContext::Runner
-            | ProcessContext::OneShotCli
+        ProcessContext::ServeDaemonChild | ProcessContext::Runner | ProcessContext::OneShotCli
     );
     let want_stdout = matches!(cfg.output, SinkKind::Stdout);
 
@@ -106,7 +102,6 @@ pub const DEFAULT_TARGET_ROOTS: &[&str] = &[
     // `log` carries filter-swap audit events (`log.runtime`).
     "log",
     "cli",
-    "tui",
     "session",
     "tmux",
     "http",
@@ -523,7 +518,7 @@ where
 }
 
 /// `start_marker` writes the filter-immune `[AOE_START_MARKER]` line that
-/// delimits daemon and TUI runs; one-shot CLI commands skip it so the last
+/// delimits daemon runs; one-shot CLI commands skip it so the last
 /// marker in the shared file stays the daemon's.
 pub fn init_subscriber_with_options(
     target: SubscriberTarget,
@@ -1029,7 +1024,7 @@ mod tests {
                 "acp=trace,acp[turn]=debug,agent_client_protocol::jsonrpc::transport_actor=trace",
                 vec![],
             ),
-            ("agent_of_empires::tui=debug,hyper=debug", vec!["hyper"]),
+            ("agent_of_empires::server=debug,hyper=debug", vec!["hyper"]),
             ("info,cockpit", vec!["cockpit"]),
         ];
         for (directive, want) in cases {
@@ -1410,8 +1405,6 @@ mod tests {
         }
     }
 
-    /// Only a foreground serve may log to stdout; the TUI owns the terminal,
-    /// so it is coerced to the file with a warning.
     #[test]
     fn failed_init_leaves_the_active_sink_unset() {
         let init = init_subscriber_with_options(
@@ -1426,12 +1419,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_sink_honors_stdout_only_outside_the_tui() {
+    fn resolve_sink_honors_stdout_only_for_foreground_serve() {
         let mut cfg = make_cfg(RotationKind::Size, 50, 5);
         cfg.output = crate::session::config::SinkKind::Stdout;
         let dir = std::path::PathBuf::from("/tmp/aoe-test");
         for (context, to_stdout) in [
-            (ProcessContext::Tui, false),
+            (ProcessContext::OneShotCli, false),
             (ProcessContext::ServeForeground, true),
         ] {
             let r = resolve_sink(&cfg, &dir, context);

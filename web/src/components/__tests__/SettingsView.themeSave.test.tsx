@@ -22,24 +22,6 @@ const THEME_SCHEMA = [
   },
   {
     section: "theme",
-    field: "color_mode",
-    category: "Theme",
-    label: "Color Mode",
-    description: "",
-    widget: {
-      kind: "select",
-      options: [
-        { value: "truecolor", label: "truecolor" },
-        { value: "palette", label: "palette" },
-      ],
-    },
-    web_write: { policy: "allow" },
-    profile_overridable: false,
-    validation: { rule: "none" },
-    advanced: false,
-  },
-  {
-    section: "theme",
     field: "idle_decay_minutes",
     category: "Theme",
     label: "Idle Decay (minutes)",
@@ -136,27 +118,6 @@ describe("SettingsView theme tab save routing", () => {
     });
     await waitFor(() => expect(updateTheme).toHaveBeenCalledWith({ name: "dracula" }));
     expect(updateSettings).not.toHaveBeenCalled();
-  });
-
-  // Ported from live settings-theme-color-mode.spec.ts.
-  it("color-mode change PATCHes but never dispatches the theme repaint event", async () => {
-    renderThemeTab();
-    await waitFor(() => selectWithOption("palette"));
-    fireEvent.change(selectWithOption("palette"), {
-      target: { value: "palette" },
-    });
-    await waitFor(() => expect(updateTheme).toHaveBeenCalledWith({ color_mode: "palette" }));
-    expect(dispatchThemePickerChanged).not.toHaveBeenCalled();
-    expect(updateSettings).not.toHaveBeenCalled();
-
-    // Positive control: a theme-name pick through the same tab does dispatch,
-    // proving the spy is wired and the gating is per-field, not global.
-    fireEvent.change(selectWithOption("dracula"), {
-      target: { value: "dracula" },
-    });
-    await waitFor(() => expect(updateTheme).toHaveBeenCalledWith({ name: "dracula" }));
-    await waitFor(() => expect(dispatchThemePickerChanged).toHaveBeenCalledWith("dracula"));
-    expect(dispatchThemePickerChanged).toHaveBeenCalledTimes(1);
   });
 
   it("routes a profile-overridable row (idle decay) through the settings save, not /api/theme", async () => {

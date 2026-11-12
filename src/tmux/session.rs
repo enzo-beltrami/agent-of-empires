@@ -359,14 +359,6 @@ impl Session {
         crate::tmux::live_agent_session_name(id, &Self::generate_name(id, title))
     }
 
-    /// [`Self::resolve_name`] for **render paths**: answered from the shared
-    /// snapshot only, never refreshing. A stale snapshot yields the derived
-    /// name until the background snapshot poller refreshes it; paint must
-    /// never wait on tmux.
-    pub(crate) fn resolve_name_for_display(id: &str, title: &str) -> String {
-        crate::tmux::agent_session_name_for_display(id, &Self::generate_name(id, title))
-    }
-
     /// Purely derive the tmux session name from a session id and title, with no
     /// reference to what is live. Callers that want the session's CURRENT name
     /// want [`Self::resolve_name`].
@@ -385,16 +377,6 @@ impl Session {
 
     pub(crate) fn exists_live(&self) -> bool {
         crate::tmux::session_exists_live(&self.name)
-    }
-    pub(crate) fn exists_with_deadline(&self, deadline: &crate::tmux::TmuxCommandDeadline) -> bool {
-        let mut command = crate::tmux::tmux_command();
-        command
-            .args(["has-session", "-t"])
-            .arg(format!("={}", self.name));
-        deadline
-            .run(&mut command)
-            .map(|output| output.status.success())
-            .unwrap_or(false)
     }
 
     /// Tri-state existence probe that distinguishes "the tmux server
@@ -1199,34 +1181,6 @@ impl Session {
         Ok(self.capture_window_composited_with_cursor(lines)?.0)
     }
 
-    /// Plain capture of the last `lines` rows: wrapped lines joined (`-J`) and no
-    /// escapes (unlike `capture_pane`, which passes `-e`), so callers match on the
-    /// text rather than on embedded SGR sequences. Used to scrape the pane.
-    pub fn capture_plain(&self, lines: usize) -> Result<String> {
-        // The existence probe and capture share one deadline.
-        let deadline = crate::tmux::TmuxCommandDeadline::new();
-        if !self.exists_with_deadline(&deadline) {
-            return Ok(String::new());
-        }
-        let target = format!("={}:^", self.name);
-        let mut command = crate::tmux::tmux_command();
-        command.args([
-            "capture-pane",
-            "-t",
-            &target,
-            "-p",
-            "-J",
-            "-S",
-            &format!("-{}", lines),
-        ]);
-        match deadline.run(&mut command) {
-            Ok(output) if output.status.success() => {
-                Ok(String::from_utf8_lossy(&output.stdout).to_string())
-            }
-            _ => Ok(String::new()),
-        }
-    }
-
     /// Capture the pane's full scrollback (from session start) with wrapped
     /// lines joined (`-J`) and no escape sequences (`-e` omitted), for
     /// summarizing the first turn in smart-rename. Unlike
@@ -1484,30 +1438,6 @@ impl Session {
         }
 
         Ok(())
-    }
-
-    /// Restore automatic window sizing after live-send forced a manual
-    /// size. tmux's `resize-window -x -y` silently switches the window-
-    /// size option to `manual`, so without this call a later
-    /// `attach-session` from a full-size terminal would keep the window
-    /// at the small preview dimensions live-send left behind. Re-setting
-    /// the option to `latest` is the documented escape hatch and matches
-    /// the policy `append_window_size_args` installs at session create.
-    /// Best-effort: failures (session gone, tmux ENOENT) are swallowed
-    /// so a stuck pane never blocks the user's exit from live mode.
-    pub fn reset_size_to_latest_client(&self) {
-        if !self.exists() {
-            return;
-        }
-        let mut command = crate::tmux::tmux_command();
-        command.args([
-            "set-option",
-            "-t",
-            &format!("={}:", self.name),
-            "window-size",
-            "latest",
-        ]);
-        let _ = crate::tmux::run_tmux_command_with_timeout(&mut command);
     }
 
     /// Read the live vertical chrome (status-bar rows) for pane_target from
@@ -2175,40 +2105,6 @@ impl Session {
             return false;
         }
     }
-    /// Resize a detached pane only if the inactive owner state observed here
-    /// is unchanged when tmux executes resize-window. This fences a live owner
-    /// or terminal attach that arrives after the preliminary worker checks.
-    /// Returns the applied window row count on success, `None` when declined.
-    pub(crate) fn resize_window_if_detached_without_active_owner_after_exists_with_deadline(
-        &self,
-        cols: u16,
-        rows: u16,
-        deadline: &crate::tmux::TmuxCommandDeadline,
-    ) -> Option<u16> {
-        let owner_condition = match self.owner_at_result_with_deadline(
-            SIZE_OWNER_OPT,
-            SIZE_OWNER_HB_OPT,
-            deadline,
-        ) {
-            Ok(None) => {
-                format!("#{{&&:#{{==:#{{{SIZE_OWNER_OPT}}},}},#{{==:#{{{SIZE_OWNER_HB_OPT}}},}}}}")
-            }
-            Ok(Some((_, heartbeat)))
-                if now_ms().saturating_sub(heartbeat) <= SIZE_OWNER_TTL.as_millis() as u64 =>
-            {
-                return None;
-            }
-            Ok(Some((owner, heartbeat))) => {
-                let owner = Self::tmux_format_literal(&owner);
-                format!(
-                    "#{{&&:#{{==:#{{{SIZE_OWNER_OPT}}},{owner}}},#{{==:#{{{SIZE_OWNER_HB_OPT}}},{heartbeat}}}}}"
-                )
-            }
-            Err(_) => return None,
-        };
-        let condition = format!("#{{&&:#{{==:#{{session_attached}},0}},{owner_condition}}}");
-        self.resize_window_if_format_with_deadline(&condition, cols, rows, deadline)
-    }
 
     /// Whether at least one tmux client is attached to this session, from
     /// `#{session_attached}` (the attached client count, per session).
@@ -2251,26 +2147,6 @@ impl Session {
         Some(attached > 0)
     }
 
-    /// Whether a non-stale size owner currently holds the lock. A passive
-    /// writer (the TUI's detached preview sync) checks this to defer to an
-    /// active owner without claiming the lock itself.
-    pub fn has_active_size_owner(&self) -> Option<bool> {
-        let deadline = crate::tmux::TmuxCommandDeadline::new();
-        self.has_active_size_owner_with_deadline(&deadline)
-    }
-
-    pub(crate) fn has_active_size_owner_with_deadline(
-        &self,
-        deadline: &crate::tmux::TmuxCommandDeadline,
-    ) -> Option<bool> {
-        self.owner_at_result_with_deadline(SIZE_OWNER_OPT, SIZE_OWNER_HB_OPT, deadline)
-            .ok()
-            .map(|owner| {
-                owner.is_some_and(|(_, hb)| {
-                    now_ms().saturating_sub(hb) <= SIZE_OWNER_TTL.as_millis() as u64
-                })
-            })
-    }
     /// Read the current size owner and its last heartbeat (unix millis), if a
     /// lock is held.
     pub fn size_owner(&self) -> Option<(String, u64)> {
@@ -3623,55 +3499,10 @@ mod tests {
         }
         assert!(session.size_owner().is_none());
 
-        let deadline = crate::tmux::TmuxCommandDeadline::new();
-        assert!(session
-            .resize_window_if_detached_without_active_owner_after_exists_with_deadline(
-                91, 31, &deadline,
-            )
-            .is_some());
-        assert_eq!(pane_size(), (91, 31));
-        assert!(session.claim_size_owner("active", Duration::from_secs(10)));
-        let deadline = crate::tmux::TmuxCommandDeadline::new();
-        assert!(session
-            .resize_window_if_detached_without_active_owner_after_exists_with_deadline(
-                92, 32, &deadline,
-            )
-            .is_none());
-        assert_eq!(pane_size(), (91, 31));
-        session.release_size_owner("active");
-
-        // The resize must land on the FIRST window even when the session's
-        // current window is a later one: preview capture, the chrome probe,
-        // and the observed-size reconcile all read `:^`, so a bare-session
-        // target (which tmux resolves to the current window) would resize the
-        // wrong window and the reconcile would loop chasing a mismatch.
-        let out = crate::tmux::tmux_command()
-            .args(["new-window", "-t", guard.name(), "sleep 30"])
-            .output()
-            .expect("tmux new-window");
-        assert!(out.status.success());
-        let deadline = crate::tmux::TmuxCommandDeadline::new();
-        assert!(session
-            .resize_window_if_detached_without_active_owner_after_exists_with_deadline(
-                93, 33, &deadline,
-            )
-            .is_some());
-        assert_eq!(
-            pane_size(),
-            (93, 33),
-            "the first window must be the resize target"
-        );
-        let out = crate::tmux::tmux_command()
-            .args(["kill-window", "-t", &format!("{}:$", guard.name())])
-            .output()
-            .expect("tmux kill-window");
-        assert!(out.status.success());
-
         // A partial owner write is unknown to passive readers, but a later
         // claimant must repair it rather than leaving the lock wedged forever.
         session.set_user_option(SIZE_OWNER_OPT, "partial");
         session.unset_user_option(SIZE_OWNER_HB_OPT);
-        assert_eq!(session.has_active_size_owner(), None);
         assert!(session.claim_size_owner("recovered", Duration::from_secs(10)));
         assert_eq!(
             session.size_owner().map(|(id, _)| id),
@@ -4491,11 +4322,6 @@ mod tests {
         assert!(
             content.contains("AOE_FIRST_WINDOW"),
             "capture_pane must read the first window's pane: {content:?}"
-        );
-        let plain = session.capture_plain(10).expect("plain capture");
-        assert!(
-            plain.contains("AOE_FIRST_WINDOW"),
-            "plain capture must target the first window: {plain:?}"
         );
 
         // The command in the first window is 'sleep', not a shell.

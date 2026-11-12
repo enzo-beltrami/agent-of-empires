@@ -26,32 +26,16 @@ const field = (
 const SCHEMA = [
   field(
     "session",
-    "sidebar_position",
-    "Sidebar Position",
+    "row_tag",
+    "Row Tag",
     {
       kind: "select",
       options: [
-        { value: "left", label: "Left" },
-        { value: "right", label: "Right" },
+        { value: "branch", label: "Branch" },
+        { value: "none", label: "None" },
       ],
     },
     { profile_overridable: false },
-  ),
-  ...[
-    ["split_terminal_height_percent", "Paired terminal share of the split (%)", 1, 99],
-    ["split_terminal_min_width", "Split only when at least this wide", 0, 1000],
-    ["split_terminal_min_height", "Split only when at least this tall", 0, 1000],
-  ].map(([name, label, min, max]) =>
-    field(
-      "session",
-      name as string,
-      label as string,
-      { kind: "number", min: min as number, max: max as number },
-      {
-        tui_only: true,
-        profile_overridable: false,
-      },
-    ),
   ),
   field("tmux", "status_bar", "Status Bar", { kind: "select", options: TMUX_MODES }),
   field("tmux", "mouse", "Mouse Support", { kind: "select", options: TMUX_MODES }),
@@ -144,29 +128,27 @@ describe("schema-driven settings field PATCH payloads", () => {
     vi.mocked(api.fetchSettings).mockResolvedValue({
       tmux: {},
       logging: {},
-      session: { sidebar_position: "left" },
+      session: { row_tag: "branch" },
       sound: {},
     } as never);
   });
 
-  it("saves Sidebar Position for the selected profile and reloads the saved value after a failed edit", async () => {
+  it("saves Row Tag for the selected profile and reloads the saved value after a failed edit", async () => {
     const { container } = renderTab("session");
-    await screen.findByText("Sidebar Position");
-    const select = selectByLabel(container, "Sidebar Position");
-    await waitFor(() => expect(select.value).toBe("left"));
+    await screen.findByText("Row Tag");
+    const select = selectByLabel(container, "Row Tag");
+    await waitFor(() => expect(select.value).toBe("branch"));
 
-    for (const value of ["right", "left"]) {
+    for (const value of ["none", "branch"]) {
       fireEvent.change(select, { target: { value } });
-      await waitFor(() =>
-        expect(api.updateSettings).toHaveBeenLastCalledWith({ session: { sidebar_position: value } }, "main"),
-      );
+      await waitFor(() => expect(api.updateSettings).toHaveBeenLastCalledWith({ session: { row_tag: value } }, "main"));
       expect(select.value).toBe(value);
     }
 
     vi.mocked(api.updateSettings).mockResolvedValueOnce("rejected");
-    fireEvent.change(select, { target: { value: "right" } });
+    fireEvent.change(select, { target: { value: "none" } });
     await screen.findByText("Failed to save, please try again");
-    await waitFor(() => expect(select.value).toBe("left"));
+    await waitFor(() => expect(select.value).toBe("branch"));
   });
 
   it("a tmux field edit never leaks sibling fields into the PATCH (sparse leaf)", async () => {
@@ -189,28 +171,6 @@ describe("schema-driven settings field PATCH payloads", () => {
     // No call carries the untouched `mouse` field.
     for (const [updates] of vi.mocked(api.updateSettings).mock.calls) {
       expect((updates as { tmux?: Record<string, unknown> }).tmux).not.toHaveProperty("mouse");
-    }
-  });
-
-  it("edits paired terminal sizing in the Terminal UI group with sparse numeric patches", async () => {
-    const { container } = renderTab("session");
-    await screen.findByText("Snooze Duration (minutes)");
-    const fold = screen.getByRole("button", { name: /Terminal UI/ });
-    expect(screen.queryByText("Paired terminal share of the split (%)")).toBeNull();
-    fireEvent.click(fold);
-    for (const [name, label, min, max, value] of [
-      ["split_terminal_height_percent", "Paired terminal share of the split (%)", "1", "99", "30"],
-      ["split_terminal_min_width", "Split only when at least this wide", "0", "1000", "110"],
-      ["split_terminal_min_height", "Split only when at least this tall", "0", "1000", "35"],
-    ]) {
-      const input = numberInputByLabel(container, label);
-      expect(input.min).toBe(min);
-      expect(input.max).toBe(max);
-      expect(input.closest("div")?.parentElement?.textContent).toContain("Applies to all profiles");
-      commit(input, value);
-      await waitFor(() =>
-        expect(api.updateSettings).toHaveBeenCalledWith({ session: { [name]: Number(value) } }, "main"),
-      );
     }
   });
 

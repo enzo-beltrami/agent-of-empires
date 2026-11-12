@@ -31,8 +31,7 @@ pub struct AddArgs {
     #[arg(short = 't', long)]
     title: Option<String>,
 
-    /// Prompt for the session name, mirroring the TUI `n` flow. Shows the
-    /// generated default; press Enter to accept it. Ignored when --title
+    /// Prompt for the session name. Shows the generated default; press Enter to accept it. Ignored when --title
     /// is given. Requires an interactive terminal.
     #[arg(short = 'i', long)]
     interactive: bool,
@@ -149,8 +148,7 @@ pub struct AddArgs {
 
     /// Render this session in the structured view (ACP-based native
     /// rendering) instead of the default terminal view. `aoe add` defaults
-    /// to the terminal (raw tmux/PTY) so the CLI matches the TUI; pass this
-    /// (or `--agent`) to opt into the structured rendering. Ignored for
+    /// to the terminal (raw tmux/PTY); pass this (or `--agent`) to opt into the structured rendering. Ignored for
     /// tools with no ACP adapter.
     #[arg(long = "structured-view")]
     structured_view: bool,

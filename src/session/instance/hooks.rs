@@ -136,17 +136,6 @@ pub(crate) fn host_hook_agent(
         })
 }
 
-/// The repo-merged config the creation dialog's disclosure must read. A repo
-/// can move `agent_detect_as`, which is where the launcher's agent comes from;
-/// the other fields the disclosure reads are repo-denied, so merging costs
-/// the paths nothing. `aoe hooks status` has no project and cannot use this.
-pub(crate) fn host_hook_disclosure_config_with_repo(
-    profile: &str,
-    project_path: &Path,
-) -> crate::session::config::Config {
-    crate::session::resolve_config_with_repo_or_warn(profile, project_path)
-}
-
 /// The one place a launch's host hook target is chosen: sidecar first, then
 /// the agent's own settings file. The disclosure, the pre-launch guard and the
 /// installer all select through here, so no caller can name a file the others
@@ -1636,49 +1625,6 @@ mod tests {
                 "{label}: disclosed {disclosed}"
             );
         }
-    }
-
-    /// A repository may set `session.agent_detect_as`, and the launcher's
-    /// agent comes from the repo-merged config. The disclosure must read
-    /// the same layer, or it describes a different agent than the one that
-    /// installs. The two assertions are the two layers, so a gate that
-    /// reverted to the profile alone would name the wrong one.
-    #[test]
-    #[serial_test::serial]
-    fn the_gate_reads_the_same_repo_layer_the_launcher_does() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let _app = crate::session::test_support::isolate_app_dir_at(&tmp.path().join("app"));
-        let _home_guard = crate::session::test_support::isolate_home(tmp.path());
-        let _env = EnvGuard::unset(&["CODEX_HOME", "CLAUDE_CONFIG_DIR"]);
-        let repo = tmp.path().join("repo");
-        std::fs::create_dir_all(repo.join(".agent-of-empires")).unwrap();
-        std::fs::write(
-            repo.join(".agent-of-empires").join("config.toml"),
-            "[session]\nagent_detect_as = { corp = \"codex\" }\n",
-        )
-        .unwrap();
-        write_profile(
-            "repo-alias",
-            "[session.custom_agents]\ncorp = \"acme-wrapper\"\n\n\
-             [session.agent_detect_as]\ncorp = \"claude\"\n",
-        );
-
-        let profile_only =
-            crate::session::config::profile_config::resolve_config_or_warn("repo-alias");
-        let with_repo = host_hook_disclosure_config_with_repo("repo-alias", &repo);
-
-        let by_profile = host_hook_agent(
-            "corp",
-            &profile_only.session.launch_command_for("corp"),
-            &profile_only.session,
-        );
-        let by_repo = host_hook_agent(
-            "corp",
-            &with_repo.session.launch_command_for("corp"),
-            &with_repo.session,
-        );
-        assert_eq!(by_profile.map(|a| a.name), Some("claude"));
-        assert_eq!(by_repo.map(|a| a.name), Some("codex"));
     }
 
     #[test]

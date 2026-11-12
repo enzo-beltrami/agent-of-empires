@@ -564,7 +564,7 @@
         "web/src/components/settings/SchemaSection.tsx",
         "web/src/lib/api.ts",
         "web/src/index.css",
-        "src/tui/styles/resolved.rs"
+        "src/theme/resolved.rs"
       ]
     },
     {
@@ -642,13 +642,6 @@
         "src/components/__tests__/SettingsView.schema-load.test.tsx"
       ],
       "components": ["web/src/components/SettingsView.tsx", "web/src/App.tsx"]
-    },
-    {
-      "id": "settings.tui-only-fold",
-      "kind": "vitest",
-      "risk": "low",
-      "specs": ["src/components/settings/__tests__/SchemaSection.test.tsx"],
-      "components": ["web/src/components/settings/SchemaSection.tsx"]
     },
     {
       "id": "settings.header-branches",
@@ -800,13 +793,6 @@
         "web/src/components/settings/SchemaSection.tsx",
         "web/src/components/settings/customWidgets.tsx"
       ]
-    },
-    {
-      "id": "settings.tui-shortcut-bar",
-      "kind": "live-playwright",
-      "risk": "medium",
-      "specs": ["tests/live/settings-persistence.spec.ts"],
-      "components": ["web/src/components/SettingsView.tsx", "web/src/components/settings/SchemaSection.tsx"]
     },
     {
       "id": "settings.tmux-persistence",
@@ -4128,25 +4114,10 @@
       "notes": "Where the grouping draws repository headers (By repo, By organization, By repo and group) the section is \"Projects, no sessions\" and lists unpinned Projects without a live group; By group draws none, so it is \"Projects\" and lists every registered Project once, pinned or with live sessions included, a pinned row marked ◆ (#5065). Compact is \"Projects\" on every axis. The per-axis rule is axisDrawsRepoHeaders, a Record over SidebarAxis."
     },
     {
-      "id": "story.settings-paired-terminal-sizing",
-      "kind": "vitest",
-      "risk": "medium",
-      "specs": ["src/components/settings/__tests__/SchemaFieldPatches.test.tsx"],
-      "components": ["web/src/components/settings/SchemaSection.tsx", "web/src/components/settings/FormFields.tsx"],
-      "notes": "Terminal UI sizing controls, labelled Paired terminal share of the split (%), Split only when at least this wide and Split only when at least this tall, expose bounds and global scope and save sparse numeric patches."
-    },
-    {
       "id": "story.settings-tmux-select",
       "kind": "vitest",
       "risk": "medium",
       "specs": ["src/components/settings/__tests__/SchemaFieldPatches.test.tsx"],
-      "components": ["web/src/components/settings/SchemaSection.tsx", "web/src/components/settings/FormFields.tsx"]
-    },
-    {
-      "id": "story.settings-new-session-mode",
-      "kind": "vitest",
-      "risk": "medium",
-      "specs": ["src/components/settings/__tests__/NewSessionModePatch.test.tsx"],
       "components": ["web/src/components/settings/SchemaSection.tsx", "web/src/components/settings/FormFields.tsx"]
     },
     {
@@ -4443,13 +4414,6 @@
       "risk": "low",
       "specs": ["tests/live/acp-stories/settings-theme.spec.ts"],
       "components": ["web/src/components/settings/SchemaSection.tsx"]
-    },
-    {
-      "id": "story.settings-theme-color-mode",
-      "kind": "vitest",
-      "risk": "low",
-      "specs": ["src/components/__tests__/SettingsView.themeSave.test.tsx"],
-      "components": ["web/src/components/settings/SchemaSection.tsx", "web/src/hooks/useResolvedTheme.ts"]
     },
     {
       "id": "story.settings-theme-failure-revert",

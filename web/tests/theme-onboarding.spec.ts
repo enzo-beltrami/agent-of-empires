@@ -38,7 +38,7 @@ interface OnboardingMockHandle {
   /** Current theme name; PATCH /api/theme updates it so a reload re-applies
    *  the pick via /api/theme/current. */
   current: string;
-  themePatches: Array<{ name?: string; color_mode?: string }>;
+  themePatches: Array<{ name?: string }>;
   /** Backend tour-seen flag (app_state.has_seen_web_tour). */
   tourSeen: boolean;
 }

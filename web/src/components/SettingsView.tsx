@@ -134,7 +134,7 @@ export function buildSidebar(readOnly = false): SidebarItem[] {
 }
 
 // CityHall client mode (#7): a curated, end-user-safe subset of Settings.
-// Theme (trimmed of color-mode / idle-decay below), a Sessions tab reduced to
+// Theme (trimmed of idle-decay below), a Sessions tab reduced to
 // the trash toggle, plus the display-only / consent tabs (MCP servers,
 // Telemetry, Plugins). No Profiles, no advanced config.
 const CITYHALL_SIDEBAR: SidebarItem[] = [
@@ -149,7 +149,7 @@ const CITYHALL_TAB_IDS = new Set<TabId>(["theme", "session", "mcp", "telemetry",
 // fields it drops. Shared with `curateCityhallSchema` below so the search index
 // and the rendered tabs cannot drift apart.
 const CITYHALL_SESSION_FIELDS = ["delete_to_trash", "confirm_delete", "trash_retention_minutes"];
-const CITYHALL_THEME_HIDDEN = ["color_mode", "idle_decay_minutes"];
+const CITYHALL_THEME_HIDDEN = ["idle_decay_minutes"];
 
 // Fields the CityHall settings search may surface: only sections whose tab is in
 // the curated sidebar, and within those only the fields the curated tabs
@@ -186,7 +186,7 @@ interface Props {
   readOnly?: boolean;
   /** CityHall client mode: curate Settings to the end-user-safe tabs (Theme,
    *  a trimmed Sessions tab, MCP servers, Telemetry, Plugins), drop the
-   *  profile switcher, and hide the color-mode / idle-decay theme knobs. The
+   *  profile switcher, and hide the idle-decay theme knob. The
    *  advanced settings PATCH is closed server-side in this mode; theme and the
    *  surfaced fields write through their own endpoints. See #7. */
   cityhall?: boolean;
@@ -475,8 +475,8 @@ export function SettingsView({
   const worktree = settings?.worktree ?? {};
   const web = settings?.web ?? {};
 
-  // The theme name and color mode are global preferences, not
-  // profile-overridable: write them through the dedicated non-elevated
+  // The theme name is a global preference, not
+  // profile-overridable: write it through the dedicated non-elevated
   // /api/theme endpoint instead of the profile settings PATCH. Writing the
   // theme into a profile let a stale override shadow the global pick on every
   // Settings open/close (the empire->rose-pine flip). Profile-overridable rows

@@ -1,7 +1,7 @@
 //! `aoe hooks` subcommands: record your approval for AoE to write agent hooks
 //! into each agent's own config, and show what that approval covers.
 //!
-//! The approval is the same install-wide flag the TUI dialog writes.
+//! The approval is the same install-wide flag the dashboard dialog writes.
 //! `--trust-hooks` is a different surface: per-repository trust for hooks the
 //! repo declares itself.
 
@@ -38,7 +38,7 @@ fn print_status(profile: &str) -> Result<()> {
     } else {
         println!("Agent hooks: not approved");
         println!("  Run `aoe hooks approve` to let AoE write them, or accept the");
-        println!("  dialog the TUI shows when you create a host session.");
+        println!("  dialog the dashboard shows when you create a host session.");
     }
     print_disclosure(profile);
     Ok(())

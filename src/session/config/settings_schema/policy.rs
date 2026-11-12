@@ -273,7 +273,7 @@ mod tests {
         for body in [
             json!({"theme": {"idle_decay_minutes": 5}}),
             json!({"updates": {"update_check_mode": "notify"}}),
-            json!({"session": {"yolo_mode_default": true, "strict_hotkeys": false}}),
+            json!({"session": {"yolo_mode_default": true, "snooze_duration_minutes": 30}}),
             json!({"description": "my profile"}),
         ] {
             assert!(

@@ -3,8 +3,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use similar::{ChangeTag, TextDiff};
-
 use super::error::{GitError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,18 +17,6 @@ pub enum FileStatus {
 }
 
 impl FileStatus {
-    pub fn indicator(&self) -> char {
-        match self {
-            FileStatus::Added => 'A',
-            FileStatus::Modified => 'M',
-            FileStatus::Deleted => 'D',
-            FileStatus::Renamed => 'R',
-            FileStatus::Copied => 'C',
-            FileStatus::Untracked => '?',
-            FileStatus::Conflicted => 'U',
-        }
-    }
-
     pub fn label(&self) -> &'static str {
         match self {
             FileStatus::Added => "added",
@@ -52,33 +38,6 @@ pub struct DiffFile {
     pub status: FileStatus,
     pub additions: usize,
     pub deletions: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct DiffLine {
-    pub tag: ChangeTag,
-    /// `None` for an insertion.
-    pub old_line_num: Option<usize>,
-    /// `None` for a deletion.
-    pub new_line_num: Option<usize>,
-    pub content: String,
-}
-
-/// A group of changes in a diff.
-#[derive(Debug, Clone)]
-pub struct DiffHunk {
-    pub old_start: usize,
-    pub old_lines: usize,
-    pub new_start: usize,
-    pub new_lines: usize,
-    pub lines: Vec<DiffLine>,
-}
-
-#[derive(Debug, Clone)]
-pub struct FileDiff {
-    pub file: DiffFile,
-    pub hunks: Vec<DiffHunk>,
-    pub is_binary: bool,
 }
 
 /// Changed files between a base branch and the working directory, from the
@@ -304,112 +263,6 @@ pub fn check_merge_base_status(repo_path: &Path, base_branch: &str) -> Option<St
     }
 }
 
-/// Full diff for one file, against the merge-base of HEAD and the base.
-pub fn compute_file_diff(
-    repo_path: &Path,
-    file_path: &Path,
-    base_branch: &str,
-    context_lines: usize,
-) -> Result<FileDiff> {
-    let repo = super::open_repo_at(repo_path)?;
-    let workdir = repo.workdir().ok_or(GitError::NotAGitRepo)?.to_path_buf();
-
-    let FileState {
-        old_content,
-        new_content,
-        is_binary,
-        status,
-    } = read_file_state(&repo, &workdir, file_path, base_branch)?;
-
-    if is_binary {
-        return Ok(FileDiff {
-            file: DiffFile {
-                path: file_path.to_path_buf(),
-                old_path: None,
-                status,
-                additions: 0,
-                deletions: 0,
-            },
-            hunks: Vec::new(),
-            is_binary: true,
-        });
-    }
-
-    // Compute diff using similar
-    let text_diff = TextDiff::from_lines(&old_content, &new_content);
-    let mut hunks = Vec::new();
-    let mut additions = 0;
-    let mut deletions = 0;
-
-    for group in text_diff.grouped_ops(context_lines) {
-        let mut hunk_lines = Vec::new();
-        let mut old_start = None;
-        let mut new_start = None;
-        let mut old_count = 0;
-        let mut new_count = 0;
-
-        for op in &group {
-            for change in text_diff.iter_changes(op) {
-                let tag = change.tag();
-                let content = change.value().to_string();
-
-                // Track line counts
-                match tag {
-                    ChangeTag::Delete => {
-                        deletions += 1;
-                        old_count += 1;
-                    }
-                    ChangeTag::Insert => {
-                        additions += 1;
-                        new_count += 1;
-                    }
-                    ChangeTag::Equal => {
-                        old_count += 1;
-                        new_count += 1;
-                    }
-                }
-
-                // Track start lines
-                if old_start.is_none() {
-                    old_start = change.old_index();
-                }
-                if new_start.is_none() {
-                    new_start = change.new_index();
-                }
-
-                hunk_lines.push(DiffLine {
-                    tag,
-                    old_line_num: change.old_index().map(|i| i + 1),
-                    new_line_num: change.new_index().map(|i| i + 1),
-                    content,
-                });
-            }
-        }
-
-        if !hunk_lines.is_empty() {
-            hunks.push(DiffHunk {
-                old_start: old_start.map(|i| i + 1).unwrap_or(1),
-                old_lines: old_count,
-                new_start: new_start.map(|i| i + 1).unwrap_or(1),
-                new_lines: new_count,
-                lines: hunk_lines,
-            });
-        }
-    }
-
-    Ok(FileDiff {
-        file: DiffFile {
-            path: file_path.to_path_buf(),
-            old_path: None,
-            status,
-            additions,
-            deletions,
-        },
-        hunks,
-        is_binary: false,
-    })
-}
-
 /// Raw old and new contents of one file plus its status, for the endpoint
 /// the web client renders itself via `@pierre/diffs`. No addition or
 /// deletion counts: the renderer derives them and the file list already
@@ -467,8 +320,8 @@ pub fn compute_file_contents(
     })
 }
 
-/// Intermediate result shared by [`compute_file_diff`] and
-/// [`compute_file_contents`]: the raw old/new text, binary flag, and status.
+/// Intermediate result for [`compute_file_contents`]: the raw old/new text,
+/// binary flag, and status.
 struct FileState {
     old_content: String,
     new_content: String,
@@ -880,10 +733,10 @@ mod tests {
         let paths: Vec<&Path> = files.iter().map(|f| f.path.as_path()).collect();
         assert_eq!(paths, [Path::new("feature_only.txt")]);
 
-        let diff = compute_file_diff(dir.path(), Path::new("feature_only.txt"), "main", 3).unwrap();
-        assert_eq!(diff.file.status, FileStatus::Added);
-        assert!(diff.file.additions > 0);
-        assert_eq!(diff.file.deletions, 0);
+        let contents =
+            compute_file_contents(dir.path(), Path::new("feature_only.txt"), "main").unwrap();
+        assert_eq!(contents.status, FileStatus::Added);
+        assert!(contents.old_content.is_empty() && !contents.new_content.is_empty());
     }
 
     #[test]
@@ -1096,38 +949,6 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_file_contents_matches_diff_inputs() {
-        // The contents path must hand back exactly the old/new text the legacy
-        // hunk path diffs, so the client-side parse reproduces the same diff.
-        let (dir, _repo) = setup_test_repo();
-        let file_path = dir.path().join("test.txt");
-        fs::write(&file_path, "line 1\nchanged\nline 3\n").unwrap();
-
-        let c = compute_file_contents(dir.path(), Path::new("test.txt"), "HEAD").unwrap();
-        let d = compute_file_diff(dir.path(), Path::new("test.txt"), "HEAD", 3).unwrap();
-
-        // Reconstruct old/new from the hunk lines and compare.
-        let mut old_from_hunks = String::new();
-        let mut new_from_hunks = String::new();
-        for h in &d.hunks {
-            for l in &h.lines {
-                match l.tag {
-                    ChangeTag::Delete => old_from_hunks.push_str(&l.content),
-                    ChangeTag::Insert => new_from_hunks.push_str(&l.content),
-                    ChangeTag::Equal => {
-                        old_from_hunks.push_str(&l.content);
-                        new_from_hunks.push_str(&l.content);
-                    }
-                }
-            }
-        }
-        assert_eq!(c.old_content, old_from_hunks);
-        assert_eq!(c.new_content, new_from_hunks);
-        assert!(!d.is_binary);
-        assert!(d.file.additions > 0);
-    }
-
-    #[test]
     fn branch_listing_sees_local_branches_and_the_default() {
         let (dir, repo) = setup_test_repo();
         let commit = repo.head().unwrap().peel_to_commit().unwrap();
@@ -1238,15 +1059,10 @@ mod tests {
             .collect();
         assert_eq!(entries, [FileStatus::Conflicted]);
 
-        let diff = compute_file_diff(dir.path(), Path::new("conflicted.txt"), "main", 3).unwrap();
-        assert_eq!(diff.file.status, FileStatus::Conflicted);
-        let all_content: String = diff
-            .hunks
-            .iter()
-            .flat_map(|h| &h.lines)
-            .map(|l| l.content.as_str())
-            .collect();
-        assert!(all_content.contains("<<<<<<<") && all_content.contains(">>>>>>>"));
+        let contents =
+            compute_file_contents(dir.path(), Path::new("conflicted.txt"), "main").unwrap();
+        assert_eq!(contents.status, FileStatus::Conflicted);
+        assert!(contents.patch.contains("<<<<<<<") && contents.patch.contains(">>>>>>>"));
     }
 
     #[test]

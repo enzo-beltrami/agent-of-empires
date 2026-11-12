@@ -1165,13 +1165,13 @@ export function updateMachineSettings(updates: Record<string, unknown>): Promise
 }
 
 /**
- * Sets the global theme (name and/or color mode). Dedicated endpoint, not
+ * Sets the global theme name. Dedicated endpoint, not
  * `PATCH /api/settings`: the theme is a global preference but cosmetic, so it
  * must not trip the passphrase/elevation wall the general settings surface
  * carries. `rejected` on read-only servers (403); `uncertain` on a network
  * failure or 5xx, where the write may still have landed.
  */
-export function updateTheme(patch: { name?: string; color_mode?: string }): Promise<SaveOutcome> {
+export function updateTheme(patch: { name?: string }): Promise<SaveOutcome> {
   return announceOutcome(sendSave("/api/theme", jsonInit("PATCH", patch)));
 }
 

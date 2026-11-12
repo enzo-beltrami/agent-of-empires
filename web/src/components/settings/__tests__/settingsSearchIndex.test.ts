@@ -28,7 +28,7 @@ describe("buildSettingsSearchIndex", () => {
         label: "Node path",
         web_write: { policy: "local_only", reason: "host binary" },
       }),
-      descriptor({ section: "diff", field: "context_lines", label: "Context lines" }),
+      descriptor({ section: "diff", field: "default_branch", label: "Compare against" }),
       descriptor({ section: "made_up", field: "x", label: "X" }),
       descriptor({ section: "tmux", field: "prefix", label: "Prefix" }),
     ]);

@@ -1,6 +1,6 @@
 # Agent of Empires
 
-A session manager for AI coding agents. It runs many agents in parallel, each in its own persistent Session, optionally on its own branch or inside a sandbox, and lets the user watch and steer them from the TUI, the web dashboard, or the CLI.
+A session manager for AI coding agents. It runs many agents in parallel, each in its own persistent Session, optionally on its own branch or inside a sandbox, and lets the user watch and steer them from the web dashboard or the CLI.
 
 ## Language
 
@@ -65,7 +65,7 @@ A Session that is trashed, snoozed or archived. The "do not bother me" states as
 Forcing a Session to the top of the dashboard. Pinning cancels Archive and Snooze.
 
 **Favorite**:
-A user mark on a Session. Favoriting cancels Archive and Snooze, like Pin. In the TUI, favorites-first (on by default) lifts favorites to the top of their scope, except that Attention sort ranks a favorite only within its tier after urgency and Custom sort keeps manual order; the web sidebar uses favorite only as a tiebreak within its attention tier.
+A user mark on a Session. Favoriting cancels Archive and Snooze, like Pin. The web sidebar uses favorite only as a tiebreak within its attention tier.
 _Avoid_: star, pin (different concept)
 
 **Unread**:
@@ -192,19 +192,16 @@ A scheduled re-invocation of an Agent, started by the Agent itself rather than b
 _Avoid_: monitor
 
 **Attach**:
-Entering a Session's tmux pane from the TUI. Unrelated to attaching a Worktree to an existing branch.
-
-**Live-send**:
-An attach mode that keeps the TUI on the home view and forwards keystrokes to whichever pane is on screen: agent, Paired terminal or Tool session.
+Entering a Session's tmux pane. Unrelated to attaching a Worktree to an existing branch.
 
 ### Processes
 
 **Daemon**:
-The `aoe serve` process. Hosts the API, optional Web serving, the Supervisor, the Reconciler, Plugin workers and push notifications. Target (#2734): always-on, required, owns all Session runtime state. Today the local TUI gets canonical Session runtime rows from the Daemon; the CLI still has direct Session-store and tmux operations.
+The `aoe serve` process. Hosts the API, optional Web serving, the Supervisor, the Reconciler, Plugin workers and push notifications. Target (#2734): always-on, required, owns all Session runtime state. Today the CLI still has direct Session-store and tmux operations.
 _Avoid_: server, agent daemon
 
 **Client**:
-A program that pilots a Daemon: the TUI, the CLI or the Web dashboard. Target (#2734): reaches the Daemon only through its API, holding no Session runtime state. Today the Web dashboard and both local and remote TUI use the Daemon for canonical Session state; the CLI cutover is incomplete.
+A program that pilots a Daemon: the CLI or the Web dashboard. Target (#2734): reaches the Daemon only through its API, holding no Session runtime state. Today the Web dashboard uses the Daemon for canonical Session state; the CLI cutover is incomplete.
 _Avoid_: surface, frontend
 
 **Remote Daemon**:
@@ -271,7 +268,7 @@ _Avoid_: agent capability (different concept), permission
 How a Plugin was admitted: builtin or community.
 
 **Validation**:
-Where a Plugin came from: builtin, featured, community or local. Labelled "validation" in the CLI, TUI and web.
+Where a Plugin came from: builtin, featured, community or local. Labelled "validation" in the CLI and web.
 _Avoid_: trust level (different concept)
 
 **Plugin worker**:

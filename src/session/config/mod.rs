@@ -294,7 +294,7 @@ pub struct LoggingConfig {
     )]
     pub targets: std::collections::BTreeMap<String, String>,
 
-    /// Where tracing lands: file (default) or stdout. TUI / daemon child /
+    /// Where tracing lands: file (default) or stdout. CLI / daemon child /
     /// runner coerce to file regardless. Restart aoe for changes to take
     /// effect.
     #[serde(default)]
@@ -304,7 +304,7 @@ pub struct LoggingConfig {
         options = "file:file,stdout:stdout",
         global_only,
         advanced,
-        summary = "The console only works when you run aoe serve in a terminal. The terminal app and the background Daemon always use the file."
+        summary = "The console only works when you run aoe serve in a terminal. The background Daemon and other commands always use the file."
     )]
     pub output: SinkKind,
 
@@ -445,7 +445,7 @@ pub struct AcpConfig {
         label = "New Sessions open in",
         widget = "select",
         options = "auto:Auto,off:Off,terminal:Terminal view,structured:Structured view",
-        summary = "Auto preselects Structured view for new Sessions in the Web dashboard and Terminal view in the terminal app. Off removes Structured view from the new Session dialog and the view switch; you can still switch a Structured view Session to Terminal view."
+        summary = "Auto preselects Structured view for new Sessions in the Web dashboard. Off removes Structured view from the new Session dialog and the view switch; you can still switch a Structured view Session to Terminal view."
     )]
     pub structured_view: StructuredView,
     /// Acp agent used when --agent is not specified (e.g. claude-code,
@@ -872,19 +872,12 @@ impl GroupByMode {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppStateConfig {
-    #[serde(default)]
-    pub has_seen_welcome: bool,
-
     /// Whether the user has completed or skipped the web dashboard's
     /// first-run interactive tour. Stored server-side (rather than in
     /// per-browser localStorage) so a new browser or device does not
-    /// re-show the tour. Distinct from `has_seen_welcome`, which gates
-    /// the native TUI intro.
+    /// re-show the tour.
     #[serde(default)]
     pub has_seen_web_tour: bool,
-
-    #[serde(default)]
-    pub last_seen_version: Option<String>,
 
     /// Latest version for which the user dismissed the update banner. The
     /// banner stays hidden as long as the latest available version equals
@@ -901,48 +894,12 @@ pub struct AppStateConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dismissed_image_digest: Option<String>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub home_list_width: Option<u16>,
-
-    /// Requested height of the stacked TUI session list. Absent means automatic.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub home_list_height: Option<u16>,
-
-    /// Whether the home-view session list is collapsed to a narrow,
-    /// click-to-expand strip. Persisted so the choice survives restarts,
-    /// mirroring `home_list_width`. `None`/absent means expanded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub home_sidebar_collapsed: Option<bool>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub diff_file_list_width: Option<u16>,
-
-    /// Show the info header (profile/tool/path/status/sandbox/worktree) at
-    /// the top of the home preview pane. Defaults to `true` when absent;
-    /// users hide it with `i` when they want the full pane for live output.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub show_preview_info: Option<bool>,
-
-    /// Split the home preview into the agent above its paired terminal. `None`/absent
-    /// means a single preview.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub home_split_terminal: Option<bool>,
-
     /// True once the user has answered the telemetry opt-in prompt (in any
     /// surface, either by enabling or declining). Gates the one-time
     /// standalone consent popup shown to users who completed the walkthrough
     /// before telemetry existed, so it appears once and never again.
     #[serde(default)]
     pub has_responded_to_telemetry: bool,
-
-    #[serde(default)]
-    pub has_seen_custom_instruction_warning: bool,
-
-    /// Latches once the user has been warned (when adding a project in the TUI)
-    /// that the directory is not a git repository, so the one-time notice about
-    /// git features being unavailable does not repeat on every non-git add.
-    #[serde(default)]
-    pub has_seen_non_git_project_warning: bool,
 
     #[serde(default)]
     pub has_acknowledged_agent_hooks: bool,
@@ -958,44 +915,8 @@ pub struct AppStateConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sort_order: Option<SortOrder>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_by: Option<GroupByMode>,
-
-    /// Last directory the user navigated to in the new-session dir picker.
-    /// Restored on subsequent opens so users don't re-navigate every time.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_browse_dir: Option<PathBuf>,
-
-    /// Collapsed state for the synthetic "Archived" sidebar section.
-    /// Defaults to collapsed when absent. Archived sessions are pulled out
-    /// of the natural sort and grouped under this section at the bottom
-    /// across every sort mode, so they stop interleaving with active rows
-    /// without users in non-Attention modes losing the ability to find a
-    /// shelved session.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub archived_section_collapsed: Option<bool>,
-
-    /// Paths of project-mode sidebar folders the user has collapsed. Stored as
-    /// the set of collapsed paths (absent/expanded folders are not listed), so
-    /// the choice survives restarts. Group-mode collapse lives on the per-profile
-    /// GroupTrees in session storage; project-mode folders are auto-derived and
-    /// have no group record, so their collapse state is persisted here instead.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub project_group_collapsed: Vec<String>,
-
-    /// Paths of org-mode sidebar folders the user has collapsed. Same shape
-    /// and rationale as `project_group_collapsed`: org headers are derived
-    /// from each session's resolved remote owner rather than a persisted
-    /// group record, so their collapse state has nowhere else to live.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub org_group_collapsed: Vec<String>,
-
-    /// Collapsed paths of the status-mode sidebar folders, alongside `org_group_collapsed`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub status_group_collapsed: Vec<String>,
-
     /// Ids of tips the user has already seen/acknowledged. Drives the unseen
-    /// badge count and stops earned tips from re-popping. Ids come from
+    /// badge count. Ids come from
     /// [`crate::tips`] and are stable, so this list stays meaningful across
     /// upgrades.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1008,29 +929,6 @@ pub struct AppStateConfig {
     /// Stops concurrent upgrade migrations from seeding the counter twice.
     #[serde(default)]
     pub sessions_created_seeded: bool,
-
-    /// How many times the new-session dialog has been opened while a project or
-    /// session was selected. Once this passes
-    /// [`crate::tips::NEW_FROM_SELECTION_TIP_THRESHOLD`], the "new from
-    /// selection" tip becomes eligible (the earned trigger that closes #2262).
-    #[serde(default)]
-    pub new_session_with_selection_count: u32,
-
-    /// Set once the user has actually used `N` (new-from-selection). They've
-    /// discovered the feature, so the tip that teaches it is suppressed even if
-    /// the count above crosses the threshold.
-    #[serde(default)]
-    pub used_new_from_selection: bool,
-
-    /// Set after six live agents have been observed for three consecutive
-    /// health samples, making the System Health discovery tip eligible.
-    #[serde(default)]
-    pub system_health_tip_earned: bool,
-
-    /// Set once the detailed System Health view has been opened. Users who
-    /// found it themselves do not need its earned discovery tip.
-    #[serde(default)]
-    pub used_system_health: bool,
 
     /// Server-side mirror of the web dashboard's syncable UI state, keyed by
     /// the frontend's localStorage key (the value is the opaque string the
@@ -1133,59 +1031,6 @@ pub struct SessionConfig {
         summary = "CPU, memory and running Agents at the bottom of the sidebar."
     )]
     pub show_diagnostics_pane: bool,
-
-    /// Side of the TUI session list. Narrow terminals keep the list above the preview.
-    #[serde(default)]
-    #[setting(
-        label = "Sidebar position",
-        widget = "select",
-        options = "left:Left,right:Right",
-        global_only,
-        tui_only
-    )]
-    pub sidebar_position: SidebarPosition,
-
-    /// Percentage of split preview rows allocated to the paired terminal.
-    #[serde(default = "default_split_terminal_height_percent")]
-    #[setting(
-        label = "Paired terminal share of the split (%)",
-        widget = "number",
-        min = 1,
-        max = 99,
-        validate = "range:1:99",
-        tui_only,
-        global_only,
-        summary = "In the terminal app's split preview, how much of the height the paired terminal gets."
-    )]
-    pub split_terminal_height_percent: u16,
-
-    /// Minimum whole-window width for the paired terminal split.
-    #[serde(default = "default_split_terminal_min_width")]
-    #[setting(
-        label = "Split only when at least this wide",
-        widget = "number",
-        min = 0,
-        max = 1000,
-        validate = "range:0:1000",
-        tui_only,
-        global_only,
-        summary = "Window width in columns. A narrower terminal app window shows the preview without the paired terminal. 0 never hides it for width."
-    )]
-    pub split_terminal_min_width: u16,
-
-    /// Minimum whole-window height for the paired terminal split.
-    #[serde(default = "default_split_terminal_min_height")]
-    #[setting(
-        label = "Split only when at least this tall",
-        widget = "number",
-        min = 0,
-        max = 1000,
-        validate = "range:0:1000",
-        tui_only,
-        global_only,
-        summary = "Window height in rows. A shorter terminal app window shows the preview without the paired terminal. 0 never hides it for height."
-    )]
-    pub split_terminal_min_height: u16,
 
     /// Forward AoE's whole environment to host sessions instead of just the
     /// desktop vars (DISPLAY, XDG_*, DBUS). Lets vars like GOPATH reach an
@@ -1378,33 +1223,6 @@ pub struct SessionConfig {
         summary = "Makes resuming OpenCode reliable, but adds about two seconds to each new launch."
     )]
     pub opencode_preassign_session_id: bool,
-    /// Request xterm mouse tracking so the TUI handles the scroll wheel
-    /// (preview-pane scroll) and click-to-select rows. Disable to hand the
-    /// wheel and text selection back to the terminal, e.g. iOS Mosh +
-    /// Termius/Blink where mouse-tracking escapes aren't forwarded reliably.
-    /// The AOE_MOUSE_CAPTURE env var remains an opt-out backstop and can still
-    /// force capture off when set.
-    #[serde(default = "default_true")]
-    #[setting(
-        label = "Mouse capture",
-        widget = "toggle",
-        category = "Interaction",
-        tui_only,
-        summary = "AoE handles scrolling and clicks. Turn off to use your terminal's own text selection."
-    )]
-    pub mouse_capture: bool,
-
-    /// Set the host terminal tab to `aoe: {session}` from the TUI
-    /// selection via OSC 0. Disable to keep the terminal's own naming.
-    #[serde(default = "default_true")]
-    #[setting(
-        label = "Set the terminal tab title",
-        widget = "toggle",
-        category = "Interaction",
-        tui_only,
-        summary = "Name the terminal tab after the selected Session."
-    )]
-    pub host_tab_title: bool,
 
     /// User-defined agents: name=command (e.g. lenovo-claude=ssh -t lenovo
     /// claude). Custom agent names appear in the TUI agent picker alongside
@@ -1485,23 +1303,6 @@ pub struct SessionConfig {
         summary = "Pick an Agent and the settings folder it should use."
     )]
     pub agent_config_dir: HashMap<String, String>,
-
-    /// Require SHIFT on letter-based TUI hotkeys (e.g. SHIFT+N for New, SHIFT+D for Delete).
-    /// Guards against accidental destructive actions from dictation software, a forgotten
-    /// focus, or stray keystrokes. Navigation keys (h/j/k/l, arrows, Enter, Esc), punctuation
-    /// (/, ?), and numeric modifiers stay unshifted. Previously-uppercase bindings
-    /// (P, R, T, N, D, G) relocate to Ctrl+letter so nothing is lost.
-    /// Note: Ctrl+D (diff view) may conflict with terminal EOF in some tmux configs;
-    /// if so, rebind tmux's send-prefix or use the `D` key from the help overlay.
-    /// Off by default; existing users keep the legacy single-letter UX.
-    #[serde(default)]
-    #[setting(
-        label = "Strict hotkeys",
-        widget = "toggle",
-        tui_only,
-        summary = "Letter shortcuts need Shift (Shift+D to Trash), so stray typing can't trigger them."
-    )]
-    pub strict_hotkeys: bool,
 
     /// Default snooze for `aoe session snooze` (1-43200 min, picker overrides).
     /// During the snooze window the session is treated like archive: sinks to
@@ -1675,121 +1476,6 @@ pub struct SessionConfig {
     )]
     pub row_tag: RowTagMode,
 
-    /// Show the age column at the right edge of each session row: time since
-    /// the agent stopped on Idle rows, time since last access on Unknown rows,
-    /// and remaining snooze time under the Attention sort.
-    #[serde(default = "default_true")]
-    #[setting(
-        label = "Show Session age",
-        widget = "toggle",
-        tui_only,
-        summary = "How long each Session has been Idle, at the right of its row."
-    )]
-    pub show_activity_age: bool,
-
-    /// Comma-separated chord specs that exit live-send mode. Tmux-style: C-q,
-    /// M-x, F12. The first chord in the list that matches an event ends live
-    /// mode. Default `C-q` works in every terminal we ship to; add entries for
-    /// additional exits if you need to send C-q through to the agent.
-    #[serde(default = "default_live_send_exit_chord")]
-    #[setting(
-        label = "Exit live-send with",
-        widget = "text",
-        category = "Interaction",
-        tui_only,
-        summary = "Keys that leave live-send mode."
-    )]
-    pub live_send_exit_chord: String,
-
-    /// Leader (prefix) chord for live-send mode commands, tmux-style
-    /// (`C-b`, `C-a`, `M-Space`, `F1`, …). In live mode the leader arms
-    /// a one-shot menu: leader then `k` opens the command palette, `b`
-    /// toggles the sidebar, `q` exits. Pressing the leader twice sends a
-    /// literal leader keystroke to the agent (matches tmux `send-prefix`).
-    /// Default `C-b` lines up with tmux and herdr; the only chord it
-    /// steals from the agent is the leader itself, and double-tap still
-    /// delivers it. Set empty to disable the leader entirely (every key,
-    /// including `C-b`, then passes straight through). The dedicated exit
-    /// chord (`live_send_exit_chord`, default `C-q`) is independent of the
-    /// leader and stays a single-press fast exit.
-    #[serde(default = "default_live_send_leader")]
-    #[setting(
-        label = "Live-send leader key",
-        widget = "text",
-        category = "Interaction",
-        tui_only,
-        summary = "Prefix for live-send commands. Press it twice to send it to the Agent."
-    )]
-    pub live_send_leader: String,
-
-    /// How the TUI activates an existing terminal-mode session when you press
-    /// Enter or double-click its row. `Tmux` (default) opens the tmux attach
-    /// view. `LiveSend` enters live-send mode, so the home list stays visible
-    /// and keystrokes go to the agent. Terminal/Tool views and acp sessions
-    /// ignore this setting.
-    #[serde(default)]
-    #[setting(
-        label = "Open a Session with",
-        widget = "select",
-        options = "tmux:Tmux,live_send:Live mode",
-        category = "Interaction",
-        tui_only,
-        summary = "What Enter or a double-click does on a Terminal view Session."
-    )]
-    pub default_attach_mode: AttachMode,
-
-    /// How the TUI opens a terminal-mode session after it is created.
-    #[serde(default)]
-    #[setting(
-        label = "Open a new Session with",
-        widget = "select",
-        options = "match_default:Match default attach,tmux:Tmux,live_send:Live mode",
-        category = "Interaction",
-        tui_only
-    )]
-    pub new_session_mode: NewSessionMode,
-
-    /// Automatically start live-send when switching into Terminal or Tool
-    /// view, instead of requiring a separate Enter/Tab/click.
-    #[serde(default)]
-    #[setting(
-        label = "Live-send when switching view",
-        widget = "toggle",
-        category = "Interaction",
-        tui_only,
-        summary = "Start live-send as soon as you switch to Terminal view."
-    )]
-    pub live_send_on_view_switch: bool,
-
-    /// What a single mouse click on a session row does in the Agent view. Live
-    /// mode (default) enters live-send for the clicked row, the historical
-    /// behavior. Select only just moves the cursor so you can read the preview
-    /// without entering live-send. Double-click still activates via Default
-    /// Attach Mode regardless of this setting.
-    #[serde(default)]
-    #[setting(
-        label = "Clicking a row",
-        widget = "select",
-        options = "live_send:Live mode,select_only:Select only",
-        category = "Interaction",
-        tui_only,
-        summary = "Live mode types into the Session. Select opens the preview without typing into it."
-    )]
-    pub click_action: ClickAction,
-
-    /// Warn before quitting aoe when you press `q` on the home screen (the
-    /// dialog can also turn this off). Ctrl+C quits without asking, except
-    /// while a session is being created.
-    #[serde(default = "default_true")]
-    #[setting(
-        label = "Confirm before quitting",
-        widget = "toggle",
-        global_only,
-        tui_only,
-        summary = "Ask before q quits. Ctrl+C quits without asking, except while a Session is being created."
-    )]
-    pub confirm_before_quit: bool,
-
     /// Show an unread indicator on sessions. When on (default), a session
     /// whose turn just finished is painted in the theme's unread color until
     /// you view it (Tab into live-send or Enter to attach), and you can flag
@@ -1871,38 +1557,6 @@ pub struct SessionConfig {
         summary = "Show an occasional tip in the footer."
     )]
     pub show_tips: bool,
-
-    /// Show the bottom shortcut bar, including the LIVE banner. Hiding it frees
-    /// one row; shortcuts, help, and temporary notifications remain available.
-    #[serde(default = "default_true")]
-    #[setting(
-        label = "Shortcut bar",
-        widget = "toggle",
-        category = "Interaction",
-        global_only,
-        tui_only,
-        summary = "The key hints at the bottom. Hiding it frees one row."
-    )]
-    pub show_shortcut_bar: bool,
-
-    /// Link targets beyond http and https that a click in the preview may open,
-    /// as `scheme://authority/` prefixes: `vscode://file/` lets an agent print a
-    /// short relative path that opens the file in VS Code. An entry not in that
-    /// form is ignored, and `file:`, `javascript:`, `data:` and `vbscript:`
-    /// never open. Applies to links printed after the change. Empty by default:
-    /// only web links open, and other targets are not passed to the terminal.
-    #[serde(default)]
-    #[setting(
-        label = "Preview link prefixes",
-        widget = "list",
-        category = "Interaction",
-        web = "local_only:hands pane-supplied links to the host's URL handlers",
-        global_only,
-        tui_only,
-        advanced,
-        summary = "Other link types a click may open, like vscode://file/. Web links always open."
-    )]
-    pub preview_link_prefixes: Vec<String>,
 
     /// Keep an aoe-managed worktree session's directory leaf in sync with its
     /// title. When enabled (default), renaming the session also moves its
@@ -2063,34 +1717,6 @@ pub fn resolve_spawn_model_effort(
     (model, effort)
 }
 
-/// What a single mouse click on a session row does in the Agent view.
-/// See `SessionConfig::click_action`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ClickAction {
-    /// Single-click enters live-send mode for the clicked session
-    /// (the historical behavior on `main` before this setting landed).
-    #[default]
-    LiveSend,
-    /// Single-click only moves the cursor to the clicked row, so the
-    /// user can browse session previews without entering live-send.
-    /// Double-click still activates the session via the configured
-    /// `default_attach_mode`.
-    SelectOnly,
-}
-
-/// How the TUI opens a terminal-mode session after creation. `MatchDefault`
-/// preserves the historical behavior by using
-/// `SessionConfig::default_attach_mode`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NewSessionMode {
-    #[default]
-    MatchDefault,
-    Tmux,
-    LiveSend,
-}
-
 /// See `AcpConfig::structured_view`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -2106,11 +1732,6 @@ impl StructuredView {
     /// Whether the structured option is shown at all.
     pub fn is_offered(self) -> bool {
         self != Self::Off
-    }
-
-    /// Whether a new session opens in the structured view.
-    pub fn starts_structured(self) -> bool {
-        self == Self::Structured
     }
 }
 
@@ -2146,31 +1767,6 @@ impl NoticePolicy {
     }
 }
 
-/// How the TUI activates an existing terminal-mode session. See
-/// `SessionConfig::default_attach_mode`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AttachMode {
-    /// Attach to the session's tmux pane (the historical behavior; the
-    /// user lands inside tmux with the agent running).
-    #[default]
-    Tmux,
-    /// Enter live-send mode against the session's pane: the agent runs
-    /// in the background, the TUI stays on the home view, and
-    /// keystrokes pipe straight to the agent. Users who never want to
-    /// see a raw tmux session pick this.
-    LiveSend,
-}
-
-/// Side of the session list in the TUI's horizontal layout.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SidebarPosition {
-    #[default]
-    Left,
-    Right,
-}
-
 /// What to render in the per-row tag slot next to the session title.
 ///
 /// Defaults to `Branch` to preserve worktree branch visibility. Users can pick
@@ -2200,10 +1796,6 @@ impl Default for SessionConfig {
             yolo_mode_default: false,
             pre_trust_agent_folders: false,
             show_diagnostics_pane: false,
-            sidebar_position: SidebarPosition::default(),
-            split_terminal_height_percent: default_split_terminal_height_percent(),
-            split_terminal_min_width: default_split_terminal_min_width(),
-            split_terminal_min_height: default_split_terminal_min_height(),
             inherit_host_environment: false,
             agent_extra_args: HashMap::new(),
             agent_command_override: HashMap::new(),
@@ -2217,14 +1809,11 @@ impl Default for SessionConfig {
             smart_rename_model: HashMap::new(),
             auto_resume_on_restart: true,
             opencode_preassign_session_id: false,
-            mouse_capture: true,
-            host_tab_title: true,
             custom_agents: HashMap::new(),
             agent_detect_as: HashMap::new(),
             agent_execution_as: HashMap::new(),
             agent_acp_cmd: HashMap::new(),
             agent_config_dir: HashMap::new(),
-            strict_hotkeys: false,
             snooze_duration_minutes: 30,
             session_id_poller_max_threads: default_session_id_poller_max_threads(),
             delete_to_trash: true,
@@ -2236,35 +1825,13 @@ impl Default for SessionConfig {
             restart_wake_message: default_restart_wake_message(),
             startup_recovery_wake: false,
             row_tag: RowTagMode::default(),
-            show_activity_age: true,
-            live_send_exit_chord: default_live_send_exit_chord(),
-            live_send_leader: default_live_send_leader(),
-            default_attach_mode: AttachMode::default(),
-            new_session_mode: NewSessionMode::default(),
-            live_send_on_view_switch: false,
-            click_action: ClickAction::default(),
-            confirm_before_quit: true,
             unread_indicator: true,
             show_session_colors: true,
             favorites_first: true,
             show_tips: true,
-            show_shortcut_bar: true,
-            preview_link_prefixes: Vec::new(),
             tie_workdir_to_name: true,
         }
     }
-}
-
-fn default_split_terminal_height_percent() -> u16 {
-    50
-}
-
-fn default_split_terminal_min_width() -> u16 {
-    100
-}
-
-fn default_split_terminal_min_height() -> u16 {
-    30
 }
 
 fn default_snooze_duration_minutes() -> u32 {
@@ -2281,19 +1848,6 @@ fn default_trash_retention_minutes() -> u32 {
 
 fn default_restart_wake_message() -> String {
     "wake up: pick up what you were doing".to_string()
-}
-
-fn default_live_send_exit_chord() -> String {
-    // Ctrl+q: mobile-friendly, passes Termius, well-known quit chord.
-    // Kept in sync with live_send::DEFAULT_EXIT_CHORD.
-    "C-q".to_string()
-}
-
-fn default_live_send_leader() -> String {
-    // Ctrl+b: the tmux (and herdr) leader. Familiar to multiplexer users
-    // and steals only one chord from the agent. Kept in sync with
-    // live_send::DEFAULT_LEADER.
-    "C-b".to_string()
 }
 
 /// Upper bound on snooze duration: 30 days (43,200 minutes). Originally
@@ -2475,7 +2029,7 @@ impl SessionConfig {
 }
 
 /// Diff view configuration
-#[derive(Debug, Clone, Serialize, Deserialize, SettingsSection)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, SettingsSection)]
 #[setting_section(name = "diff", category = "Diff")]
 pub struct DiffConfig {
     /// Default branch to compare against (e.g., "main", "master")
@@ -2487,39 +2041,6 @@ pub struct DiffConfig {
         summary = "Set it if diffs compare against the wrong branch, like develop instead of main. Used only when the Project and worktree don't set one. Leave empty to detect it."
     )]
     pub default_branch: Option<String>,
-
-    /// Number of context lines to show around changes
-    #[serde(default = "default_context_lines")]
-    #[setting(
-        label = "Lines around each change",
-        widget = "number",
-        min = 0,
-        summary = "The Web dashboard always shows 3."
-    )]
-    pub context_lines: usize,
-
-    /// Render diffs side-by-side (split) instead of unified.
-    #[serde(default)]
-    #[setting(
-        label = "Side by side in the terminal app",
-        widget = "toggle",
-        summary = "Also toggled with s in the terminal app's diff, which saves it here."
-    )]
-    pub split_view: bool,
-}
-
-impl Default for DiffConfig {
-    fn default() -> Self {
-        Self {
-            default_branch: None,
-            context_lines: 3,
-            split_view: false,
-        }
-    }
-}
-
-fn default_context_lines() -> usize {
-    3
 }
 
 /// Web dashboard runtime configuration.
@@ -2640,57 +2161,29 @@ fn default_profile() -> String {
     String::new()
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ColorMode {
-    /// Emit 24-bit RGB escapes (\e[38;2;R;G;Bm). Default; best fidelity on
-    /// modern terminals and SSH sessions that pass RGB correctly.
-    #[default]
-    Truecolor,
-    /// Emit 256-palette escapes (`\e[38;5;<idx>m`) by converting every theme
-    /// Rgb(r,g,b) to the nearest xterm-256 index. Use this when the transport
-    /// (notably some mosh clients) mishandles 24-bit RGB; preview panes in
-    /// aoe already use 256-palette via ansi-to-tui, so palette mode renders
-    /// chrome through the same escape path and survives the same transports.
-    Palette,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, SettingsSection)]
 #[setting_section(name = "theme", category = "Theme")]
 pub struct ThemeConfig {
-    /// Color theme for the TUI. A global preference: one theme paints every
-    /// surface regardless of the active session profile (see
+    /// Color theme. A global preference: one theme paints every surface
+    /// regardless of the active session profile (see
     /// `config::resolve_theme_name`), so it is not profile-overridable.
     #[serde(default)]
     #[setting(
         label = "Theme",
         widget = "custom:theme-name",
         global_only,
-        summary = "Used by the Web dashboard and the terminal app. Applies to every Profile."
+        summary = "Used by the Web dashboard. Applies to every Profile."
     )]
     pub name: String,
-    /// Truecolor (24-bit RGB) or palette (xterm-256). Use palette if your
-    /// terminal mangles RGB escapes. Global, like the theme itself.
-    #[serde(default)]
-    #[setting(
-        label = "Terminal colors",
-        widget = "select",
-        options = "truecolor:truecolor,palette:palette",
-        global_only,
-        summary = "Full color works in most terminals. Use 256 colors if yours can't show full color, which can happen in older terminals or over some remote connections."
-    )]
-    pub color_mode: ColorMode,
     /// Off by default (0). Set a positive value to opt in: a freshly-stopped
-    /// Idle session keeps a fresh-idle tint and an animated breathe icon for
-    /// this many minutes before snapping back to the static look, and is
-    /// treated as actionable by the `w` keybind. The time-since-stop column
-    /// is `session.show_activity_age`.
+    /// Idle session keeps a fresh-idle highlight for this many minutes before
+    /// snapping back to the static look.
     #[serde(default = "default_idle_decay_minutes")]
     #[setting(
         label = "Highlight Sessions that just finished",
         widget = "number",
         min = 0,
-        summary = "In the terminal app, newly Idle Sessions keep a soft highlight and a breathing icon for the set time, and w jumps to them."
+        summary = "Newly Idle Sessions keep a soft highlight for the set time."
     )]
     pub idle_decay_minutes: u64,
 }
@@ -2699,7 +2192,6 @@ impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
             name: String::new(),
-            color_mode: ColorMode::default(),
             idle_decay_minutes: default_idle_decay_minutes(),
         }
     }
@@ -4037,11 +3529,6 @@ impl Config {
             self.theme.name.clone()
         }
     }
-
-    /// Whether the theme requests xterm-256 palette downsampling.
-    pub fn theme_palette_mode(&self) -> bool {
-        matches!(self.theme.color_mode, ColorMode::Palette)
-    }
 }
 
 /// Returns `None` only when there is truly nothing persisted yet (neither
@@ -4152,12 +3639,6 @@ pub fn update_app_state<R>(f: impl FnOnce(&mut AppStateConfig) -> R) -> Result<R
 /// `zinc` builtin, matching the web dashboard's empty-name fallback.
 pub fn resolve_theme_name() -> String {
     Config::load_or_warn().effective_theme_name()
-}
-
-/// Whether the global theme requests xterm-256 palette downsampling. Reads the
-/// global config only, for the same reason as [`resolve_theme_name`].
-pub fn resolve_theme_palette_mode() -> bool {
-    Config::load_or_warn().theme_palette_mode()
 }
 
 /// Resolve the active profile name.
@@ -4788,36 +4269,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_new_session_mode_in_settings_schema() {
-        // The single-source schema must expose the select so the TUI and
-        // web settings both render it (docs/development/adding-settings.md).
-        // The option values are hand-written in the `#[setting(...)]`
-        // attribute, so each one is round-tripped through `NewSessionMode`:
-        // a typo would offer a choice that the config layer rejects on save.
-        let schema = crate::session::config::settings_schema::schema();
-        let field = schema
-            .iter()
-            .find(|f| f.section == "session" && f.field == "new_session_mode")
-            .expect("new_session_mode field in session schema section");
-        let settings_schema::WidgetKind::Select { options } = &field.widget else {
-            panic!("new_session_mode must render as a select");
-        };
-        let values: Vec<&str> = options.iter().map(|o| o.value.as_str()).collect();
-        assert_eq!(values, ["match_default", "tmux", "live_send"]);
-        for value in values {
-            let parsed: NewSessionMode = serde_json::from_str(&format!("\"{value}\""))
-                .unwrap_or_else(|e| {
-                    panic!("select option {value:?} must deserialize into NewSessionMode: {e}")
-                });
-            assert_eq!(
-                serde_json::to_string(&parsed).unwrap(),
-                format!("\"{value}\""),
-                "select option {value:?} must round-trip"
-            );
-        }
-    }
-
     /// Every accessor on `AcpAgentDefaults` treats a blank string as unset, and
     /// the per-model effort wins over the flat one only when it has a value.
     #[test]
@@ -5031,11 +4482,7 @@ mod tests {
         // `#[serde(default)]` would give `bool::default()` here and silently
         // strand every pre-existing config on the old behavior.
         let session: SessionConfig = toml::from_str("").unwrap();
-        // Default-on so existing users get the accidental-exit guard (#1569).
-        assert!(SessionConfig::default().confirm_before_quit);
-        assert!(session.confirm_before_quit, "confirm_before_quit (#1569)");
         assert!(session.confirm_delete, "confirm_delete (#3364)");
-        assert!(session.host_tab_title, "host_tab_title (#3444)");
     }
 
     /// A non-empty `agent_command_override` wins, an empty one falls through to
@@ -5153,20 +4600,20 @@ mod tests {
             "config.toml external edit lost"
         );
 
-        update_app_state(|s| s.has_seen_welcome = true).unwrap();
+        update_app_state(|s| s.has_seen_web_tour = true).unwrap();
         let mut external = AppStateConfig::load().unwrap();
-        external.last_seen_version = Some("1.0.0".to_string());
+        external.dismissed_update_version = Some("1.0.0".to_string());
         let table = toml::Table::try_from(&external).unwrap();
         super::super::atomic_write(
             &state_path().unwrap(),
             toml::to_string_pretty(&table).unwrap().as_bytes(),
         )
         .unwrap();
-        update_app_state(|s| s.has_seen_welcome = false).unwrap();
+        update_app_state(|s| s.has_seen_web_tour = false).unwrap();
         let state = AppStateConfig::load().unwrap();
-        assert!(!state.has_seen_welcome);
+        assert!(!state.has_seen_web_tour);
         assert_eq!(
-            state.last_seen_version.as_deref(),
+            state.dismissed_update_version.as_deref(),
             Some("1.0.0"),
             "state.toml external edit lost"
         );
@@ -5228,17 +4675,14 @@ mod tests {
         let _guard = crate::session::test_support::isolate_app_dir();
         let n_threads = 16usize;
         update_config(|c| c.session.snooze_duration_minutes = 1).unwrap();
-        update_app_state(|s| s.home_list_width = Some(0)).unwrap();
+        update_app_state(|s| s.sessions_created = 0).unwrap();
         std::thread::scope(|scope| {
             for _ in 0..n_threads {
                 scope.spawn(|| {
                     update_config(|c| c.session.snooze_duration_minutes += 1).unwrap();
                 });
                 scope.spawn(|| {
-                    update_app_state(|s| {
-                        s.home_list_width = Some(s.home_list_width.unwrap_or(0) + 1);
-                    })
-                    .unwrap();
+                    update_app_state(|s| s.sessions_created += 1).unwrap();
                 });
             }
         });
@@ -5248,8 +4692,8 @@ mod tests {
             "config.toml increment lost"
         );
         assert_eq!(
-            AppStateConfig::load().unwrap().home_list_width,
-            Some(n_threads as u16),
+            AppStateConfig::load().unwrap().sessions_created,
+            n_threads as u64,
             "state.toml increment lost"
         );
     }
@@ -5265,13 +4709,13 @@ mod tests {
         fs::create_dir_all(get_app_dir().unwrap()).unwrap();
         fs::write(
             config_path().unwrap(),
-            "[app_state]\nhas_seen_welcome = true\n",
+            "[app_state]\nhas_seen_web_tour = true\n",
         )
         .unwrap();
-        assert!(!Config::load().unwrap().app_state.has_seen_welcome);
+        assert!(!Config::load().unwrap().app_state.has_seen_web_tour);
 
         update_config(|config| {
-            config.app_state.has_seen_welcome = true;
+            config.app_state.has_seen_web_tour = true;
             config.default_profile = "x".to_string();
         })
         .unwrap();
@@ -5279,8 +4723,8 @@ mod tests {
         let table: toml::Table = raw.parse().unwrap();
         assert!(!table.contains_key("app_state"), "config.toml: {raw}");
 
-        update_app_state(|state| state.has_seen_welcome = true).unwrap();
-        assert!(Config::load().unwrap().app_state.has_seen_welcome);
+        update_app_state(|state| state.has_seen_web_tour = true).unwrap();
+        assert!(Config::load().unwrap().app_state.has_seen_web_tour);
     }
 
     #[test]

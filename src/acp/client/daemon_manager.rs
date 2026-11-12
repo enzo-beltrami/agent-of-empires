@@ -98,13 +98,3 @@ fn announce_start(started: Option<u32>) {
         eprintln!("Started aoe daemon (pid {pid})");
     }
 }
-
-/// Initial native bootstrap and explicit reconnect may start the local Daemon.
-pub async fn ensure_native_daemon(profile: &str) -> anyhow::Result<DaemonEndpoint> {
-    if discover_env().is_some() {
-        return locate_daemon().await.map_err(Into::into);
-    }
-    crate::cli::serve::ensure_local_daemon(Some(profile), !autostart_disabled())
-        .await
-        .map(|(endpoint, _)| endpoint)
-}

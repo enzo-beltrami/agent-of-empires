@@ -3,7 +3,7 @@
 use anyhow::{bail, Result};
 use clap::Subcommand;
 
-use crate::tui::styles::{
+use crate::theme::{
     available_themes, builtin_theme_names, custom_themes_dir, export_theme_toml, is_builtin_theme,
     load_theme,
 };

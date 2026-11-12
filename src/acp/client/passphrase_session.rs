@@ -705,17 +705,8 @@ pub(crate) mod test_daemon {
             self.inner.lock().unwrap().logins
         }
 
-        /// Cookie and binding headers of every `/api/sessions` request.
-        pub(crate) fn list_requests(&self) -> Vec<(Option<String>, Option<String>)> {
-            self.inner.lock().unwrap().lists.clone()
-        }
-
         pub(crate) fn config_option_requests(&self) -> Vec<ConfigOptionRequest> {
             self.inner.lock().unwrap().config_options.clone()
-        }
-
-        pub(crate) fn expire_session(&self) {
-            self.inner.lock().unwrap().valid = None;
         }
     }
 

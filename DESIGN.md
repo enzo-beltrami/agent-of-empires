@@ -1,8 +1,8 @@
 # Agent of Empires design system
 
-This is the visual source of truth for the TUI, web dashboard, and marketing
-site. Color is shared by the TUI and dashboard through theme TOML. Typography,
-density, and motion differ by surface.
+This is the visual source of truth for the web dashboard and marketing site.
+Dashboard color comes from theme TOML. Typography, density, and motion differ
+by surface.
 
 ## Direction
 
@@ -48,10 +48,10 @@ the brand even when product surfaces use a different theme.
 
 Themes are flat TOML palettes. Builtins live in `themes/builtin/`; user themes
 live in the app directory under `themes/`. The schema and loader are in
-`src/tui/styles/themes.rs`. Optional metadata selects dark or light appearance
+`src/theme/themes.rs`. Optional metadata selects dark or light appearance
 and a Shiki syntax theme.
 
-The TUI reads `Theme` directly. The server maps it to `ResolvedTheme`, whose CSS
+The server maps `Theme` to `ResolvedTheme`, whose CSS
 variables drive dashboard surfaces, semantic status colors, syntax highlighting,
 and terminal ANSI colors. Derived ramps follow background luminance and invert
 for light themes. Do not add separate CSS theme blocks or hardcoded dashboard
@@ -63,17 +63,6 @@ derived from semantic fields rather than declared separately.
 
 The marketing site keeps the brand palette above and does not follow the user's
 theme.
-
-## TUI
-
-- Preserve dashboard density and the status glyph system.
-- Keep runtime status separate from shortcuts; Tips yield to critical hints and compact to their icon when space is tight.
-- Use rounded block borders.
-- Keep one character of horizontal padding in the list and preview panels.
-- Adjacent list and preview panels share one separator, never a double border.
-- Passive split panes only observe: use a reliable captured cursor to choose the viewport without resizing shared panes or discarding captured history.
-- Dialogs remain boxed and manage their own internal spacing.
-- Prefer geometric text symbols over emoji where column width must be stable.
 
 ## Web dashboard
 

@@ -29,7 +29,7 @@ pub(super) fn repair_startup_profile_ownership(
         .collect();
     let outcome = crate::session::reconcile_profile_duplicates(&loads_view, &storages_view);
     for report in &outcome.reports {
-        tracing::warn!(target: "session.startup_recovery", ?report, "ambiguous profile identity retained for operator review");
+        tracing::warn!(target: "session.startup_recovery", "{}", report.actionable_message());
     }
     let _identity = crate::session::acquire_session_identity_lock()?;
     for (_, storage) in &storages {
@@ -152,7 +152,7 @@ pub(super) async fn publish_startup_identity(state: &Arc<AppState>) {
                     .map(|(s, k)| (s.as_str(), k.as_str()))
                     .collect();
                 if let Err(e) = crate::tmux::env::remove_hidden_env_batch(&batch_refs) {
-                    tracing::warn!(target: "tui.home", "Batch env unset failed: {}", e);
+                    tracing::warn!(target: "server.runtime", "Batch env unset failed: {}", e);
                 }
             }
         }

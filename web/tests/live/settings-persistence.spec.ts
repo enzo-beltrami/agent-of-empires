@@ -317,7 +317,7 @@ test.describe("passphrase mode", () => {
   }
 });
 
-test("global settings migrate from profiles and reject stale profile writes", async ({ spawnServe, page }) => {
+test("global settings migrate from profiles and reject stale profile writes", async ({ spawnServe }) => {
   let appDir = "";
   const serve = await spawnServe({
     seedFn: ({ home, xdg }) => {
@@ -331,7 +331,7 @@ test("global settings migrate from profiles and reject stale profile writes", as
       writeFileSync(join(appDir, "profiles", "alpha", "config.toml"), "[theme]\nname = 'rose-pine'\n");
       writeFileSync(
         join(appDir, "profiles", "work", "config.toml"),
-        "[theme]\nname = 'dracula'\nidle_decay_minutes = 5\n[session]\nsidebar_position = 'left'\nconfirm_before_quit = false\nsession_id_poller_max_threads = 12\ndefault_tool = 'codex'\n[web]\nnotify_on_idle = true\n",
+        "[theme]\nname = 'dracula'\nidle_decay_minutes = 5\n[session]\nshow_session_colors = false\nfavorites_first = false\nsession_id_poller_max_threads = 12\ndefault_tool = 'codex'\n[web]\nnotify_on_idle = true\n",
       );
     },
   });
@@ -342,19 +342,19 @@ test("global settings migrate from profiles and reject stale profile writes", as
   const effectiveUrl = `${settingsUrl}?profile=${encodeURIComponent(profile)}`;
   const migrated = await getJson(machineUrl);
   expect(migrated.theme.name).toBe("dracula");
-  expect(migrated.session.confirm_before_quit).toBe(false);
+  expect(migrated.session.favorites_first).toBe(false);
   expect(migrated.session.session_id_poller_max_threads).toBe(12);
   expect(migrated.web.notify_on_idle).toBe(true);
   const profileBefore = readFileSync(join(appDir, "profiles", "work", "config.toml"), "utf8");
-  expect(profileBefore).not.toContain("sidebar_position");
-  expect(profileBefore).not.toContain("confirm_before_quit");
+  expect(profileBefore).not.toContain("show_session_colors");
+  expect(profileBefore).not.toContain("favorites_first");
   const staleOverride = await fetch(profileUrl, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session: { sidebar_position: "right", default_tool: "claude" } }),
+    body: JSON.stringify({ session: { show_session_colors: true, default_tool: "claude" } }),
   });
   expect(staleOverride.status).toBe(400);
-  expect((await staleOverride.json()).message).toContain("session.sidebar_position");
+  expect((await staleOverride.json()).message).toContain("session.show_session_colors");
   expect(readFileSync(join(appDir, "profiles", "work", "config.toml"), "utf8")).toBe(profileBefore);
   const logUrl = `${serve.baseUrl}/api/log-level`;
   const runtimeLog = await fetch(logUrl, {
@@ -365,71 +365,28 @@ test("global settings migrate from profiles and reject stale profile writes", as
   expect(runtimeLog.ok).toBe(true);
   const { current: temporaryFilter } = await runtimeLog.json();
 
-  await page.goto(`${serve.baseUrl}/settings/session`);
-  // Sidebar position is TUI-only, so it sits in the Terminal UI fold.
-  await page.getByRole("button", { name: /Terminal UI/ }).click();
-  const position = labelledSelect(page, /^Sidebar position$/);
-  await expect(position).toHaveValue("left");
-  const [saveResponse] = await Promise.all([
-    page.waitForResponse(
-      (response) => response.url().startsWith(settingsUrl) && response.request().method() === "PATCH",
-    ),
-    position.selectOption("right"),
-  ]);
-  expect(saveResponse.ok()).toBe(true);
+  const saveResponse = await fetch(effectiveUrl, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session: { show_session_colors: true } }),
+  });
+  expect(saveResponse.ok).toBe(true);
 
   // A global-only field lands machine-wide even though the save names the profile.
   for (const url of [machineUrl, effectiveUrl]) {
     const saved = await fetch(url).then((r) => r.json());
-    expect(saved.session.sidebar_position).toBe("right");
+    expect(saved.session.show_session_colors).toBe(true);
   }
   const overrides = await fetch(profileUrl).then((r) => r.json());
-  expect(overrides.session.sidebar_position).toBeUndefined();
+  expect(overrides.session.show_session_colors).toBeUndefined();
   expect(overrides.session.default_tool).toBe("codex");
   expect(overrides.theme.idle_decay_minutes).toBe(5);
   const logStatus = await fetch(logUrl).then((r) => r.json());
   expect(logStatus.current).toBe(temporaryFilter);
 
   await serve.restart();
-  await page.reload();
-  await page.getByRole("button", { name: /Terminal UI/ }).click();
-  await expect(position).toHaveValue("right");
   const persisted = await fetch(machineUrl).then((r) => r.json());
-  expect(persisted.session.sidebar_position).toBe("right");
-});
-
-test("shortcut bar toggle persists globally from Terminal UI settings", async ({ serve, page }) => {
-  const profile = await defaultProfile(serve);
-  const settingsUrl = `${serve.baseUrl}/api/settings`;
-  const machineUrl = `${settingsUrl}?layer=machine`;
-  const profileUrl = `${serve.baseUrl}/api/profiles/${encodeURIComponent(profile)}/settings`;
-  const toggle = page.getByText("Shortcut bar", { exact: true }).locator("../..").getByRole("switch");
-
-  await page.goto(`${serve.baseUrl}/settings/session`);
-  await page.getByRole("button", { name: /Terminal UI/ }).click();
-  await expect(toggle).toBeChecked();
-  const [saved] = await Promise.all([
-    page.waitForResponse(
-      (response) => response.url().startsWith(settingsUrl) && response.request().method() === "PATCH",
-    ),
-    toggle.click(),
-  ]);
-  expect(saved.ok()).toBe(true);
-  expect((await getJson(machineUrl)).session.show_shortcut_bar).toBe(false);
-  expect((await getJson(profileUrl)).session?.show_shortcut_bar).toBeUndefined();
-  const rejected = await fetch(profileUrl, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session: { show_shortcut_bar: true } }),
-  });
-  expect(rejected.status).toBe(400);
-
-  await serve.restart();
-  await page.reload();
-  await page.getByRole("button", { name: /Terminal UI/ }).click();
-  await expect(toggle).not.toBeChecked();
-  await toggle.click();
-  await expect.poll(async () => (await getJson(machineUrl)).session.show_shortcut_bar).toBe(true);
+  expect(persisted.session.show_session_colors).toBe(true);
 });
 
 test("runtime logging overrides persist and clearing one preserves the other", async ({ serve, page }) => {

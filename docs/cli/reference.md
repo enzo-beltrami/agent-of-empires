@@ -136,7 +136,6 @@ This document contains the help content for the `aoe` command-line program.
 * [`aoe acp approve`↴](#aoe-acp-approve)
 * [`aoe acp cancel`↴](#aoe-acp-cancel)
 * [`aoe acp tail`↴](#aoe-acp-tail)
-* [`aoe acp attach`↴](#aoe-acp-attach)
 * [`aoe acp switch-agent`↴](#aoe-acp-switch-agent)
 * [`aoe acp switch-account`↴](#aoe-acp-switch-account)
 * [`aoe acp switch-provider`↴](#aoe-acp-switch-provider)
@@ -149,7 +148,7 @@ This document contains the help content for the `aoe` command-line program.
 
 Agent of Empires (aoe) is a terminal session manager that uses tmux to help you manage and monitor AI coding agents like Claude Code and OpenCode.
 
-Run without arguments to launch the TUI dashboard.
+Run `aoe serve` to start the daemon and web dashboard.
 
 **Usage:** `aoe [OPTIONS] [COMMAND]`
 
@@ -194,7 +193,7 @@ Run without arguments to launch the TUI dashboard.
 ###### **Options:**
 
 * `-p`, `--profile <PROFILE>` — Profile to use (separate workspace with its own sessions). Commands that consume or create profile state require an existing profile: an unknown name is refused, not created (make one with `aoe profile create`). Profile-independent commands such as `list --all` and `serve --stop` ignore it. `AGENT_OF_EMPIRES_PROFILE` names one too, and an explicit `-p` wins over it
-* `--daemon-url <DAEMON_URL>` — Select a daemon endpoint for read-only CLI commands or the TUI.
+* `--daemon-url <DAEMON_URL>` — Select a daemon endpoint for read-only CLI commands.
 
    Explicit endpoints and `AOE_DAEMON_URL` never fall back to local storage or start a local daemon. Authenticate with `AOE_DAEMON_TOKEN` or `AOE_DAEMON_PASSPHRASE`. An unauthenticated daemon needs neither. See the HTTP API reference for transport and authentication rules.
 * `--no-autostart` — Fail instead of starting a local daemon when none is running
@@ -216,7 +215,7 @@ Add a new session
 ###### **Options:**
 
 * `-t`, `--title <TITLE>` — Session title (defaults to a civilization name, or the worktree branch)
-* `-i`, `--interactive` — Prompt for the session name, mirroring the TUI `n` flow. Shows the generated default; press Enter to accept it. Ignored when --title is given. Requires an interactive terminal
+* `-i`, `--interactive` — Prompt for the session name. Shows the generated default; press Enter to accept it. Ignored when --title is given. Requires an interactive terminal
 * `-g`, `--group <GROUP>` — Group path (defaults to parent folder)
 * `-c`, `--cmd <COMMAND>` — Command to run (e.g., 'claude' or any other supported agent)
 * `--tool <TOOL>` — Named built-in or configured custom agent to run
@@ -238,7 +237,7 @@ Add a new session
 * `--trust-hooks` — Automatically trust this repository's hooks and project-local MCP servers without prompting
 * `--extra-args <EXTRA_ARGS>` — Extra arguments to append after the agent binary
 * `--cmd-override <CMD_OVERRIDE>` — Override the agent binary command
-* `--structured-view` — Render this session in the structured view (ACP-based native rendering) instead of the default terminal view. `aoe add` defaults to the terminal (raw tmux/PTY) so the CLI matches the TUI; pass this (or `--agent`) to opt into the structured rendering. Ignored for tools with no ACP adapter
+* `--structured-view` — Render this session in the structured view (ACP-based native rendering) instead of the default terminal view. `aoe add` defaults to the terminal (raw tmux/PTY); pass this (or `--agent`) to opt into the structured rendering. Ignored for tools with no ACP adapter
 * `--agent <AGENT>` — Pick a specific ACP agent for the structured view (e.g., claude-code, codex)
 * `--model <MODEL>` — Override the model used by the ACP agent (e.g., claude-opus-4-7, gpt-5, gemini-2.5-pro). Forwarded to the agent at session start
 * `--effort <EFFORT>` — Reasoning effort for the ACP agent (e.g., low, medium, high). Checked against the agent's known thought-level choices when cached. Structured view only
@@ -807,7 +806,7 @@ Import existing Claude Code sessions from disk. Scans the given path(s) (default
 ###### **Options:**
 
 * `--all` — Import every discoverable Claude session, ignoring the path filter
-* `--structured` — Import as structured-view sessions (rendered in the web dashboard and the structured TUI view) instead of terminal/tmux sessions. Structured sessions replay their transcript under `aoe serve`
+* `--structured` — Import as structured-view sessions (rendered in the web dashboard) instead of terminal/tmux sessions. Structured sessions replay their transcript under `aoe serve`
 * `--group <GROUP>` — Place imported sessions under this session group
 * `--launch` — Start terminal sessions immediately after importing (spawns the tmux pane running `claude --resume <id>`). Ignored for structured imports
 * `--dry-run` — List what would be imported without creating anything
@@ -1615,7 +1614,11 @@ Print an MCP client config for the running daemon's `/mcp` server, ready to past
 
 Serve the running daemon's `/mcp` tools over stdin/stdout, relayed through its private owner socket, so a local MCP client needs no token. Requires `[web] mcp_enabled`
 
-**Usage:** `aoe mcp stdio`
+**Usage:** `aoe mcp stdio [OPTIONS]`
+
+###### **Options:**
+
+* `--session <SESSION>` — The session this client runs in; AoE sets it when it injects the relay
 
 
 
@@ -1807,7 +1810,7 @@ Start the aoe daemon: REST/WebSocket API, plus the web dashboard in builds that 
 
    `--status` is read-only and incompatible with every flag that would change daemon state (`--stop`, `--daemon`, `--remote`) or the bind config of a fresh daemon (`--no-auth`, `--auth`, `--behind-proxy`, `--read-only`, `--passphrase`, `--port`, `--tunnel-name`, `--no-tailscale`, `--tunnel-url`, `--open`, `--allowed-host`, `--allowed-origin`). Clap reports the misuse instead of silently ignoring the extras.
 * `--passphrase <PASSPHRASE>` — Require a passphrase for login (second-factor auth). Can also be set via AOE_SERVE_PASSPHRASE environment variable
-* `--open` — Open the dashboard URL in the default browser once the server is ready. Ignored in a build with no dashboard bundle, under --daemon or --remote, and whenever no browser the user could see is reachable (see `tui::open_url`): over SSH without a forwarded display, or on Linux/BSD with no display server. `BROWSER` overrides the check on platforms whose launcher reads it, which excludes macOS
+* `--open` — Open the dashboard URL in the default browser once the server is ready. Ignored in a build with no dashboard bundle, under --daemon or --remote, and whenever no browser the user could see is reachable (see `server::open_url`): over SSH without a forwarded display, or on Linux/BSD with no display server. `BROWSER` overrides the check on platforms whose launcher reads it, which excludes macOS
 * `--restart` — Restart the running managed daemon with its recorded policy. Missing credentials are rejected before stopping it
 * `--rollback` — Restore the retained managed launch, including a core replaced by the dashboard
 
@@ -1895,7 +1898,6 @@ Manage the ACP structured-view workers (doctor, ps, logs, prompt, approve, ...)
 * `approve` — Resolve a pending approval (default: allow). Use --always for a session-scoped allow-list entry, --deny to refuse the request, and --option to answer a request that lists choices
 * `cancel` — Cancel the in-flight prompt for an agent session
 * `tail` — Stream the agent broadcast for a session to stdout as JSON lines (one frame per line). Press Ctrl-C to stop
-* `attach` — Open the TUI structured view directly for a known session id. Combine with `AOE_DAEMON_URL` (+ `AOE_DAEMON_TOKEN`, or `AOE_DAEMON_PASSPHRASE` against a `--auth=passphrase` daemon) to attach across machines without going through the home session list
 * `switch-agent` — Switch an agent session to a different ACP agent, keeping the transcript. Valid targets are built-in registry agents and any custom agent configured in `[session.agent_acp_cmd]`. The new agent starts fresh; use `aoe acp agents` to list built-in targets. Handy for returning to claude after a rate-limit handoff to codex
 * `switch-account` — Switch a structured session to another account of the same agent, keeping the conversation. Accounts are tool names with their own `[session.agent_config_dir]`; the transcript is copied into the new account's store and the worker resumes it. A session parked on a rate limit continues with the interrupted prompt; otherwise it gets the usual restart wake message. Refuses, changing nothing, where the swap would start a fresh conversation (not Claude, no recorded conversation, other agent)
 * `switch-provider` — Re-route a Claude session to a different LLM provider, keeping the transcript. Refused mid-turn; once idle the worker restarts and resumes the same conversation. Credentials are not provisioned by this: the target provider's own variables must already be set on the host (for example `ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` for vertex). The model resets to the new provider's default, because model ids differ between providers
@@ -2109,18 +2111,6 @@ Stream the agent broadcast for a session to stdout as JSON lines (one frame per 
 * `--since <SINCE>` — Start at this seq (default 0 = full replay then live)
 
   Default value: `0`
-
-
-
-## `aoe acp attach`
-
-Open the TUI structured view directly for a known session id. Combine with `AOE_DAEMON_URL` (+ `AOE_DAEMON_TOKEN`, or `AOE_DAEMON_PASSPHRASE` against a `--auth=passphrase` daemon) to attach across machines without going through the home session list
-
-**Usage:** `aoe acp attach <SESSION>`
-
-###### **Arguments:**
-
-* `<SESSION>` — Acp session id
 
 
 

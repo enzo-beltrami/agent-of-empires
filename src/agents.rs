@@ -1027,13 +1027,6 @@ impl AgentDef {
             })
     }
 
-    pub fn lifecycle_label(&self) -> Option<&'static str> {
-        match self.lifecycle {
-            AgentLifecycle::Active => None,
-            AgentLifecycle::Deprecated { .. } => Some("deprecated"),
-        }
-    }
-
     pub fn lifecycle_notice(&self) -> Option<String> {
         self.lifecycle.notice()
     }
@@ -1766,33 +1759,6 @@ pub fn install_hint(name: &str) -> Option<&'static str> {
     get_agent(name).map(|a| a.install_hint)
 }
 
-pub fn settings_index_from_name(name: Option<&str>) -> usize {
-    match name {
-        Some(n) => AGENTS
-            .iter()
-            .position(|a| a.name == n)
-            .map(|i| i + 1)
-            .unwrap_or(0),
-        None => 0,
-    }
-}
-
-pub fn name_from_settings_index(index: usize) -> Option<&'static str> {
-    if index == 0 {
-        None
-    } else {
-        AGENTS.get(index - 1).map(|a| a.name)
-    }
-}
-
-pub fn oneshot_capable_names() -> Vec<&'static str> {
-    AGENTS
-        .iter()
-        .filter(|a| a.oneshot_flag.is_some())
-        .map(|a| a.name)
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2434,11 +2400,9 @@ if [ "$PROBE_MODE" = legacy ]; then printf '%s\n' 'FLAGS --fork fork session'; e
             .iter()
             .all(|a| a.lifecycle.is_active() == (a.name != "gemini")));
         let claude = get_agent("claude").unwrap();
-        assert_eq!(claude.lifecycle_label(), None);
         assert_eq!(claude.lifecycle_notice(), None);
 
         let gemini = get_agent("gemini").unwrap();
-        assert_eq!(gemini.lifecycle_label(), Some("deprecated"));
         assert_eq!(
             gemini.lifecycle_notice().as_deref(),
             Some(
@@ -2610,18 +2574,6 @@ if [ "$PROBE_MODE" = legacy ]; then printf '%s\n' 'FLAGS --fork fork session'; e
         );
         if cfg!(feature = "e2e-tests") {
             assert_eq!(AGENTS.last().map(|a| a.name), Some("fake-agent"));
-        }
-    }
-
-    #[test]
-    fn test_settings_index_roundtrip() {
-        assert_eq!(settings_index_from_name(None), 0);
-        assert_eq!(settings_index_from_name(Some("unknown")), 0);
-        assert_eq!(name_from_settings_index(0), None);
-        assert_eq!(name_from_settings_index(AGENTS.len() + 1), None);
-        for (i, agent) in AGENTS.iter().enumerate() {
-            assert_eq!(settings_index_from_name(Some(agent.name)), i + 1);
-            assert_eq!(name_from_settings_index(i + 1), Some(agent.name));
         }
     }
 

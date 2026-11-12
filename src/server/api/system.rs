@@ -1135,17 +1135,14 @@ pub async fn get_settings_resolved(
     )
 }
 
-/// Body of `PATCH /api/theme`. Either field may be omitted to leave it
-/// unchanged.
+/// Body of `PATCH /api/theme`. An omitted name leaves the theme unchanged.
 #[derive(serde::Deserialize)]
 pub struct ThemePatch {
     #[serde(default)]
     pub name: Option<String>,
-    #[serde(default)]
-    pub color_mode: Option<crate::session::config::ColorMode>,
 }
 
-/// `PATCH /api/theme` sets the global theme name and/or color mode and returns
+/// `PATCH /api/theme` sets the global theme name and returns
 /// the freshly resolved theme so the caller can repaint.
 ///
 /// The theme is a global preference (see `config::resolve_theme_name`): it
@@ -1167,18 +1164,10 @@ pub async fn update_theme(
         Ok(b) => b,
         Err(rej) => return rej.into_response(),
     };
-    // CityHall hides the color-mode control, so only the name is writable (#7).
-    if state.cityhall_mode {
-        patch.color_mode = None;
-    }
     // Reject an unknown name so a typo cannot silently repaint to `default`.
     // Empty is allowed and clears back to the default builtin.
     if let Some(name) = &patch.name {
-        if !name.is_empty()
-            && !crate::tui::styles::available_themes()
-                .iter()
-                .any(|t| t == name)
-        {
+        if !name.is_empty() && !crate::theme::available_themes().iter().any(|t| t == name) {
             return api_error(
                 StatusCode::BAD_REQUEST,
                 "unknown_theme",
@@ -1193,9 +1182,6 @@ pub async fn update_theme(
     if let Some(name) = &patch.name {
         leaves.insert("name".into(), name.clone().into());
     }
-    if patch.color_mode.is_some() {
-        leaves.insert("color_mode".into(), true.into());
-    }
     let mut written = serde_json::json!({ "theme": leaves });
     if drop_stale_leaves(&applied, stamp.as_ref(), THEME_SCOPE, &mut written) {
         if is_empty_patch(&written) {
@@ -1205,11 +1191,8 @@ pub async fn update_theme(
         if kept.get("name").is_none() {
             patch.name = None;
         }
-        if kept.get("color_mode").is_none() {
-            patch.color_mode = None;
-        }
     }
-    let (name, mode) = (patch.name.clone(), patch.color_mode.clone());
+    let name = patch.name.clone();
     let result = tokio::task::spawn_blocking(move || {
         // `update_config` re-loads via `Config::load()`, so a corrupt
         // config.toml errors out instead of being replaced with defaults.
@@ -1217,12 +1200,9 @@ pub async fn update_theme(
             if let Some(name) = patch.name {
                 config.theme.name = name;
             }
-            if let Some(mode) = patch.color_mode {
-                config.theme.color_mode = mode;
-            }
             config.effective_theme_name()
         })?;
-        Ok::<_, anyhow::Error>(crate::tui::styles::resolve_theme(&theme_name))
+        Ok::<_, anyhow::Error>(crate::theme::resolve_theme(&theme_name))
     })
     .await;
     if matches!(result, Ok(Ok(_))) {
@@ -1233,7 +1213,7 @@ pub async fn update_theme(
     match result {
         Ok(Ok(resolved)) => match serde_json::to_value(&resolved) {
             Ok(val) => {
-                tracing::info!(target: "http.api.system", ?name, ?mode, "theme set");
+                tracing::info!(target: "http.api.system", ?name, "theme set");
                 (StatusCode::OK, Json(val)).into_response()
             }
             Err(e) => {
@@ -1334,14 +1314,13 @@ pub struct TipsResponse {
 /// Returns the web-surface tips and whether tips are enabled, composed from the
 /// shared `crate::tips` catalog plus `app_state.tips_seen` and
 /// `session.show_tips`. A read projection, so it stays a plain GET behind the
-/// token wall like [`get_web_ui_state`]; the TUI-only tips never appear here.
+/// token wall like [`get_web_ui_state`].
 pub async fn get_tips(State(_state): State<Arc<AppState>>) -> impl IntoResponse {
     let result = tokio::task::spawn_blocking(|| {
         let config = crate::session::Config::load()?;
-        let signals = crate::tips::TipSignals::from(&config);
         let seen = &config.app_state.tips_seen;
-        let tips = crate::tips::eligible(crate::tips::TipSurface::Web, &signals)
-            .into_iter()
+        let tips = crate::tips::catalog()
+            .iter()
             .map(|tip| TipDto {
                 id: tip.id.to_string(),
                 title: tip.title.to_string(),
@@ -1690,7 +1669,7 @@ pub async fn mark_volume_ignores_globs_acknowledged(
 
 pub async fn list_themes() -> Json<Vec<String>> {
     Json(
-        crate::tui::styles::available_themes()
+        crate::theme::available_themes()
             .into_iter()
             .map(|s| s.to_string())
             .collect(),
@@ -1715,21 +1694,21 @@ const MAX_THEME_NAME_LEN: usize = 128;
 /// not run on a tokio worker thread.
 pub async fn get_resolved_theme(
     axum::extract::Path(name): axum::extract::Path<String>,
-) -> Json<crate::tui::styles::ResolvedTheme> {
+) -> Json<crate::theme::ResolvedTheme> {
     if name.len() > MAX_THEME_NAME_LEN {
         tracing::warn!(
             len = name.len(),
             "GET /api/themes/{{name}} rejected: name exceeds {} bytes",
             MAX_THEME_NAME_LEN,
         );
-        return Json(crate::tui::styles::resolve_theme("zinc"));
+        return Json(crate::theme::resolve_theme("zinc"));
     }
     tracing::debug!(theme = %name, "GET /api/themes/{{name}}");
-    let resolved = tokio::task::spawn_blocking(move || crate::tui::styles::resolve_theme(&name))
+    let resolved = tokio::task::spawn_blocking(move || crate::theme::resolve_theme(&name))
         .await
         .unwrap_or_else(|e| {
             tracing::warn!(error = %e, "theme resolve task panicked, falling back to default");
-            crate::tui::styles::resolve_theme("zinc")
+            crate::theme::resolve_theme("zinc")
         });
     Json(resolved)
 }
@@ -1741,16 +1720,16 @@ pub async fn get_resolved_theme(
 /// `spawn_blocking`.
 pub async fn get_current_theme(
     State(state): State<Arc<AppState>>,
-) -> Json<crate::tui::styles::ResolvedTheme> {
+) -> Json<crate::theme::ResolvedTheme> {
     tracing::debug!(target: "http.api.system", profile = %*state.served_profile(), "GET /api/theme/current");
     let resolved = tokio::task::spawn_blocking(move || {
         let name = crate::session::config::resolve_theme_name();
-        crate::tui::styles::resolve_theme(&name)
+        crate::theme::resolve_theme(&name)
     })
     .await
     .unwrap_or_else(|e| {
         tracing::warn!(error = %e, "current theme resolve task panicked, falling back to default");
-        crate::tui::styles::resolve_theme("zinc")
+        crate::theme::resolve_theme("zinc")
     });
     Json(resolved)
 }
@@ -4203,11 +4182,10 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn theme_save_drops_a_late_older_write_of_the_same_leaf() {
-        use crate::session::config::ColorMode;
         let home = tempfile::TempDir::new().unwrap();
         let _home = crate::session::test_support::isolate_home(home.path());
         let state = crate::server::test_support::build_test_app_state(Vec::new());
-        let save = |tab_seq: &'static str, name: Option<String>, mode: Option<ColorMode>| {
+        let save = |tab_seq: &'static str, name: String| {
             let state = state.clone();
             async move {
                 let mut headers = HeaderMap::new();
@@ -4215,10 +4193,7 @@ mod tests {
                 update_theme(
                     State(state),
                     headers,
-                    Ok(Json(ThemePatch {
-                        name,
-                        color_mode: mode,
-                    })),
+                    Ok(Json(ThemePatch { name: Some(name) })),
                 )
                 .await
                 .into_response()
@@ -4226,27 +4201,10 @@ mod tests {
             }
         };
 
-        assert_eq!(
-            save("tab1.2", None, Some(ColorMode::Palette)).await,
-            StatusCode::OK
-        );
-        assert_eq!(
-            save("tab1.1", None, Some(ColorMode::Truecolor)).await,
-            StatusCode::CONFLICT
-        );
-        assert_eq!(
-            crate::session::Config::load().unwrap().theme.color_mode,
-            ColorMode::Palette
-        );
-
-        // A fresh name still lands when its stale color mode is dropped from the same patch.
-        let name = crate::tui::styles::available_themes().remove(0);
-        assert_eq!(
-            save("tab1.1", Some(name.clone()), Some(ColorMode::Truecolor)).await,
-            StatusCode::OK
-        );
-        let theme = crate::session::Config::load().unwrap().theme;
-        assert_eq!(theme.name, name);
-        assert_eq!(theme.color_mode, ColorMode::Palette);
+        let themes = crate::theme::available_themes();
+        let (newer, older) = (themes[0].clone(), themes[1].clone());
+        assert_eq!(save("tab1.2", newer.clone()).await, StatusCode::OK);
+        assert_eq!(save("tab1.1", older).await, StatusCode::CONFLICT);
+        assert_eq!(crate::session::Config::load().unwrap().theme.name, newer);
     }
 }

@@ -64,7 +64,7 @@ async fn settings_read_and_save_agree_on_the_layer() {
         &app,
         "PATCH",
         "/api/settings",
-        Some(json!({"session": {"default_tool": "codex", "sidebar_position": "right"}})),
+        Some(json!({"session": {"default_tool": "codex", "show_session_colors": false}})),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{saved}");
@@ -72,10 +72,7 @@ async fn settings_read_and_save_agree_on_the_layer() {
     assert_eq!(profile_default_tool(&served), Some(json!("codex")));
     assert_eq!(machine_default_tool().as_deref(), Some("claude"));
     // A global-only field in the same save goes machine-wide.
-    assert_eq!(
-        serde_json::to_value(Config::load().unwrap().session.sidebar_position).unwrap(),
-        "right"
-    );
+    assert!(!Config::load().unwrap().session.show_session_colors);
 
     // (uri, expected default_tool)
     let reads = [

@@ -1279,8 +1279,6 @@ pub fn cleanup_instance(
 /// expose), and the CLI in `src/cli/add.rs` with bail-vs-downgrade semantics
 /// keyed on how explicit the user's flag was. Keep the three in sync.
 pub mod structured {
-    use super::Instance;
-
     /// True when `tool` can back a structured-view session: it resolves in
     /// the ACP agent registry, the resolved config declares a parsable
     /// `[session.agent_acp_cmd]` command for it, or it is a custom agent that
@@ -1551,38 +1549,6 @@ pub mod structured {
                     )
             }
         }
-    }
-
-    /// Apply a validated structured-view choice to a freshly-built instance:
-    /// set the persisted view and pin the per-agent default model, the same
-    /// post-build step the web create handler runs. Re-validates capability
-    /// defensively (downgrading to terminal with a warning) so a caller that
-    /// skipped [`validate_structured_choice`] can't persist a structured
-    /// session no agent can serve.
-    pub fn apply_structured_choice(instance: &mut Instance) {
-        let config = crate::session::config::repo_config::resolve_config_with_repo_or_warn(
-            &instance.source_profile,
-            std::path::Path::new(&instance.project_path),
-        );
-        if !tool_acp_capable(&instance.tool, &config) {
-            tracing::warn!(
-                target: "session.create",
-                session = %instance.id,
-                tool = %instance.tool,
-                "structured view requested for non-ACP tool; keeping terminal view"
-            );
-            return;
-        }
-        instance.view = crate::session::View::Structured;
-        // Pin the per-agent default model so the composer shows it and the session stays on it
-        // (mirrors the CLI and web create paths).
-        let defaults = config.acp.acp_defaults_for(&instance.tool);
-        instance.agent_model = crate::session::config::resolve_spawn_model_effort(
-            defaults,
-            instance.agent_model.take(),
-            None,
-        )
-        .0;
     }
 }
 

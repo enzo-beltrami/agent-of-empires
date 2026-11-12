@@ -176,12 +176,7 @@ fn run_info(id: &str) -> Result<()> {
     if !m.keybinds.is_empty() {
         println!("  keybinds:");
         for kb in &m.keybinds {
-            let note = match crate::tui::home::bindings::parse_chord(&kb.key) {
-                Some(c) if crate::tui::home::bindings::core_shadows(&c) => "  (shadowed by core)",
-                Some(_) => "",
-                None => "  (invalid key, ignored)",
-            };
-            println!("    {} -> {}{note}", kb.key, kb.command);
+            println!("    {} -> {}", kb.key, kb.command);
         }
     }
     Ok(())

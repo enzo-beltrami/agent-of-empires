@@ -189,7 +189,7 @@ pub(crate) fn inherited_host_env(profile: &str) -> Vec<(String, String)> {
     // via OSC 11; agents such as OMP then fall back to `COLORFGBG`.
     if !env.iter().any(|(key, _)| key == "COLORFGBG") {
         let appearance =
-            crate::tui::styles::resolve_theme(&super::config::resolve_theme_name()).appearance;
+            crate::theme::resolve_theme(&super::config::resolve_theme_name()).appearance;
         env.push((
             "COLORFGBG".to_string(),
             colorfgbg_for(appearance).to_string(),
@@ -198,10 +198,10 @@ pub(crate) fn inherited_host_env(profile: &str) -> Vec<(String, String)> {
     env
 }
 
-fn colorfgbg_for(appearance: crate::tui::styles::ThemeAppearance) -> &'static str {
+fn colorfgbg_for(appearance: crate::theme::ThemeAppearance) -> &'static str {
     match appearance {
-        crate::tui::styles::ThemeAppearance::Light => "0;15",
-        crate::tui::styles::ThemeAppearance::Dark => "15;0",
+        crate::theme::ThemeAppearance::Light => "0;15",
+        crate::theme::ThemeAppearance::Dark => "15;0",
     }
 }
 

@@ -1367,7 +1367,7 @@ pub(crate) async fn start_server(
 /// ignored `BROWSER`, which disagreed with the preview's link handling on the
 /// same host. Failures are logged but never propagate; the server keeps running.
 pub(super) fn maybe_open_browser(url: &str) {
-    if let Err(e) = crate::tui::open_url::open_url(url) {
+    if let Err(e) = super::open_url::open_url(url) {
         tracing::info!(target: "http.middleware", "--open skipped: {e}");
     }
 }

@@ -292,13 +292,6 @@ impl GroupTree {
         &self.roots
     }
 
-    pub fn toggle_collapsed(&mut self, path: &str) {
-        if let Some(group) = self.groups_by_path.get_mut(path) {
-            group.collapsed = !group.collapsed;
-            self.rebuild_tree();
-        }
-    }
-
     pub fn set_collapsed(&mut self, path: &str, collapsed: bool) {
         if let Some(group) = self.groups_by_path.get_mut(path) {
             if group.collapsed != collapsed {
@@ -1241,7 +1234,7 @@ mod tests {
         assert!(tree.group_exists("a") && tree.group_exists("a/b") && tree.group_exists("a/b/c"));
         tree.delete_group("work");
         assert!(!tree.group_exists("work") && !tree.group_exists("work/frontend"));
-        tree.toggle_collapsed("nonexistent");
+        tree.set_collapsed("nonexistent", true);
 
         let names = |tree: &GroupTree| -> Vec<String> {
             tree.get_all_groups().into_iter().map(|g| g.name).collect()
@@ -1291,7 +1284,7 @@ mod tests {
             Item::Group { depth: 1, .. }
         ));
 
-        tree.toggle_collapsed("parent");
+        tree.set_collapsed("parent", true);
         let items = flatten_tree(&tree, &instances, SortOrder::Oldest);
         assert_eq!(group_names(&items), ["parent"]);
         assert_eq!(count_sessions(&items), 0);
@@ -1303,7 +1296,7 @@ mod tests {
             }
         ));
 
-        tree.toggle_collapsed("parent");
+        tree.set_collapsed("parent", false);
         assert!(!tree.groups_by_path["parent"].collapsed);
     }
 
@@ -1433,7 +1426,7 @@ mod tests {
 
         let mut snoozed = with_status("s", "", Status::Waiting);
         snoozed.snooze(30);
-        assert!(snoozed.is_snoozed() && snoozed.snooze_remaining().is_some());
+        assert!(snoozed.is_snoozed());
         assert_eq!(attention_tier(&snoozed), 99);
         snoozed.archive();
         assert_eq!(attention_tier(&snoozed), 99);
@@ -1443,7 +1436,7 @@ mod tests {
         snoozed.unarchive();
         snoozed.status = Status::Waiting;
         snoozed.snoozed_until = Some(Utc::now() - Duration::seconds(1));
-        assert!(!snoozed.is_snoozed() && snoozed.snooze_remaining().is_none());
+        assert!(!snoozed.is_snoozed());
         assert_eq!(
             attention_tier(&snoozed),
             0,

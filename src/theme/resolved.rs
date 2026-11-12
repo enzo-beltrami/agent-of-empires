@@ -1,0 +1,882 @@
+//! Server-side theme projections.
+//!
+//! `ResolvedTheme` is the payload the web dashboard consumes from
+//! `GET /api/themes/:name` and `GET /api/theme/current`. It is derived
+//! from the canonical [`Theme`] (loaded from a builtin TOML or a custom
+//! TOML in `~/.agent-of-empires/themes/*.toml`) by:
+//!
+//! - emitting the named TUI color fields as CSS variables the web's
+//!   Tailwind tokens consume (`--color-surface-900`, `--color-text-primary`,
+//!   etc.),
+//! - deriving lifted/recessed shades from the background luminance,
+//! - deriving an ANSI 16 palette from the semantic color fields so the
+//!   embedded terminal repaints under user themes without an extra schema
+//!   field per theme,
+//! - resolving the `[syntax].shiki_theme` selection (with appearance-based
+//!   fallback when none is declared).
+//!
+//! `ResolvedTheme` is never persisted. It's a serialization of the
+//! projection logic the web needs at runtime.
+
+use std::collections::BTreeMap;
+
+use serde::Serialize;
+use tracing::debug;
+
+use super::{contrast::contrast_ratio, load_theme, Color, Theme, ThemeAppearance};
+
+/// Source classification for a resolved theme. Frontends use this to
+/// label the picker entry (e.g. "(custom)" vs the builtin name) and to
+/// decide whether unknown-theme fallback paths fired.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResolvedThemeSource {
+    Builtin,
+    Custom,
+    /// Contributed by an active plugin's manifest.
+    Plugin,
+    /// The requested theme name didn't match any builtin, custom, or plugin
+    /// theme; the resolver returned the `default` builtin as a safety net.
+    Fallback,
+}
+
+/// CSS-variable map for one surface (web chrome or embedded terminal).
+/// Wrapped so the JSON shape is `{ "cssVars": { ... } }` instead of a
+/// bare map, which gives room to add per-surface metadata (e.g. a
+/// `colorScheme` hint) later without breaking the wire format.
+#[derive(Debug, Clone, Serialize)]
+pub struct CssVarProjection {
+    #[serde(rename = "cssVars")]
+    pub css_vars: BTreeMap<String, String>,
+}
+
+/// Syntax-highlighter projection. Web loads the named shiki theme on
+/// theme switch.
+#[derive(Debug, Clone, Serialize)]
+pub struct SyntaxProjection {
+    #[serde(rename = "shikiTheme")]
+    pub shiki_theme: String,
+}
+
+/// Full resolved theme payload for the web. JSON shape (subset):
+///
+/// ```json
+/// {
+///   "name": "empire",
+///   "source": "builtin",
+///   "appearance": "dark",
+///   "web": { "cssVars": { "--color-surface-900": "#0f172a", ... } },
+///   "terminal": { "cssVars": { "--term-bg": "#0f172a", ... } },
+///   "syntax": { "shikiTheme": "github-dark" }
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedTheme {
+    pub name: String,
+    pub source: ResolvedThemeSource,
+    pub appearance: ThemeAppearance,
+    pub web: CssVarProjection,
+    pub terminal: CssVarProjection,
+    pub syntax: SyntaxProjection,
+}
+
+/// Resolve a theme name into the full projection. Always succeeds:
+/// unknown names fall back to the `default` builtin (matching
+/// `load_theme`'s behaviour) and the returned `source` reports
+/// `Fallback` so the frontend can surface that.
+pub fn resolve_theme(name: &str) -> ResolvedTheme {
+    debug!("resolve_theme enter name={}", name);
+    let theme = load_theme(name);
+    debug!("resolve_theme: load_theme returned");
+    let source = classify_source(name);
+    debug!("resolve_theme: classify_source -> {:?}", source);
+    let resolved_name = if matches!(source, ResolvedThemeSource::Fallback) {
+        "zinc".to_string()
+    } else {
+        name.to_string()
+    };
+    let appearance = resolved_appearance(&theme);
+    debug!("resolve_theme: appearance -> {:?}", appearance);
+    let syntax = syntax_projection(&theme, appearance);
+    debug!(
+        "resolved theme projection name={} source={:?} appearance={:?} shiki_theme={}",
+        resolved_name, source, appearance, syntax.shiki_theme
+    );
+    let web = web_projection(&theme, appearance);
+    debug!(
+        "resolve_theme: web projection done ({} vars)",
+        web.css_vars.len()
+    );
+    let terminal = terminal_projection(&theme, appearance);
+    debug!(
+        "resolve_theme: terminal projection done ({} vars)",
+        terminal.css_vars.len()
+    );
+    ResolvedTheme {
+        name: resolved_name,
+        source,
+        appearance,
+        web,
+        terminal,
+        syntax,
+    }
+}
+
+fn classify_source(name: &str) -> ResolvedThemeSource {
+    if super::is_builtin_theme(name) {
+        return ResolvedThemeSource::Builtin;
+    }
+    if super::discover_custom_themes()
+        .iter()
+        .any(|(n, _)| n == name)
+    {
+        return ResolvedThemeSource::Custom;
+    }
+    if super::discover_plugin_themes()
+        .iter()
+        .any(|(n, _)| n == name)
+    {
+        return ResolvedThemeSource::Plugin;
+    }
+    ResolvedThemeSource::Fallback
+}
+
+fn resolved_appearance(theme: &Theme) -> ThemeAppearance {
+    if let Some(a) = theme.appearance {
+        return a;
+    }
+    if relative_luminance(theme.background) >= 0.5 {
+        ThemeAppearance::Light
+    } else {
+        ThemeAppearance::Dark
+    }
+}
+
+fn web_projection(theme: &Theme, appearance: ThemeAppearance) -> CssVarProjection {
+    let mut css = BTreeMap::new();
+    let bg = theme.background;
+
+    // Named surfaces derived from background luminance. Dark themes
+    // get a deeper/lighter ramp by mixing toward black/white; light
+    // themes invert (recess toward grey, elevate toward white). See
+    // mix() and DESIGN.md for the rationale.
+    let (deeper, elevated_1, elevated_2) = match appearance {
+        ThemeAppearance::Dark => (
+            mix(bg, BLACK, 0.45),
+            mix(bg, WHITE, 0.05),
+            mix(bg, WHITE, 0.08),
+        ),
+        ThemeAppearance::Light => (
+            mix(bg, BLACK, 0.05),
+            mix(bg, WHITE, 0.35),
+            mix(bg, BLACK, 0.03),
+        ),
+    };
+    let (surface_600, surface_500) = match appearance {
+        ThemeAppearance::Dark => (mix(theme.border, WHITE, 0.1), mix(theme.border, WHITE, 0.2)),
+        ThemeAppearance::Light => (
+            mix(theme.border, BLACK, 0.08),
+            mix(theme.border, BLACK, 0.16),
+        ),
+    };
+    css.insert("--color-surface-950".into(), hex(deeper));
+    css.insert("--color-surface-900".into(), hex(bg));
+    css.insert("--color-surface-850".into(), hex(elevated_1));
+    css.insert("--color-surface-800".into(), hex(elevated_2));
+    css.insert("--color-surface-700".into(), hex(theme.border));
+    css.insert("--color-surface-600".into(), hex(surface_600));
+    css.insert("--color-surface-500".into(), hex(surface_500));
+
+    // Brand ramp anchored on theme.accent. Dark themes use Tailwind's
+    // usual light-to-dark progression so brand-100 reads on brand-900
+    // button bodies. Light themes invert the ramp for the same utility
+    // pair; translucent brand-900 bodies composite over light surfaces,
+    // so their foreground needs to come from the dark end.
+    let accent = theme.accent;
+    let brand_ramp = match appearance {
+        ThemeAppearance::Dark => [
+            mix(accent, WHITE, 0.8),
+            mix(accent, WHITE, 0.65),
+            mix(accent, WHITE, 0.45),
+            mix(accent, WHITE, 0.2),
+            accent,
+            mix(accent, BLACK, 0.15),
+            mix(accent, BLACK, 0.3),
+            mix(accent, BLACK, 0.45),
+            mix(accent, BLACK, 0.55),
+        ],
+        ThemeAppearance::Light => [
+            mix(accent, BLACK, 0.85),
+            mix(accent, BLACK, 0.7),
+            mix(accent, BLACK, 0.55),
+            mix(accent, BLACK, 0.35),
+            accent,
+            mix(accent, WHITE, 0.2),
+            mix(accent, WHITE, 0.4),
+            mix(accent, WHITE, 0.6),
+            mix(accent, WHITE, 0.8),
+        ],
+    };
+    for (step, color) in [100, 200, 300, 400, 500, 600, 700, 800, 900]
+        .into_iter()
+        .zip(brand_ramp)
+    {
+        css.insert(format!("--color-brand-{step}"), hex(color));
+    }
+    css.insert(
+        "--color-text-on-brand".into(),
+        hex(readable_on(brand_ramp[5])),
+    );
+
+    // Frame around the open session's sidebar row. It is a hairline over
+    // the row fill, so it has to clear the WCAG 1.4.11 non-text floor
+    // against that fill and the surrounding background. Most accents
+    // already do; the rest lift toward the background's readable pole
+    // until they clear it.
+    css.insert(
+        "--color-session-active".into(),
+        hex(active_frame(accent, bg, elevated_2)),
+    );
+
+    // Accent ramp anchored on theme.terminal_border (the existing
+    // teal-style anchor used by the TUI's accent surface), so secondary
+    // affordances like branch chips still read as the theme's secondary
+    // hue.
+    let secondary = theme.terminal_border;
+    css.insert("--color-accent-500".into(), hex(secondary));
+    css.insert(
+        "--color-accent-600".into(),
+        hex(mix(secondary, BLACK, 0.15)),
+    );
+    css.insert("--color-accent-700".into(), hex(mix(secondary, BLACK, 0.3)));
+
+    // Text ramp. text-bright is the most readable; dim is the WCAG-AA
+    // floor for descriptive copy (validated by the issue #1105 work).
+    css.insert("--color-text-primary".into(), hex(theme.text));
+    css.insert("--color-text-secondary".into(), hex(theme.hint));
+    css.insert("--color-text-muted".into(), hex(theme.hint));
+    css.insert("--color-text-dim".into(), hex(theme.dimmed));
+    // Dimmed lifted to body-text AA on surface-900, -850, the modal surface-800, the
+    // code-block surface-950 and the startup error banner's tint, for small text that
+    // cannot use the raw slot.
+    css.insert(
+        "--color-text-subtle".into(),
+        hex(lift_until(
+            theme.dimmed,
+            bg,
+            &[
+                bg,
+                elevated_1,
+                elevated_2,
+                deeper,
+                composite(theme.error, bg, 0.1),
+            ],
+            TEXT_CONTRAST_RATIO,
+        )),
+    );
+    css.insert("--color-text-bright".into(), hex(theme.title));
+
+    // Status colors map directly onto the TUI's semantic fields.
+    // starting + stopped don't have TUI equivalents; derive from
+    // waiting + dimmed so they still pulse against the picked theme.
+    css.insert("--color-status-running".into(), hex(theme.running));
+    css.insert("--color-status-waiting".into(), hex(theme.waiting));
+    css.insert("--color-status-warning".into(), hex(theme.waiting));
+    css.insert("--color-status-fresh-idle".into(), hex(theme.fresh_idle));
+    css.insert("--color-status-idle".into(), hex(theme.idle));
+    css.insert("--color-status-unread".into(), hex(theme.unread));
+    css.insert("--color-status-error".into(), hex(theme.error));
+    css.insert(
+        "--color-text-on-status-error".into(),
+        hex(readable_on(theme.error)),
+    );
+    // Some theme reds are a hue, not readable text, on the surfaces below. The
+    // last is the startup error banner's `bg-status-error/10` tint.
+    css.insert(
+        "--color-status-error-text".into(),
+        hex(lift_until(
+            theme.error,
+            bg,
+            &[bg, elevated_1, composite(theme.error, bg, 0.1)],
+            TEXT_CONTRAST_RATIO,
+        )),
+    );
+    css.insert(
+        "--color-status-starting".into(),
+        hex(mix(theme.waiting, BLACK, 0.1)),
+    );
+    css.insert(
+        "--color-status-stopped".into(),
+        hex(mix(theme.dimmed, BLACK, 0.1)),
+    );
+    // Dormant (idle-reaped, resumable structured worker): a dim amber derived
+    // from the theme's fresh-idle + dimmed, distinct from the neutral Stopped
+    // grey and the brighter fresh-idle attention color. See #2250.
+    css.insert("--color-status-dormant".into(), hex(theme.dormant()));
+
+    // Diff + extras. Diff tokens are exposed even though the current
+    // diff cards use ad-hoc Tailwind classes; web can migrate to them
+    // incrementally without server changes.
+    css.insert("--color-diff-add".into(), hex(theme.diff_add));
+    css.insert("--color-diff-delete".into(), hex(theme.diff_delete));
+    css.insert("--color-diff-modified".into(), hex(theme.diff_modified));
+    css.insert("--color-diff-header".into(), hex(theme.diff_header));
+    css.insert("--color-selection".into(), hex(theme.selection));
+    css.insert(
+        "--color-session-selection".into(),
+        hex(theme.session_selection),
+    );
+    css.insert("--color-terminal-active".into(), hex(theme.terminal_active));
+    css.insert("--color-branch".into(), hex(theme.branch));
+    css.insert("--color-sandbox".into(), hex(theme.sandbox));
+    css.insert("--color-favorite".into(), hex(theme.favorite));
+
+    CssVarProjection { css_vars: css }
+}
+
+fn terminal_projection(theme: &Theme, appearance: ThemeAppearance) -> CssVarProjection {
+    let mut css = BTreeMap::new();
+    css.insert("--term-bg".into(), hex(theme.background));
+    css.insert("--term-fg".into(), hex(theme.text));
+    css.insert("--term-cursor".into(), hex(theme.accent));
+    css.insert("--term-selection-bg".into(), rgba(theme.hint, 0.35));
+
+    // Derived ANSI 16 palette. Maps semantic fields to the standard
+    // ANSI slots (red=error, green=running, etc.) and lifts each by
+    // ~20% mixed toward white (dark themes) or black (light themes)
+    // for the bright variants. Not aesthetically perfect for every
+    // user theme, but it ensures the terminal honours the picked
+    // palette without forcing users to declare 16 hexes per theme.
+    let lift = match appearance {
+        ThemeAppearance::Dark => WHITE,
+        ThemeAppearance::Light => BLACK,
+    };
+    let lift_amt = 0.2;
+
+    let base = [
+        ("--term-color-0", theme.background),
+        ("--term-color-1", theme.error),
+        ("--term-color-2", theme.running),
+        ("--term-color-3", theme.waiting),
+        ("--term-color-4", theme.branch),
+        ("--term-color-5", theme.accent),
+        ("--term-color-6", theme.terminal_active),
+        ("--term-color-7", theme.text),
+    ];
+    for (name, color) in base {
+        css.insert(name.into(), hex(color));
+    }
+    css.insert("--term-color-8".into(), hex(theme.dimmed));
+    let bright = [
+        ("--term-color-9", theme.error),
+        ("--term-color-10", theme.running),
+        ("--term-color-11", theme.waiting),
+        ("--term-color-12", theme.branch),
+        ("--term-color-13", theme.accent),
+        ("--term-color-14", theme.terminal_active),
+    ];
+    for (name, color) in bright {
+        css.insert(name.into(), hex(mix(color, lift, lift_amt)));
+    }
+    css.insert("--term-color-15".into(), hex(theme.title));
+
+    CssVarProjection { css_vars: css }
+}
+
+fn syntax_projection(theme: &Theme, appearance: ThemeAppearance) -> SyntaxProjection {
+    let shiki_theme = theme
+        .syntax
+        .shiki_theme
+        .clone()
+        .unwrap_or_else(|| match appearance {
+            ThemeAppearance::Dark => "github-dark".to_string(),
+            ThemeAppearance::Light => "github-light".to_string(),
+        });
+    SyntaxProjection { shiki_theme }
+}
+
+// --- color math ---
+
+const BLACK: Color = Color::Rgb(0, 0, 0);
+const WHITE: Color = Color::Rgb(255, 255, 255);
+
+fn rgb_components(c: Color) -> (u8, u8, u8) {
+    let Color::Rgb(r, g, b) = c;
+    (r, g, b)
+}
+
+fn hex(c: Color) -> String {
+    let (r, g, b) = rgb_components(c);
+    format!("#{:02x}{:02x}{:02x}", r, g, b)
+}
+
+/// Linear-channel mix of two RGB colors. `t = 0` returns `a`, `t = 1`
+/// returns `b`. Not gamma-correct; that's fine for chrome derivation
+/// where the goal is visible separation, not perceptual uniformity.
+fn mix(a: Color, b: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let (ar, ag, ab) = rgb_components(a);
+    let (br, bg, bb) = rgb_components(b);
+    let lerp = |x: u8, y: u8| -> u8 {
+        let result = (x as f32) * (1.0 - t) + (y as f32) * t;
+        result.round().clamp(0.0, 255.0) as u8
+    };
+    Color::Rgb(lerp(ar, br), lerp(ag, bg), lerp(ab, bb))
+}
+
+fn rgba(c: Color, alpha: f32) -> String {
+    let (r, g, b) = rgb_components(c);
+    format!("rgba({r}, {g}, {b}, {:.2})", alpha.clamp(0.0, 1.0))
+}
+
+/// WCAG 1.4.11 floor for non-text UI indicators.
+const NON_TEXT_CONTRAST_RATIO: f32 = 3.0;
+const TEXT_CONTRAST_RATIO: f32 = 4.5;
+
+/// Alpha of the multi-selection tint the sidebar lays under a row that is
+/// open and selected at once (`bg-brand-500/15` in
+/// `web/src/lib/sessionRowChrome.ts`). The tint is the accent itself, so it
+/// pulls the fill toward the frame and has to be part of the floor check.
+const SELECTION_TINT_ALPHA: f32 = 0.15;
+
+/// The accent, lifted toward `bg`'s readable pole only as far as it takes
+/// to clear [`NON_TEXT_CONTRAST_RATIO`] against every surface the frame can
+/// sit on: `bg`, `fill`, and `fill` under the selection tint. The pole is
+/// measured rather than taken from the declared appearance, so a theme whose
+/// `appearance` disagrees with its background still lifts the right way.
+fn active_frame(accent: Color, bg: Color, fill: Color) -> Color {
+    let surfaces = [bg, fill, composite(accent, fill, SELECTION_TINT_ALPHA)];
+    lift_until(accent, bg, &surfaces, NON_TEXT_CONTRAST_RATIO)
+}
+
+/// `color` mixed toward `bg`'s readable pole in 10% steps until it clears
+/// `floor` against every surface.
+fn lift_until(color: Color, bg: Color, surfaces: &[Color], floor: f32) -> Color {
+    let pole = readable_on(bg);
+    (0..=10)
+        .map(|step| mix(color, pole, step as f32 / 10.0))
+        .find(|c| surfaces.iter().all(|s| contrast_ratio(*c, *s) >= floor))
+        .unwrap_or(pole)
+}
+
+/// `fg` at `alpha` over an opaque `bg`, matching how the browser composites
+/// a Tailwind `/NN` opacity modifier.
+fn composite(fg: Color, bg: Color, alpha: f32) -> Color {
+    let (fr, fg_g, fb) = rgb_components(fg);
+    let (br, bg_g, bb) = rgb_components(bg);
+    let channel = |f: u8, b: u8| ((f as f32 * alpha) + (b as f32 * (1.0 - alpha))).round() as u8;
+    Color::Rgb(channel(fr, br), channel(fg_g, bg_g), channel(fb, bb))
+}
+
+fn readable_on(bg: Color) -> Color {
+    if contrast_ratio(BLACK, bg) >= contrast_ratio(WHITE, bg) {
+        BLACK
+    } else {
+        WHITE
+    }
+}
+
+/// Rec. 601 relative luminance (0.0 to 1.0). Coarser than WCAG's
+/// gamma-corrected formula but adequate for the dark/light split: only
+/// custom themes with mid-tone backgrounds (around 0.5) sit near the
+/// cutoff, and those are the ones that should declare `appearance`
+/// explicitly anyway.
+fn relative_luminance(c: Color) -> f32 {
+    let (r, g, b) = rgb_components(c);
+    (0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32) / 255.0
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::BTreeSet, fs, path::Path};
+
+    use super::*;
+    use crate::theme::builtin_theme_names;
+
+    #[test]
+    fn resolve_builtins_and_fallback() {
+        for name in builtin_theme_names() {
+            let r = resolve_theme(name);
+            assert_eq!(r.name, name);
+            assert_eq!(r.source, ResolvedThemeSource::Builtin);
+            assert!(r.web.css_vars.contains_key("--color-surface-900"), "{name}");
+            assert!(r.terminal.css_vars.contains_key("--term-bg"), "{name}");
+            assert!(!r.syntax.shiki_theme.is_empty(), "{name}");
+            for (key, value) in r.web.css_vars.iter().chain(r.terminal.css_vars.iter()) {
+                if key == "--term-selection-bg" {
+                    assert!(
+                        value.starts_with("rgba(") && value.ends_with(')'),
+                        "{name}: var {key} = {value} not rgba(...)"
+                    );
+                    continue;
+                }
+                assert!(
+                    value.len() == 7
+                        && value.starts_with('#')
+                        && value
+                            .chars()
+                            .skip(1)
+                            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+                    "{name}: var {key} = {value} not a lowercase #rrggbb"
+                );
+            }
+        }
+        let latte = resolve_theme("catppuccin-latte");
+        assert_eq!(latte.appearance, ThemeAppearance::Light);
+        assert_eq!(latte.syntax.shiki_theme, "catppuccin-latte");
+        let dracula = resolve_theme("dracula");
+        assert_eq!(dracula.appearance, ThemeAppearance::Dark);
+        assert_eq!(dracula.syntax.shiki_theme, "dracula");
+
+        let r = resolve_theme("does-not-exist");
+        assert_eq!(r.source, ResolvedThemeSource::Fallback);
+        assert_eq!(r.name, "zinc");
+    }
+
+    #[test]
+    fn web_semantic_color_utilities_have_resolved_vars() {
+        let vars = web_semantic_color_vars_used_by_dashboard();
+        assert!(
+            vars.contains("--color-brand-100")
+                && vars.contains("--color-brand-200")
+                && vars.contains("--color-brand-300")
+                && vars.contains("--color-brand-900")
+                && vars.contains("--color-surface-500")
+                && vars.contains("--color-surface-600"),
+            "test fixture did not observe the known web token gaps: {vars:?}"
+        );
+
+        for name in builtin_theme_names() {
+            let r = resolve_theme(name);
+            for var in &vars {
+                assert!(
+                    r.web.css_vars.contains_key(var),
+                    "{name}: web source uses {var}, but ResolvedTheme does not project it"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn light_theme_inverts_surface_ramp_direction() {
+        // For a dark theme, surface-950 should be DARKER than surface-900
+        // (background); for a light theme, surface-950 should be SLIGHTLY
+        // DARKER than surface-900 as a recessed edge, while surface-850
+        // / surface-800 lift toward white. Sanity-check the ordering by
+        // luminance on Catppuccin Latte vs Empire.
+        let light = resolve_theme("catppuccin-latte");
+        let bg_light = light.web.css_vars.get("--color-surface-900").unwrap();
+        let elevated_light = light.web.css_vars.get("--color-surface-850").unwrap();
+        assert!(
+            luminance_of_hex(elevated_light) >= luminance_of_hex(bg_light),
+            "light theme: surface-850 ({elevated_light}) should be >= surface-900 ({bg_light})"
+        );
+
+        let dark = resolve_theme("empire");
+        let bg_dark = dark.web.css_vars.get("--color-surface-900").unwrap();
+        let deeper_dark = dark.web.css_vars.get("--color-surface-950").unwrap();
+        assert!(
+            luminance_of_hex(deeper_dark) <= luminance_of_hex(bg_dark),
+            "dark theme: surface-950 ({deeper_dark}) should be <= surface-900 ({bg_dark})"
+        );
+    }
+
+    #[test]
+    fn builtins_clear_contrast_floors() {
+        let latte = resolve_theme("catppuccin-latte");
+        let fg = color_from_hex(latte.web.css_vars.get("--color-brand-100").unwrap());
+        let bg = color_from_hex(latte.web.css_vars.get("--color-brand-900").unwrap());
+        let surface = color_from_hex(latte.web.css_vars.get("--color-surface-900").unwrap());
+        assert!(
+            contrast_ratio(fg, composite(bg, surface, 0.4)) >= 4.5,
+            "catppuccin-latte: text-brand-100 must remain readable on bg-brand-900/40"
+        );
+
+        for name in builtin_theme_names() {
+            let theme = resolve_theme(name);
+            let var = |k: &str| color_from_hex(theme.web.css_vars.get(k).unwrap());
+            assert!(
+                contrast_ratio(var("--color-text-on-brand"), var("--color-brand-600")) >= 4.5,
+                "{name}: color-text-on-brand must remain readable on brand-600"
+            );
+            // The startup error surfaces' primary button: label on a solid error fill,
+            // the same at rest and on hover.
+            assert!(
+                contrast_ratio(
+                    var("--color-text-on-status-error"),
+                    var("--color-status-error")
+                ) >= TEXT_CONTRAST_RATIO,
+                "{name}: color-text-on-status-error must remain readable on status-error"
+            );
+            // The wizard's inactive View segments: labels on the group's surface-950. The selected
+            // one is text-on-brand on brand-600, asserted above.
+            let segment = contrast_ratio(var("--color-text-primary"), var("--color-surface-950"));
+            assert!(
+                segment >= TEXT_CONTRAST_RATIO,
+                "{name}: --color-text-primary on --color-surface-950 is {segment:.2}, below body-text AA"
+            );
+            // Status error text, and the session notices strip's body text, sit on
+            // these solid surfaces.
+            for fg in [
+                "--color-status-error-text",
+                "--color-text-primary",
+                "--color-text-subtle",
+            ] {
+                for surface in ["--color-surface-900", "--color-surface-850"] {
+                    let ratio = contrast_ratio(var(fg), var(surface));
+                    assert!(
+                        ratio >= TEXT_CONTRAST_RATIO,
+                        "{name}: {fg} on {surface} is {ratio:.2}, below body-text AA"
+                    );
+                }
+            }
+            // The startup error banner's text, on its tint and on its code and log blocks.
+            let tint = composite(var("--color-status-error"), var("--color-surface-900"), 0.1);
+            for (fg, surface, label) in [
+                ("--color-text-primary", tint, "bg-status-error/10"),
+                ("--color-text-subtle", tint, "bg-status-error/10"),
+                ("--color-status-error-text", tint, "bg-status-error/10"),
+                (
+                    "--color-text-primary",
+                    var("--color-surface-950"),
+                    "surface-950",
+                ),
+                (
+                    "--color-text-subtle",
+                    var("--color-surface-950"),
+                    "surface-950",
+                ),
+            ] {
+                let ratio = contrast_ratio(var(fg), surface);
+                assert!(
+                    ratio >= TEXT_CONTRAST_RATIO,
+                    "{name}: {fg} on {label} is {ratio:.2}, below body-text AA"
+                );
+            }
+            // Dialog hints, such as the onboarding footer and the tour's Skip button, sit on the
+            // modal surface.
+            let subtle_on_modal =
+                contrast_ratio(var("--color-text-subtle"), var("--color-surface-800"));
+            assert!(
+                subtle_on_modal >= TEXT_CONTRAST_RATIO,
+                "{name}: --color-text-subtle on --color-surface-800 is {subtle_on_modal:.2}, below body-text AA"
+            );
+            // The sidebar context menu's session picker is body text on surface-800.
+            let picker = contrast_ratio(var("--color-text-primary"), var("--color-surface-800"));
+            assert!(
+                picker >= TEXT_CONTRAST_RATIO,
+                "{name}: text-primary on surface-800 is {picker:.2}, below body-text AA"
+            );
+            // Selected list and menu items: `bg-brand-600/20 text-text-primary`.
+            for surface in [
+                "--color-surface-900",
+                "--color-surface-850",
+                "--color-surface-800",
+            ] {
+                let selected = composite(var("--color-brand-600"), var(surface), 0.2);
+                let ratio = contrast_ratio(var("--color-text-primary"), selected);
+                assert!(
+                    ratio >= TEXT_CONTRAST_RATIO,
+                    "{name}: text-primary on selected fill over {surface} is {ratio:.2}, below body-text AA"
+                );
+            }
+            let frame = var("--color-session-active");
+            let fill = var("--color-surface-800");
+            // The third surface is the fill an open row takes while it is also
+            // multi-selected: `bg-brand-500/15` over the sidebar's surface-800.
+            let surfaces = [
+                ("surface-900", var("--color-surface-900")),
+                ("surface-800", fill),
+                (
+                    "surface-800 + selection tint",
+                    composite(var("--color-brand-500"), fill, SELECTION_TINT_ALPHA),
+                ),
+            ];
+            for (label, bg) in surfaces {
+                let ratio = contrast_ratio(frame, bg);
+                assert!(
+                    ratio >= NON_TEXT_CONTRAST_RATIO,
+                    "{name}: session-active frame vs {label} is {ratio:.2}, below the non-text floor"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn session_active_frame_lifts_away_from_the_real_background() {
+        // A theme whose declared appearance disagrees with its background:
+        // the frame must still separate from the surfaces it paints on
+        // rather than lifting toward the pole the metadata names.
+        let theme = Theme {
+            background: Color::Rgb(0xff, 0xff, 0xff),
+            accent: Color::Rgb(0xff, 0xff, 0xff),
+            ..Theme::default()
+        };
+
+        let projection = web_projection(&theme, ThemeAppearance::Dark);
+        let frame = color_from_hex(projection.css_vars.get("--color-session-active").unwrap());
+        for surface in ["--color-surface-900", "--color-surface-800"] {
+            let bg = color_from_hex(projection.css_vars.get(surface).unwrap());
+            assert!(
+                contrast_ratio(frame, bg) >= NON_TEXT_CONTRAST_RATIO,
+                "white-background theme: session-active frame vs {surface} is below the non-text floor"
+            );
+        }
+    }
+
+    #[test]
+    fn session_active_frame_keeps_the_accent_when_it_already_separates() {
+        // Only accents that cannot clear the floor on their own move, so a
+        // theme's active row stays recognisably its own accent color.
+        let empire = resolve_theme("empire");
+        assert_eq!(
+            empire.web.css_vars.get("--color-session-active").unwrap(),
+            empire.web.css_vars.get("--color-brand-500").unwrap()
+        );
+
+        // Latte's orange accent lands at 2.64:1 on its near-white
+        // background, so the light projection has to darken it.
+        let latte = resolve_theme("catppuccin-latte");
+        assert_ne!(
+            latte.web.css_vars.get("--color-session-active").unwrap(),
+            latte.web.css_vars.get("--color-brand-500").unwrap()
+        );
+    }
+
+    #[test]
+    fn on_brand_token_uses_wcag_contrast_for_custom_mid_amber() {
+        let theme = Theme {
+            accent: Color::Rgb(0xb6, 0x76, 0x08),
+            ..Theme::default()
+        };
+
+        let projection = web_projection(&theme, ThemeAppearance::Dark);
+        let fg = color_from_hex(projection.css_vars.get("--color-text-on-brand").unwrap());
+        let bg = color_from_hex(projection.css_vars.get("--color-brand-600").unwrap());
+
+        assert_eq!(fg, WHITE);
+        assert!(
+            contrast_ratio(BLACK, bg) < 4.5,
+            "regression fixture should keep black below AA contrast"
+        );
+        assert!(
+            contrast_ratio(fg, bg) >= 4.5,
+            "custom amber text-on-brand must use the WCAG-readable foreground"
+        );
+    }
+
+    fn luminance_of_hex(hex: &str) -> f32 {
+        let s = hex.trim_start_matches('#');
+        let r = u8::from_str_radix(&s[0..2], 16).unwrap();
+        let g = u8::from_str_radix(&s[2..4], 16).unwrap();
+        let b = u8::from_str_radix(&s[4..6], 16).unwrap();
+        relative_luminance(Color::Rgb(r, g, b))
+    }
+
+    fn color_from_hex(hex: &str) -> Color {
+        let s = hex.trim_start_matches('#');
+        let r = u8::from_str_radix(&s[0..2], 16).unwrap();
+        let g = u8::from_str_radix(&s[2..4], 16).unwrap();
+        let b = u8::from_str_radix(&s[4..6], 16).unwrap();
+        Color::Rgb(r, g, b)
+    }
+
+    fn web_semantic_color_vars_used_by_dashboard() -> BTreeSet<String> {
+        let mut vars = BTreeSet::new();
+        let web_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("web/src");
+        collect_web_semantic_color_vars(&web_src, &mut vars);
+        vars
+    }
+
+    fn collect_web_semantic_color_vars(path: &Path, vars: &mut BTreeSet<String>) {
+        if path.is_dir() {
+            for entry in fs::read_dir(path).unwrap() {
+                collect_web_semantic_color_vars(&entry.unwrap().path(), vars);
+            }
+            return;
+        }
+
+        let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+            return;
+        };
+        if !matches!(ext, "css" | "ts" | "tsx") {
+            return;
+        }
+
+        let content = fs::read_to_string(path).unwrap();
+        collect_css_var_references(&content, vars);
+        collect_tailwind_color_utilities(&content, vars);
+    }
+
+    fn collect_css_var_references(content: &str, vars: &mut BTreeSet<String>) {
+        let mut offset = 0;
+        while let Some(pos) = content[offset..].find("--color-") {
+            let start = offset + pos;
+            let end = content[start..]
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                .map_or(content.len(), |rel| start + rel);
+            let name = &content[start..end];
+            if semantic_color_name(name.trim_start_matches("--color-")) {
+                vars.insert(name.to_string());
+            }
+            offset = end;
+        }
+    }
+
+    fn collect_tailwind_color_utilities(content: &str, vars: &mut BTreeSet<String>) {
+        for raw in content.split(|c: char| {
+            !(c.is_ascii_alphanumeric() || matches!(c, '-' | ':' | '/' | '_' | '[' | ']' | '.'))
+        }) {
+            let utility = raw
+                .rsplit(':')
+                .next()
+                .unwrap_or(raw)
+                .trim_start_matches('!');
+            for prefix in [
+                "bg-",
+                "text-",
+                "border-",
+                "ring-",
+                "outline-",
+                "divide-",
+                "from-",
+                "via-",
+                "to-",
+                "fill-",
+                "stroke-",
+                "caret-",
+                "decoration-",
+                "shadow-",
+            ] {
+                if let Some(color) = utility.strip_prefix(prefix) {
+                    let color = color.split('/').next().unwrap_or(color);
+                    // A trailing dash is a class built by interpolation
+                    // (`bg-status-${suffix}`), not a token to look up.
+                    if !color.ends_with('-') && semantic_color_name(color) {
+                        vars.insert(format!("--color-{color}"));
+                    }
+                }
+            }
+        }
+    }
+
+    fn semantic_color_name(name: &str) -> bool {
+        name.starts_with("brand-")
+            || name.starts_with("accent-")
+            || name.starts_with("surface-")
+            || name.starts_with("text-")
+            || name.starts_with("status-")
+            || name.starts_with("diff-")
+            || matches!(
+                name,
+                "text-on-brand"
+                    | "selection"
+                    | "session-selection"
+                    | "session-active"
+                    | "terminal-active"
+                    | "branch"
+                    | "sandbox"
+                    | "favorite"
+            )
+    }
+}

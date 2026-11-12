@@ -16,7 +16,6 @@ pub use runtime::{
     RuntimeSnapshot, SandboxProgress, SessionMutation, RUNTIME_EPOCH_HEADER,
     RUNTIME_PROTOCOL_VERSION, RUNTIME_REVISION_HEADER,
 };
-pub(crate) use runtime::{NamespaceMutation, NamespaceOutcome};
 pub use runtime_connection::{RuntimeConnection, RuntimeConnectionError, RuntimeEvent};
 pub(crate) mod transport;
 pub(crate) mod websocket;
@@ -180,18 +179,6 @@ impl DaemonIncarnation {
                 birth: birth.fingerprint(),
             }),
         )
-    }
-
-    #[cfg(test)]
-    pub(crate) fn sample(start_id: &str) -> Self {
-        let birth = crate::process::ProcessBirthIdentity {
-            boot_id: "boot".into(),
-            start_id: start_id.into(),
-        };
-        Self {
-            pid: 1,
-            birth: birth.fingerprint(),
-        }
     }
 }
 
@@ -815,26 +802,6 @@ impl DaemonClient {
             cursor: receipt.cursor,
             outcome: receipt.outcome.outcome,
         })
-    }
-
-    /// Request daemon-owned naming; apply the receipt snapshot before using changed titles.
-    pub async fn smart_rename_session(
-        &self,
-        session_id: &str,
-        epoch: &str,
-    ) -> Result<MutationReceipt<SessionResponse>, DaemonClientError> {
-        let url = format!(
-            "{}/{}/smart-rename",
-            self.sessions_url,
-            transport::path_segment(session_id)?
-        );
-        self.request_mutation_with_outcome(
-            self.http
-                .post(url)
-                .timeout(crate::session::smart_rename::RENAME_DEADLINE + DEFAULT_TIMEOUT),
-            epoch,
-        )
-        .await
     }
 
     pub async fn purge_session(
@@ -2138,48 +2105,6 @@ mod tests {
         );
         let captured = next_request(rx).await;
         assert_eq!(captured.path, "/api/sessions/sess-1/stop");
-    }
-
-    #[tokio::test]
-    async fn smart_rename_accepts_completed_and_supervised_receipts() {
-        for status in [200, 202] {
-            let row = crate::server::api::sessions::session_response_from_instance(
-                &crate::session::Instance::new("named", "/tmp/named"),
-                false,
-            );
-            let app = axum::Router::new().route(
-                "/api/sessions/{id}/smart-rename",
-                axum::routing::post(move |req: axum::extract::Request| {
-                    let row = row.clone();
-                    async move {
-                        assert_eq!(req.headers()[RUNTIME_EPOCH_HEADER], "epoch-1");
-                        (
-                            axum::http::StatusCode::from_u16(status).unwrap(),
-                            [
-                                (RUNTIME_EPOCH_HEADER, "epoch-1"),
-                                (RUNTIME_REVISION_HEADER, "3"),
-                            ],
-                            axum::Json(row),
-                        )
-                    }
-                }),
-            );
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let server = tokio::spawn(async move {
-                axum::serve(listener, app).await.unwrap();
-            });
-            let client = DaemonClient::new(&format!("http://{address}"), None).unwrap();
-            let receipt = client
-                .smart_rename_session("sess-1", "epoch-1")
-                .await
-                .unwrap();
-            assert_eq!(receipt.cursor.epoch, "epoch-1");
-            assert_eq!(receipt.cursor.revision, 3);
-            assert_eq!(receipt.outcome.title, "named");
-            server.abort();
-            let _ = server.await;
-        }
     }
 
     #[test]

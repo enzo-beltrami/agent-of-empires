@@ -127,29 +127,6 @@ fn wait_for_published_dashboard(h: &TuiTestHarness) -> (u16, String) {
     })
 }
 
-fn wait_for_local_dashboard(h: &TuiTestHarness) -> (u16, String) {
-    let parts = wait_for_published_dashboard(h);
-    // The dialog ignores R while it is still Starting; wait for the Active footer.
-    h.wait_for("R: restart");
-    parts
-}
-
-fn restart_local_from_tui(h: &TuiTestHarness) -> u32 {
-    let before = daemon_pid(h).expect("serve.pid missing before restart");
-    // Queue confirmation before the renderer barrier consumes its deadline.
-    h.send_keys("RR");
-    wait_until(Duration::from_secs(30), Duration::from_millis(100), || {
-        let pid = daemon_pid(h).ok_or("serve.pid missing after restart")?;
-        if pid == before {
-            return Err(format!("successor still reports predecessor PID {before}"));
-        }
-        if !pid_alive(pid as i32) {
-            return Err(format!("successor PID {pid} is not alive"));
-        }
-        Ok(pid)
-    })
-}
-
 /// Wait for the published daemon to answer and return its passphrase requirement.
 fn wait_for_login_status(h: &TuiTestHarness) -> bool {
     wait_until(Duration::from_secs(30), Duration::from_millis(100), || {
@@ -306,39 +283,6 @@ fn cli_read_daemon_stops_when_its_harness_drops() {
             .try_lock_exclusive()
             .expect("daemon retained lifetime ownership after harness teardown");
     }
-}
-
-#[test]
-#[parallel]
-fn tui_disconnect_hides_sessions_and_explicit_reconnect_restores_them() {
-    require_tmux!();
-    let mut h = TuiTestHarness::new_in_tmp("offline_reconnect");
-    h.stop_daemon_on_drop();
-    let row = agent_of_empires::session::Instance::new(
-        "offline-visible-session",
-        h.project_path().to_str().unwrap(),
-    );
-    let app = crate::harness::app_dir_in(h.home_path());
-    std::fs::write(
-        app.join("profiles/default/sessions.json"),
-        serde_json::to_vec(&[row]).unwrap(),
-    )
-    .unwrap();
-    h.spawn_tui();
-    h.wait_for("offline-visible-session");
-    let stopped = h.run_cli(&["serve", "--stop"]);
-    assert!(
-        stopped.status.success(),
-        "{}",
-        String::from_utf8_lossy(&stopped.stderr)
-    );
-    h.wait_for("Not responding");
-    assert!(!h.capture_screen().contains("offline-visible-session"));
-    h.send_keys("n");
-    assert!(h.capture_screen().contains("Not responding"));
-    h.send_keys("r");
-    h.wait_for_timeout("offline-visible-session", Duration::from_secs(30));
-    assert!(!h.capture_screen().contains("Not responding"));
 }
 
 #[cfg(unix)]
@@ -2246,74 +2190,6 @@ async fn daemon_terminal_commands_apply_dimensions_archive_and_abandon_policy() 
     );
 }
 
-/// `R` opens Connections, and Enter on its Web dashboard row opens the
-/// serve ModePicker, which must render both cards (Local + Internet) and
-/// surface the transport-picker-deferred hint on the Tunnel card ("Pick
-/// transport on next screen.").
-#[test]
-#[parallel]
-fn tui_serve_dialog_opens_to_mode_picker() {
-    require_tmux!();
-
-    let mut h = TuiTestHarness::new("serve_mode_picker");
-    h.spawn_tui();
-
-    h.wait_for(" aoe ");
-    h.send_keys("R");
-    h.wait_for("Connections");
-    h.send_keys("Enter");
-
-    h.wait_for("How should this be reachable?");
-    h.assert_screen_contains("Local network");
-    h.assert_screen_contains("Internet (HTTPS)");
-    // The Tunnel card defers the transport choice to the next screen.
-    // If this line disappears, the ModePicker copy is out of sync with
-    // the Confirm-screen picker it hands off to.
-    h.assert_screen_contains("Pick transport on next screen.");
-}
-
-/// Esc dismisses the serve dialog and returns to the home screen
-/// without spawning anything. Regression guard against state-transition
-/// bugs where ModePicker might latch onto a stale mode.
-#[test]
-#[parallel]
-fn tui_serve_dialog_escape_returns_home() {
-    require_tmux!();
-
-    let mut h = TuiTestHarness::new("serve_mode_picker_esc");
-    h.spawn_tui();
-
-    h.wait_for(" aoe ");
-    h.send_keys("R");
-    h.wait_for("Connections");
-    h.send_keys("Enter");
-    h.wait_for("How should this be reachable?");
-
-    h.send_keys("Escape");
-    // Home-screen footer is the tell that we've returned.
-    h.wait_for("No sessions yet");
-}
-
-/// Core-only runtime leaves Web idle; promotion requires explicit TUI reconnect.
-#[test]
-#[parallel]
-fn tui_footer_web_entry_tracks_core_to_web_promotion() {
-    require_tmux!();
-    let what = if cfg!(feature = "web") { "Web" } else { "API" };
-    let mut h = TuiTestHarness::new("serve_footer_entry");
-    h.stop_daemon_on_drop();
-    h.spawn_tui();
-    h.wait_for(" aoe ");
-    h.wait_for(&format!("R {what}"));
-    assert!(!h.capture_screen().contains(&format!("R \u{25CF} {what}")));
-
-    h.start_daemon();
-    h.wait_for("Not responding");
-    h.send_keys("r");
-    h.wait_for_absent("Not responding", Duration::from_secs(10));
-    h.wait_for(&format!("R \u{25CF} {what}"));
-}
-
 /// `aoe serve --daemon` must spawn a child that actually binds the port and
 /// stays alive. Regression guard for the self-detection bug where the parent
 /// pre-wrote the child's PID into `serve.pid`, then the child re-entered
@@ -3039,111 +2915,6 @@ fn cli_serve_replay_rejects_missing_or_unbound_passphrases() {
         stop.status.success(),
         "{}",
         String::from_utf8_lossy(&stop.stderr)
-    );
-}
-
-/// Issue #4896: a Local dashboard launched from the TUI inherits
-/// `AOE_SERVE_PASSPHRASE`, so the passphrase gate is on. Restarting it from
-/// the same TUI must keep that gate, not silently rebuild the successor
-/// without the credential.
-#[test]
-#[parallel]
-fn tui_local_restart_preserves_the_env_passphrase_gate() {
-    require_tmux!();
-    if !isolated_local_network() {
-        return;
-    }
-
-    let mut h = TuiTestHarness::new("serve_local_restart_passphrase");
-    h.stop_daemon_on_drop();
-    h.set_env("AOE_SERVE_PASSPHRASE", "e2e-local-restart-gate");
-    h.spawn_tui();
-    h.wait_for_ready();
-
-    h.send_keys("R");
-    h.wait_for("Connections");
-    h.send_keys("Enter");
-    h.wait_for("How should this be reachable?");
-    h.send_keys("L");
-    let (port, token) = wait_for_local_dashboard(&h);
-    assert!(
-        login_status_required(port, &token).unwrap(),
-        "the TUI-launched Local dashboard did not enable the passphrase gate"
-    );
-
-    let successor = restart_local_from_tui(&h);
-    assert!(
-        wait_for_login_status(&h),
-        "Local restart dropped the passphrase gate (successor PID {successor}); \
-         /api/login/status reported required=false"
-    );
-    assert_original_passphrase_login(&h, "e2e-local-restart-gate");
-}
-
-/// Issue #4896: the preserved credential must come from the recorded launch,
-/// not from the environment of whichever TUI presses Restart. This restarts
-/// from a fresh TUI process whose environment lacks `AOE_SERVE_PASSPHRASE`.
-#[test]
-#[parallel]
-fn tui_local_restart_preserves_the_gate_without_the_env_variable() {
-    require_tmux!();
-    if !isolated_local_network() {
-        return;
-    }
-    assert!(
-        std::env::var_os("AOE_SERVE_PASSPHRASE").is_none(),
-        "test requires an unset ambient AOE_SERVE_PASSPHRASE to prove the variable is not the source"
-    );
-
-    let mut h = TuiTestHarness::new("serve_local_restart_passphrase_new_tui");
-    h.stop_daemon_on_drop();
-    h.set_env("AOE_SERVE_PASSPHRASE", "e2e-local-restart-gate");
-    h.spawn_tui();
-    h.wait_for_ready();
-
-    h.send_keys("R");
-    h.wait_for("Connections");
-    h.send_keys("Enter");
-    h.wait_for("How should this be reachable?");
-    h.send_keys("L");
-    let (port, token) = wait_for_local_dashboard(&h);
-    assert!(
-        login_status_required(port, &token).unwrap(),
-        "the TUI-launched Local dashboard did not enable the passphrase gate"
-    );
-
-    // A fresh tmux server is required: tmux pins the global environment from
-    // its first client, so reusing the server would leak the old variable.
-    h.kill_tui();
-    let killed = h.tmux().arg("kill-server").status();
-    assert!(
-        killed.is_ok_and(|status| status.success()),
-        "failed to dispose of the first tmux server"
-    );
-    h.remove_env("AOE_SERVE_PASSPHRASE");
-    h.spawn_tui();
-    h.wait_for_ready();
-    h.send_keys("R");
-    h.wait_for("Connections");
-    h.send_keys("Enter");
-    h.wait_for("R: restart");
-
-    let successor = restart_local_from_tui(&h);
-    assert!(
-        wait_for_login_status(&h),
-        "Local restart from a TUI without AOE_SERVE_PASSPHRASE dropped the gate \
-         (successor PID {successor}); /api/login/status reported required=false"
-    );
-    assert_original_passphrase_login(&h, "e2e-local-restart-gate");
-
-    h.wait_for("R: restart");
-    std::fs::remove_file(app_dir_in(h.home_path()).join("serve.passphrase")).unwrap();
-    h.send_keys("RR");
-    h.wait_for("Dashboard start failed");
-    assert_eq!(daemon_pid(&h), Some(successor));
-    assert!(
-        wait_for_login_status(&h),
-        "missing credentials must leave the healthy predecessor gated"
     );
 }
 

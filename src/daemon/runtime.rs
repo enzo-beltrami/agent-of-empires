@@ -98,20 +98,6 @@ pub enum ProfileMutation {
     },
     SetDefault(super::DefaultProfileBody),
 }
-pub(crate) enum NamespaceMutation {
-    CollapseGroup(super::CollapseGroupBody),
-    MoveGroup(super::MoveGroupBody),
-    DeleteGroup(super::DeleteGroupBody),
-    Reorder(super::ReorderBody),
-    Profile(ProfileMutation),
-}
-
-#[derive(Debug)]
-pub(crate) enum NamespaceOutcome {
-    Committed,
-    DeletedGroup(super::DeleteGroupOutcome),
-    Reordered(super::ReorderOutcome),
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

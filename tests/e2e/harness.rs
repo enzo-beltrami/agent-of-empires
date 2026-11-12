@@ -7,11 +7,10 @@
 //!
 //! ## Recording
 //!
-//! Set `RECORD_E2E=1` to record each TUI test as an asciinema `.cast` file and
+//! Set `RECORD_E2E=1` to record each spawned test as an asciinema `.cast` file and
 //! convert it to a GIF via `agg`. Recordings are saved to
 //! `target/e2e-recordings/`. Both `asciinema` and `agg` must be on `$PATH`.
 
-use std::io::{Read, Seek, SeekFrom};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -40,66 +39,6 @@ pub fn app_dir_in(home: &Path) -> PathBuf {
             .join(agent_of_empires::session::APP_DIR_NAME_XDG)
     } else {
         home.join(agent_of_empires::session::APP_DIR_NAME_OTHER)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HOME isolation guard
-// ---------------------------------------------------------------------------
-
-/// RAII guard: points `HOME`/`XDG_CONFIG_HOME` at the harness's tempdir
-/// for the test process and restores the prior values on `Drop`.
-/// Without the restore, a later test could inherit this test's
-/// (by-then-dropped) tempdir path.
-///
-/// Callers MUST be `#[serial]` (default key). Most of this binary is
-/// `#[parallel]`, and `serial_test` guarantees a default-key `#[serial]` test
-/// never overlaps a default-key `#[parallel]` one, which is what keeps the
-/// process-global env mutation below from racing a concurrent reader. Marking a
-/// `HomeGuard` caller `#[parallel]`, or moving it to a named `#[serial(key)]`
-/// group, breaks that guarantee and reintroduces the data race.
-///
-/// Tests that only need an isolated `$HOME` for *subprocesses* do not need this
-/// guard at all: `TuiTestHarness` passes `HOME`, `XDG_CONFIG_HOME`, and
-/// `AOE_TMUX_SOCKET` explicitly on every `Command` it spawns. The guard is only
-/// for tests that call library code reading those vars in-process.
-#[must_use = "HomeGuard restores env vars on Drop; bind it, don't discard it, or isolation ends immediately"]
-pub struct HomeGuard {
-    prev_home: Option<std::ffi::OsString>,
-    prev_xdg: Option<std::ffi::OsString>,
-}
-
-impl HomeGuard {
-    /// Snapshots the current `HOME`/`XDG_CONFIG_HOME` before overriding them,
-    /// so `Drop` can restore the caller's real environment.
-    pub fn new(home: &Path) -> Self {
-        let prev_home = std::env::var_os("HOME");
-        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
-        // SAFETY: callers are default-key #[serial], so no concurrent env reader exists.
-        unsafe { std::env::set_var("HOME", home) };
-        unsafe { std::env::set_var("XDG_CONFIG_HOME", home.join(".config")) };
-        Self {
-            prev_home,
-            prev_xdg,
-        }
-    }
-}
-
-impl Drop for HomeGuard {
-    fn drop(&mut self) {
-        /// Restores `key` to its prior value, or removes it if it was
-        /// previously unset.
-        fn restore_or_remove(key: &str, prev: Option<std::ffi::OsString>) {
-            // SAFETY: same invariant as HomeGuard::new.
-            unsafe {
-                match prev {
-                    Some(v) => std::env::set_var(key, v),
-                    None => std::env::remove_var(key),
-                }
-            }
-        }
-        restore_or_remove("HOME", self.prev_home.take());
-        restore_or_remove("XDG_CONFIG_HOME", self.prev_xdg.take());
     }
 }
 
@@ -368,8 +307,6 @@ pub struct TuiTestHarness {
     stub_path: PathBuf,
     socket_path: PathBuf,
     spawned: bool,
-    input_barrier: bool,
-    render_log_offset: std::cell::Cell<u64>,
     recording: bool,
     cast_path: Option<PathBuf>,
     /// Exported on every spawned process (tmux session and `run_cli`).
@@ -386,12 +323,6 @@ pub struct TuiTestHarness {
     acp_fork_fail: bool,
 }
 
-/// Raw ESC is a prefix byte: read together with the F12 fence, crossterm
-/// decodes `ESC ESC [24~` as Esc plus literal `[24~` and the fence is lost.
-/// The CSI-u encoding is self-delimiting and decodes to the same Esc press.
-const ESCAPE_CSI_U: &[&str] = &["1b", "5b", "32", "37", "75"];
-
-#[allow(dead_code)]
 impl TuiTestHarness {
     /// Create a new harness with an isolated `$HOME` and a fake `claude` stub
     /// so tool detection succeeds.
@@ -434,11 +365,7 @@ impl TuiTestHarness {
             }
         }
 
-        // Pre-seed config.toml to skip the welcome dialog and update checks.
-        // `has_responded_to_telemetry` is set so the one-time telemetry consent
-        // popup (gated on that flag alone in `App::new`) never renders over the
-        // TUI and swallows input in the general e2e tests; the telemetry consent
-        // surfaces are covered directly by their own unit and integration tests.
+        // Pre-seed config.toml to skip update checks and the telemetry prompt.
         // On Linux and macOS the app uses $XDG_CONFIG_HOME/agent-of-empires[-dev]/
         // (set below); other platforms use $HOME/.agent-of-empires[-dev]/. The
         // `-dev` suffix kicks in on debug builds, which is what `cargo test`
@@ -454,12 +381,9 @@ structured_view = "off"
 
 {SYSTEMD_OFF}
 [app_state]
-has_seen_welcome = true
 has_responded_to_telemetry = true
 has_acknowledged_agent_hooks = true
-last_seen_version = "{}"
-"#,
-            env!("CARGO_PKG_VERSION")
+"#
         );
         std::fs::write(config_dir.join("config.toml"), config_content).expect("write config.toml");
 
@@ -485,8 +409,6 @@ last_seen_version = "{}"
             stub_path,
             socket_path,
             spawned: false,
-            input_barrier: false,
-            render_log_offset: std::cell::Cell::new(0),
             recording,
             cast_path: None,
             // aoe addresses tmux via `-S <socket>`, so pin it to the harness socket.
@@ -527,17 +449,6 @@ last_seen_version = "{}"
         parts.push(self.stub_path.display().to_string());
         parts.push(system_path);
         parts.join(":")
-    }
-
-    /// Tear the TUI's own tmux session down so a test can `spawn_tui` again and assert on
-    /// what a fresh start reads from disk.
-    pub fn kill_tui(&mut self) {
-        // Killing the last session makes tmux exit asynchronously, and a
-        // `new-session` that connects to the exiting server fails.
-        self.tmux_ok(&["set-option", "-s", "exit-empty", "off"], "keep server");
-        let name = self.session_name.clone();
-        self.tmux_kill_session(&name);
-        self.spawned = false;
     }
 
     /// Export an extra env var on every spawned process (tmux + `run_cli`).
@@ -800,22 +711,11 @@ last_seen_version = "{}"
     /// Build the shell command string to run inside the tmux session.
     /// When recording, wraps the command with `asciinema rec`.
     fn build_tmux_command(&mut self, args: &[&str], cols: &str, rows: &str) -> String {
-        let runtime_state = self.home_dir.path().join("runtime-state");
-        // A respawned TUI must not read as ready before its first draw.
-        let _ = std::fs::remove_file(&runtime_state);
         let mut aoe_cmd = format!(
-            "env AOE_E2E_RUNTIME_STATE={} {}",
-            shell_words::quote(runtime_state.to_str().expect("runtime state path")),
+            "env {} {}",
+            self.pane_env_policy(),
             self.binary_path.display()
         );
-        if self.input_barrier {
-            let path = self.home_dir.path().join("input-barrier");
-            aoe_cmd = format!(
-                "env -u NO_COLOR AOE_E2E_INPUT_BARRIER={} {aoe_cmd}",
-                shell_words::quote(path.to_str().expect("input barrier path"))
-            );
-        }
-        aoe_cmd = format!("env {} {aoe_cmd}", self.pane_env_policy());
         for arg in args {
             aoe_cmd.push(' ');
             aoe_cmd.push_str(arg);
@@ -833,12 +733,6 @@ last_seen_version = "{}"
         } else {
             aoe_cmd
         }
-    }
-
-    /// Spawn `aoe` (no arguments = TUI mode) inside a detached tmux session
-    /// with a fixed 100x30 terminal.
-    pub fn spawn_tui(&mut self) {
-        self.spawn(&[]);
     }
 
     /// `env` arguments pinning autostart and daemon discovery in the pane. A
@@ -869,41 +763,15 @@ last_seen_version = "{}"
         unset.chain(set).collect::<Vec<_>>().join(" ")
     }
 
-    pub fn spawn_peer_tui(&self, name: &str) {
-        let binary = self.binary_path.to_str().expect("binary path");
-        self.tmux_new_detached(name, &format!("env {} {binary}", self.pane_env_policy()));
-    }
-
-    /// Spawn `aoe` in a detached tmux session at the requested dimensions.
-    pub fn spawn_tui_sized(&mut self, cols: u16, rows: u16) {
-        self.spawn_sized(&[], cols, rows);
-    }
-
     /// Spawn `aoe <args>` inside a detached tmux session.
     pub fn spawn(&mut self, args: &[&str]) {
         self.spawn_sized(args, 100, 30);
     }
 
     fn spawn_sized(&mut self, args: &[&str], cols: u16, rows: u16) {
-        self.input_barrier = args.first() != Some(&"add");
         let cols = cols.to_string();
         let rows = rows.to_string();
         let cmd_str = self.build_tmux_command(args, &cols, &rows);
-        let start_gate = self.home_dir.path().join("tui-start");
-        let cmd_str = if self.input_barrier {
-            if start_gate.exists() {
-                std::fs::remove_file(&start_gate).expect("reset TUI startup gate");
-            }
-            self.render_log_offset.set(0);
-            std::fs::File::create(self.home_dir.path().join("render.log"))
-                .expect("create render observation");
-            format!(
-                "while [ ! -e {} ]; do sleep 0.01; done; {cmd_str}",
-                shell_words::quote(start_gate.to_str().expect("start gate path"))
-            )
-        } else {
-            cmd_str
-        };
 
         let output = Command::new("tmux")
             .arg("-S")
@@ -917,7 +785,7 @@ last_seen_version = "{}"
             .arg("-y")
             .arg(&rows)
             .arg(&cmd_str)
-            // This harness owns server teardown, including gaps between TUI processes.
+            // This harness owns server teardown, including gaps between aoe processes.
             .args([";", "set-option", "-s", "exit-empty", "off"])
             .env("HOME", self.home_dir.path())
             .env("XDG_CONFIG_HOME", self.home_dir.path().join(".config"))
@@ -937,43 +805,20 @@ last_seen_version = "{}"
         );
 
         self.spawned = true;
-
-        if self.input_barrier {
-            let path = self.home_dir.path().join("render.log");
-            let pipe = Command::new("tmux")
-                .arg("-S")
-                .arg(&self.socket_path)
-                .args(["pipe-pane", "-O", "-t", &self.session_name])
-                .arg(format!(
-                    "cat >> {}",
-                    shell_words::quote(path.to_str().expect("render log path"))
-                ))
-                .output()
-                .expect("observe terminal output");
-            assert!(
-                pipe.status.success(),
-                "pipe-pane failed: {}",
-                String::from_utf8_lossy(&pipe.stderr)
-            );
-            std::fs::write(start_gate, b"start").expect("release observed TUI startup");
-            self.wait_for_input_ack(0, Duration::from_secs(30));
-        }
     }
 
     /// Create a detached tmux session named `name` running `cmd` on the
     /// harness socket, carrying the same environment [`spawn`](Self::spawn)
     /// uses.
     ///
-    /// Tests that stand up an agent tmux session *before* `spawn_tui` (so TUI
-    /// startup sees it as already running) must go through this rather than
-    /// calling `tmux` directly. A tmux server's global environment is fixed by
+    /// Tests that stand up an agent tmux session before [`spawn`](Self::spawn)
+    /// must go through this rather than calling `tmux` directly. A tmux server's global environment is fixed by
     /// whichever client first starts it, and `HOME`, `XDG_CONFIG_HOME`, and
     /// `AOE_TMUX_SOCKET` are not in tmux's `update-environment` list, so a
     /// later client cannot override them. A bare `Command::new("tmux")`
     /// pre-create therefore pins the *real* environment onto the server and
-    /// `spawn`'s env is silently ignored: the TUI reads the real `$HOME`
-    /// (no seeded `config.toml` or `sessions.json`, so a first-run intro over
-    /// an empty list) and talks to the wrong tmux socket.
+    /// `spawn`'s env is silently ignored: aoe reads the real `$HOME` and talks
+    /// to the wrong tmux socket.
     pub fn tmux_new_detached(&self, name: &str, cmd: &str) {
         let output = Command::new("tmux")
             .arg("-S")
@@ -999,16 +844,9 @@ last_seen_version = "{}"
 
     /// Send one or more tmux key names (e.g. "Enter", "Escape", "q", "C-c").
     pub fn send_keys(&self, keys: &str) {
-        if matches!(keys, "Escape" | "C-[") {
-            self.send_hex_keys(ESCAPE_CSI_U);
-        } else {
-            self.send_session_keys(&self.session_name, keys);
-        }
-        self.synchronize_input();
+        self.send_session_keys(&self.session_name, keys);
     }
 
-    /// Native terminal owners cannot receive an outer-TUI F12 fence.
-    /// Observe their lifecycle before resuming ordinary TUI input.
     pub fn send_session_keys(&self, name: &str, keys: &str) {
         let output = Command::new("tmux")
             .arg("-S")
@@ -1026,62 +864,10 @@ last_seen_version = "{}"
         );
     }
 
-    /// Send a synthetic mouse event into the inner pane as an SGR
-    /// escape sequence. crossterm's mouse capture (enabled by aoe at
-    /// startup) parses the bytes the same way it would parse them
-    /// from a real terminal, so click / scroll routing in the TUI
-    /// runs the production code path. `button` is the SGR button code:
-    /// 0 = left, 1 = middle, 2 = right; +32 = drag (rarely needed for
-    /// click tests). `col` / `row` are 1-indexed terminal cells. Sends
-    /// both the press (M) and release (m) so listeners that only fire
-    /// on `Down(...)` (the click handlers) see a complete cycle.
-    pub fn send_mouse_click(&self, button: u8, col: u16, row: u16) {
-        assert!(self.spawned, "must call spawn_tui() or spawn() first");
-        // XTerm SGR 1006 format: `CSI < Pb ; Px ; Py M` for press,
-        // `... m` for release. No semicolon between Py and the final
-        // M/m byte; crossterm parses the trailing-semicolon variant
-        // leniently but spec-compliant terminals don't.
-        let seq = format!("\x1b[<{button};{col};{row}M\x1b[<{button};{col};{row}m");
-        let output = Command::new("tmux")
-            .arg("-S")
-            .arg(&self.socket_path)
-            .arg("send-keys")
-            .arg("-t")
-            .arg(&self.session_name)
-            .arg("-l")
-            .arg(&seq)
-            .output()
-            .expect("failed to send mouse click");
-        assert!(
-            output.status.success(),
-            "send_mouse_click failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        self.synchronize_input();
-    }
-
-    /// Deliver bracketed paste to the TUI.
-    /// terminal does when the user hits Cmd/Ctrl+V. aoe enables bracketed
-    /// paste at startup, so crossterm turns this into one `Event::Paste`
-    /// rather than N key events, which is the only way to exercise the
-    /// paste path (`handle_paste`) rather than the keystroke path.
-    ///
-    /// Bytes go out as hex so an embedded newline or semicolon in `text`
-    /// cannot be reinterpreted by tmux's literal-mode argument parser.
-    pub fn send_paste(&self, text: &str) {
-        assert!(self.spawned, "must call spawn_tui() or spawn() first");
-        let mut bytes = b"\x1b[200~".to_vec();
-        bytes.extend_from_slice(text.as_bytes());
-        bytes.extend_from_slice(b"\x1b[201~");
-        let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
-        self.send_hex_keys(&hex);
-        self.synchronize_input();
-    }
-
     /// Send literal text (prevents "Enter" in text from being interpreted as
     /// the Enter key).
     pub fn type_text(&self, text: &str) {
-        assert!(self.spawned, "must call spawn_tui() or spawn() first");
+        assert!(self.spawned, "must call spawn() first");
         let output = Command::new("tmux")
             .arg("-S")
             .arg(&self.socket_path)
@@ -1097,7 +883,6 @@ last_seen_version = "{}"
             "type_text failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        self.synchronize_input();
     }
 
     /// Capture the current screen contents as plain text.
@@ -1105,195 +890,8 @@ last_seen_version = "{}"
         self.capture_pane(&self.session_name, false)
     }
 
-    /// Same as [`capture_screen`](Self::capture_screen) but keeps the escape
-    /// sequences, so a test can assert on styling the TUI painted (an
-    /// underline, a color) and not just on the text.
-    pub fn capture_screen_styled(&self) -> String {
-        self.capture_pane(&self.session_name, true)
-    }
-
-    /// Whether this tmux stores and re-emits OSC 8 hyperlinks through
-    /// `capture-pane -e`, which arrived in tmux 3.4. aoe still supports older
-    /// tmux on the capture fallback, so a link test skips there rather than
-    /// failing on a capability the host does not have.
-    pub fn tmux_reemits_hyperlinks() -> bool {
-        let Ok(out) = Command::new("tmux").arg("-V").output() else {
-            return false;
-        };
-        if !out.status.success() {
-            return false;
-        }
-        let version = String::from_utf8_lossy(&out.stdout);
-        let digits: String = version
-            .chars()
-            .skip_while(|c| !c.is_ascii_digit())
-            .take_while(|c| c.is_ascii_digit() || *c == '.')
-            .collect();
-        let mut parts = digits.split('.');
-        let major: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-        let minor: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-        (major, minor) >= (3, 4)
-    }
-
-    pub fn capture_session_screen(&self, name: &str) -> String {
-        self.capture_pane(name, false)
-    }
-
-    fn send_hex_keys<S: AsRef<std::ffi::OsStr>>(&self, bytes: &[S]) {
-        assert!(self.spawned, "must call spawn_tui() or spawn() first");
-        let output = Command::new("tmux")
-            .arg("-S")
-            .arg(&self.socket_path)
-            .args(["send-keys", "-t", &self.session_name, "-H"])
-            .args(bytes)
-            .output()
-            .expect("failed to send keys");
-        assert!(
-            output.status.success(),
-            "send-keys failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    pub fn terminal_resume_sequence(&self) -> u64 {
-        match std::fs::read_to_string(self.home_dir.path().join("input-barrier.resumed")) {
-            Ok(value) => value.parse().expect("terminal resume sequence"),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
-            Err(error) => panic!("read terminal resume sequence: {error}"),
-        }
-    }
-
-    pub fn wait_for_terminal_resume(&self, previous: u64) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            let resumed =
-                std::fs::read_to_string(self.home_dir.path().join("input-barrier.resumed"))
-                    .ok()
-                    .and_then(|value| value.parse::<u64>().ok());
-            if resumed.is_some_and(|sequence| sequence > previous) {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "outer TUI did not regain terminal ownership"
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        self.synchronize_input();
-    }
-
-    /// Drag the left button between 1-indexed terminal cells (SGR 1006).
-    pub fn send_mouse_drag(&self, start: (u16, u16), end: (u16, u16)) {
-        let seq = format!(
-            "\x1b[<0;{};{}M\x1b[<32;{};{}M\x1b[<0;{};{}m",
-            start.0, start.1, end.0, end.1, end.0, end.1,
-        );
-        self.tmux_ok(
-            &["send-keys", "-t", &self.session_name, "-l", &seq],
-            "send_mouse_drag",
-        );
-        self.synchronize_input();
-    }
-
-    pub fn resize_window(&self, width: u16, height: u16) {
-        self.tmux_ok(
-            &[
-                "resize-window",
-                "-t",
-                &self.session_name,
-                "-x",
-                &width.to_string(),
-                "-y",
-                &height.to_string(),
-            ],
-            "resize-window",
-        );
-    }
-    fn synchronize_input(&self) {
-        if !self.input_barrier || !self.session_alive() {
-            return;
-        }
-        let current = self.input_sequence();
-        let output = Command::new("tmux")
-            .arg("-S")
-            .arg(&self.socket_path)
-            .args(["send-keys", "-t", &self.session_name, "F12"])
-            .output()
-            .expect("send input barrier");
-        if !output.status.success() && !self.session_alive() {
-            return;
-        }
-        assert!(output.status.success(), "input barrier send failed");
-        self.wait_for_input_ack(current + 1, Duration::from_secs(10));
-    }
-
-    fn input_sequence(&self) -> u64 {
-        std::fs::read_to_string(self.home_dir.path().join("input-barrier"))
-            .expect("TUI startup acknowledged")
-            .parse()
-            .expect("input sequence")
-    }
-
-    fn wait_for_input_ack(&self, sequence: u64, timeout: Duration) {
-        let mut log = std::fs::File::open(self.home_dir.path().join("render.log"))
-            .expect("open terminal observation");
-        log.seek(SeekFrom::Start(self.render_log_offset.get()))
-            .expect("seek terminal observation");
-        let token = format!("\x1b]0;aoe-e2e-{sequence}\x07");
-        let mut observed = Vec::with_capacity(8192 + token.len());
-        let mut chunk = [0u8; 8192];
-        let deadline = Instant::now() + timeout;
-        loop {
-            assert!(
-                Instant::now() < deadline,
-                "TUI did not render input sequence {sequence}"
-            );
-            let count = log.read(&mut chunk).expect("read terminal observation");
-            if count > 0 {
-                self.render_log_offset
-                    .set(log.stream_position().expect("terminal observation offset"));
-                observed.extend_from_slice(&chunk[..count]);
-                if observed
-                    .windows(token.len())
-                    .any(|window| window == token.as_bytes())
-                {
-                    // tmux queues pipe output before parsing, in one callback.
-                    // A subsequent server command witnesses that callback completing.
-                    let parsed = Command::new("tmux")
-                        .arg("-S")
-                        .arg(&self.socket_path)
-                        .args([
-                            "display-message",
-                            "-p",
-                            "-t",
-                            &self.session_name,
-                            "#{pane_id}",
-                        ])
-                        .output()
-                        .expect("complete terminal parser barrier");
-                    assert!(
-                        parsed.status.success(),
-                        "terminal disappeared before render acknowledgment"
-                    );
-                    return;
-                }
-                let discard = observed.len().saturating_sub(token.len() - 1);
-                observed.drain(..discard);
-                continue;
-            }
-            if sequence > 0 && !self.session_alive() {
-                return;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "TUI did not render input sequence {sequence}"
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
     fn capture_pane(&self, name: &str, styled: bool) -> String {
-        assert!(self.spawned, "must call spawn_tui() or spawn() first");
+        assert!(self.spawned, "must call spawn() first");
         let mut cmd = Command::new("tmux");
         cmd.arg("-S")
             .arg(&self.socket_path)
@@ -1319,39 +917,6 @@ last_seen_version = "{}"
         self.wait_for_timeout(text, Duration::from_secs(10));
     }
 
-    /// Wait for the TUI to reach its ready home screen (the ` aoe ` banner)
-    /// after startup.
-    ///
-    /// On a freshly-isolated `$HOME` the harness has no `.schema_version`, so
-    /// the process runs every pending data migration from `v0` behind a
-    /// `◐ Running data migrations...` spinner before the banner paints. That
-    /// first-run work can outlast the default 10s `wait_for` on a slow or
-    /// loaded CI box, so tests that probe the banner right after `spawn_tui`
-    /// should use this instead of `wait_for(" aoe ")`; the longer budget only
-    /// covers the one-time migration gap and does not relax the default for
-    /// the many fast, steady-state waits that follow.
-    pub fn wait_for_ready(&self) {
-        self.wait_for_timeout(" aoe ", Duration::from_secs(30));
-    }
-
-    /// Wait until the runtime is connected, has applied every change this TUI sent, and grants
-    /// native interaction (what the footer once called "Runtime ready"). The TUI reports it in
-    /// `AOE_E2E_RUNTIME_STATE`, which every TUI this harness spawns writes.
-    pub fn wait_for_runtime_ready(&self) {
-        let path = self.home_dir.path().join("runtime-state");
-        let timeout = Duration::from_secs(10);
-        let start = Instant::now();
-        while std::fs::read_to_string(&path).ok().as_deref() != Some("ready") {
-            if start.elapsed() > timeout {
-                panic!(
-                    "Timed out waiting for the runtime after {timeout:?}.\n\n--- Screen capture ---\n{}\n--- End screen capture ---",
-                    self.capture_screen()
-                );
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    }
-
     /// Like `wait_for` but with a custom timeout.
     pub fn wait_for_timeout(&self, text: &str, timeout: Duration) {
         let start = Instant::now();
@@ -1368,52 +933,6 @@ last_seen_version = "{}"
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-    }
-
-    /// Poll until `text` disappears from the screen.
-    pub fn wait_for_absent(&self, text: &str, timeout: Duration) {
-        let start = Instant::now();
-        loop {
-            let screen = self.capture_screen();
-            if !screen.contains(text) {
-                return;
-            }
-            if start.elapsed() > timeout {
-                panic!(
-                    "Timed out waiting for {:?} to disappear after {:?}.\n\n--- Screen capture ---\n{}\n--- End screen capture ---",
-                    text, timeout, screen
-                );
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    }
-
-    /// Assert that the screen currently contains `text`.
-    /// Retries a few times to handle transient blank captures on macOS CI.
-    pub fn assert_screen_contains(&self, text: &str) {
-        let mut screen = String::new();
-        for _ in 0..5 {
-            screen = self.capture_screen();
-            if screen.contains(text) {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        }
-        panic!(
-            "Expected screen to contain {:?}.\n\n--- Screen capture ---\n{}\n--- End screen capture ---",
-            text, screen
-        );
-    }
-
-    /// Assert that the screen does NOT contain `text`.
-    pub fn assert_screen_not_contains(&self, text: &str) {
-        let screen = self.capture_screen();
-        assert!(
-            !screen.contains(text),
-            "Expected screen NOT to contain {:?}.\n\n--- Screen capture ---\n{}\n--- End screen capture ---",
-            text,
-            screen
-        );
     }
 
     pub fn cli_command(&self, args: &[&str]) -> Command {
@@ -1484,84 +1003,6 @@ last_seen_version = "{}"
         p
     }
 
-    /// Set `AOE_E2E_DEBUG=1` so the spawned TUI exports its
-    /// watcher-config-refresh counter to
-    /// `<app_dir>/.aoe_e2e_refresh_count` after every watcher-driven
-    /// `apply_config_to_state`. Tests that poll the counter via
-    /// `wait_for_watcher_config_refresh_above` must call this before
-    /// `spawn_tui`; the env var is read by the TUI process.
-    pub fn enable_e2e_debug_signals(&mut self) {
-        self.set_env("AOE_E2E_DEBUG", "1");
-    }
-
-    /// Read the current watcher-config-refresh counter exported by the
-    /// TUI. Returns 0 when the file is missing (TUI has not run any
-    /// watcher refresh yet, or `AOE_E2E_DEBUG` was not set on the
-    /// process).
-    pub fn read_watcher_config_refresh_count(&self) -> u64 {
-        let path = app_dir_in(self.home_dir.path()).join(".aoe_e2e_refresh_count");
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|c| c.trim().parse().ok())
-            .unwrap_or(0)
-    }
-
-    /// Poll the watcher-config-refresh counter until it exceeds
-    /// `baseline` or `timeout` elapses. Returns the new count on
-    /// success and panics on timeout. Tests must take the baseline
-    /// before triggering the config write so a subsequent
-    /// watcher-driven refresh is the only way the counter climbs
-    /// above it. Requires `enable_e2e_debug_signals` before
-    /// `spawn_tui`.
-    pub fn wait_for_watcher_config_refresh_above(&self, baseline: u64, timeout: Duration) -> u64 {
-        let deadline = Instant::now() + timeout;
-        loop {
-            let current = self.read_watcher_config_refresh_count();
-            if current > baseline {
-                return current;
-            }
-            if Instant::now() >= deadline {
-                panic!(
-                    "timed out after {:?} waiting for watcher_config_refresh_count > {} (current = {}); \
-                     check that enable_e2e_debug_signals() was called before spawn_tui and that the watcher \
-                     subscription is wired",
-                    timeout, baseline, current
-                );
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
-    }
-
-    /// Check whether the tmux session is still alive.
-    pub fn session_alive(&self) -> bool {
-        Command::new("tmux")
-            .arg("-S")
-            .arg(&self.socket_path)
-            .arg("has-session")
-            .arg("-t")
-            .arg(&self.session_name)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
-
-    /// Wait until the tmux session terminates (the process exits).
-    pub fn wait_for_exit(&self, timeout: Duration) {
-        let start = Instant::now();
-        loop {
-            if !self.session_alive() {
-                return;
-            }
-            if start.elapsed() > timeout {
-                panic!(
-                    "Timed out waiting for session {} to exit after {:?}",
-                    self.session_name, timeout
-                );
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    }
-
     /// `new_in_tmp` with the fake ACP agent running `script`.
     #[cfg(unix)]
     pub fn new_acp(test_name: &str, script: &str) -> Self {
@@ -1580,15 +1021,6 @@ last_seen_version = "{}"
         command
     }
 
-    fn tmux_ok(&self, args: &[&str], what: &str) {
-        let output = self.tmux().args(args).output().expect(what);
-        assert!(
-            output.status.success(),
-            "{what} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
     pub fn tmux_has_session(&self, name: &str) -> bool {
         self.tmux()
             .args(["has-session", "-t", name])
@@ -1599,12 +1031,6 @@ last_seen_version = "{}"
 
     pub fn tmux_kill_session(&self, name: &str) {
         let _ = self.tmux().args(["kill-session", "-t", name]).output();
-    }
-
-    /// Send a key without the input barrier used by ordinary TUI interactions.
-    pub fn send_keys_unfenced(&self, keys: &str) {
-        assert!(self.spawned, "must call spawn_tui() or spawn() first");
-        self.tmux_ok(&["send-keys", "-t", &self.session_name, keys], "send-keys");
     }
 
     pub fn run_cli_ok(&self, args: &[&str]) -> String {
@@ -1660,180 +1086,5 @@ impl Drop for TuiTestHarness {
                 convert_cast_to_gif(cast_path);
             }
         }
-    }
-}
-
-#[cfg(unix)]
-#[test]
-#[serial_test::parallel]
-fn tui_input_barrier_survives_escape_in_same_read() {
-    require_tmux!();
-    let mut harness = TuiTestHarness::new("escape_fence");
-    harness.spawn_tui();
-    harness.wait_for("No sessions yet");
-    harness.send_keys("n");
-    harness.wait_for("Title");
-
-    // One send-keys is one write, so the TUI reads Escape and the fence together.
-    let f12 = ["1b", "5b", "32", "34", "7e"];
-    let sequence = harness.input_sequence() + 1;
-    harness.send_hex_keys(&[ESCAPE_CSI_U, &f12].concat());
-    harness.wait_for_input_ack(sequence, Duration::from_secs(10));
-    assert!(!harness.capture_screen().contains("Title"));
-}
-
-#[cfg(unix)]
-#[test]
-#[serial_test::parallel]
-fn tui_input_barrier_handles_shell_metacharacters_in_home() {
-    require_tmux!();
-    let home = tempfile::Builder::new()
-        .prefix("aoe ' $ ` ")
-        .tempdir_in("/tmp")
-        .unwrap();
-    let mut harness = TuiTestHarness::with_home("quoted_home", home);
-    harness.spawn_tui();
-    harness.wait_for("No sessions yet");
-    harness.send_keys("q");
-    harness.wait_for("Quit Agent of Empires");
-    harness.send_keys("y");
-    harness.wait_for_exit(Duration::from_secs(5));
-}
-
-#[cfg(unix)]
-#[test]
-#[serial_test::parallel]
-fn tui_launch_sets_autostart_policy_on_a_running_tmux_server() {
-    require_tmux!();
-    // (server started with, set_env, value the TUI sees)
-    let cases = [(Some("1"), None, "unset"), (None, Some("1"), "1")];
-    for (inherited, explicit, expected) in cases {
-        let mut harness = TuiTestHarness::new("autostart_policy");
-        // The first client fixes the server's environment, as a parent shell
-        // exporting the variable would.
-        let mut tmux = harness.tmux();
-        tmux.env("HOME", harness.home_path())
-            .env("XDG_CONFIG_HOME", harness.home_path().join(".config"))
-            .env("PATH", harness.env_path())
-            .env_remove("AOE_NO_AUTOSTART")
-            .envs(harness.extra_env.iter().map(|(key, value)| (key, value)));
-        for key in &harness.extra_env_remove {
-            tmux.env_remove(key);
-        }
-        if let Some(value) = inherited {
-            tmux.env("AOE_NO_AUTOSTART", value);
-        }
-        let output = tmux
-            .args(["new-session", "-d", "-s", "server", "sleep 600"])
-            .output()
-            .expect("start harness tmux server");
-        assert!(output.status.success(), "{output:?}");
-        if let Some(value) = explicit {
-            harness.set_env("AOE_NO_AUTOSTART", value);
-        }
-
-        // Stands in for the TUI: reports the policy, then acknowledges startup.
-        // Drop runs the binary with arguments to stop the daemon; those calls
-        // exit at once.
-        let report = harness.home_path().join("autostart-policy");
-        let probe = harness.home_path().join("probe");
-        write_executable(
-            &probe,
-            &format!(
-                "#!/bin/sh\n[ \"$#\" -eq 0 ] || exit 0\nprintf %s \"${{AOE_NO_AUTOSTART-unset}}\" > {}\nprintf '\\033]0;aoe-e2e-0\\007'\nexec sleep 600\n",
-                shell_words::quote(report.to_str().expect("report path"))
-            ),
-        );
-        harness.binary_path = probe;
-        harness.spawn_tui();
-
-        assert_eq!(
-            std::fs::read_to_string(&report).expect("probe report"),
-            expected,
-            "server started with {inherited:?}, set_env {explicit:?}"
-        );
-    }
-}
-
-#[cfg(unix)]
-#[test]
-#[serial_test::parallel]
-fn tui_launch_isolates_daemon_endpoint_from_the_tmux_server() {
-    require_tmux!();
-    const HOSTILE: [(&str, &str); 2] = [
-        ("AOE_DAEMON_URL", "http://127.0.0.1:1"),
-        ("AOE_DAEMON_TOKEN", "hostile-token"),
-    ];
-    const EXPLICIT: [(&str, &str); 2] = [
-        ("AOE_DAEMON_URL", "http://127.0.0.1:2"),
-        ("AOE_DAEMON_TOKEN", "explicit-token"),
-    ];
-    // (server started with hostile values, set_env, what every pane sees)
-    let cases = [
-        (true, None, "unset unset"),
-        (true, Some(EXPLICIT), "http://127.0.0.1:2 explicit-token"),
-        (false, Some(EXPLICIT), "http://127.0.0.1:2 explicit-token"),
-    ];
-    for (hostile, explicit, expected) in cases {
-        let mut harness = TuiTestHarness::new("daemon_env_policy");
-        for (key, value) in explicit.into_iter().flatten() {
-            harness.set_env(key, value);
-        }
-
-        // Stands in for the TUI: reports what it inherited, then acknowledges
-        // startup. Drop runs the binary with arguments to stop the daemon;
-        // those calls exit at once.
-        let report = harness.home_path().join("daemon-env");
-        let probe = harness.home_path().join("probe");
-        write_executable(
-            &probe,
-            &format!(
-                "#!/bin/sh\n[ \"$#\" -eq 0 ] || exit 0\nprintf '%s %s\\n' \"${{AOE_DAEMON_URL-unset}}\" \"${{AOE_DAEMON_TOKEN-unset}}\" >> {}\nprintf '\\033]0;aoe-e2e-0\\007'\nexec sleep 600\n",
-                shell_words::quote(report.to_str().expect("report path"))
-            ),
-        );
-        harness.binary_path = probe;
-        // The first client fixes the server's environment, and its own pane
-        // is the fresh-server launch.
-        let mut panes = 2;
-        if hostile {
-            panes += 1;
-            let mut tmux = harness.tmux();
-            tmux.env("HOME", harness.home_path())
-                .env("XDG_CONFIG_HOME", harness.home_path().join(".config"))
-                .env("PATH", harness.env_path());
-            for (key, value) in &harness.extra_env {
-                tmux.env(key, value);
-            }
-            // Stale server globals must survive the `set_env` overrides.
-            tmux.envs(HOSTILE);
-            let output = tmux
-                .args(["new-session", "-d", "-s", "server"])
-                .arg(format!(
-                    "env {} {}",
-                    harness.pane_env_policy(),
-                    harness.binary_path.display()
-                ))
-                .output()
-                .expect("start harness tmux server");
-            assert!(output.status.success(), "{output:?}");
-        }
-        harness.spawn_tui();
-        harness.spawn_peer_tui("peer");
-
-        let lines = wait_until(Duration::from_secs(10), Duration::from_millis(50), || {
-            let text = std::fs::read_to_string(&report).map_err(|e| e.to_string())?;
-            let lines: Vec<String> = text.lines().map(str::to_owned).collect();
-            if lines.len() == panes {
-                Ok(lines)
-            } else {
-                Err(format!("reports so far: {lines:?}"))
-            }
-        });
-        assert_eq!(
-            lines,
-            vec![expected; panes],
-            "server hostile {hostile}, set_env {explicit:?}"
-        );
     }
 }

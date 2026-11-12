@@ -2785,37 +2785,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn relayed_intent_stamp_wipes_concurrent_archive() {
-        // Full #3465 residual chain on structured rows.
-        let user_touch = chrono::Utc::now() - chrono::Duration::seconds(60);
-
-        let mut daemon_row = stopped_structured_instance();
-        daemon_row.status = Status::Idle;
-        daemon_row.last_accessed_at = Some(user_touch);
-        apply(
-            &mut daemon_row,
-            StatusPolicy::Authoritative,
-            Status::Running,
-        );
-
-        let mut disk = stopped_structured_instance();
-        disk.status = Status::Idle;
-        disk.last_accessed_at = Some(user_touch);
-        let pre = disk.clone();
-
-        disk.merge_from_tui(&daemon_row);
-
-        let mut post = pre.clone();
-        post.archive();
-        disk.merge_user_action_diff(&pre, &post);
-
-        assert!(
-            disk.archived_at.is_some(),
-            "relayed intent stamp must not wipe a concurrent archive (#3465)"
-        );
-    }
-
     /// Which policies may move which statuses. Background sub-agent events
     /// (`Background`) must not speak for the main turn's Waiting, Error, or
     /// Stopped (#4001); trailing events never wake a Stopped or trashed row;

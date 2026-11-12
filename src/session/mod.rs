@@ -57,17 +57,14 @@ pub(crate) use anchored_fs::AnchoredDir;
 pub(crate) use capture::is_valid_session_id;
 pub use config::{
     get_telemetry_settings, get_update_settings, load_config, update_app_state, update_config,
-    validate_snooze_duration, AgentRuntimeConfig, AttachMode, CapabilityGrant, ClickAction, Config,
-    ContainerRuntimeName, DefaultTerminalMode, GroupByMode, NewSessionMode, PluginConfig,
-    RowTagMode, SandboxConfig, SessionConfig, TelemetryConfig, ThemeConfig, TmuxSettingMode,
-    UpdatesConfig, VolumeIgnoresStrategy, WorktreeConfig,
+    validate_snooze_duration, AgentRuntimeConfig, CapabilityGrant, Config, ContainerRuntimeName,
+    DefaultTerminalMode, GroupByMode, PluginConfig, RowTagMode, SandboxConfig, SessionConfig,
+    TelemetryConfig, ThemeConfig, TmuxSettingMode, UpdatesConfig, VolumeIgnoresStrategy,
+    WorktreeConfig,
 };
 pub(crate) use environment::user_shell;
 pub use environment::{validate_env_entries, validate_env_entry};
 pub use fork::{ForkDenied, ForkParentRef, ForkSeed};
-/// Shared by the sorter and the row renderer so a row is decorated as a
-/// favorite exactly when it is pinned as one.
-pub(crate) use groups::is_live_favorite;
 pub use groups::{
     append_archived_section, append_archived_section_by_project, append_trash_section,
     archived_project_sub_path, flatten_sessions_by_attention, flatten_tree,
@@ -89,10 +86,7 @@ pub(crate) use instance::{
     duplicate_session_error, is_duplicate_session, HostHookApprovalRequired, PassiveStatusPatch,
     ResumeIntent, SidWrite, ToolLaunchUnavailable,
 };
-pub(crate) use instance::{
-    host_hook_agent, host_hook_disclosure, host_hook_disclosure_config_with_repo,
-    host_hook_post_install_notes,
-};
+pub(crate) use instance::{host_hook_agent, host_hook_disclosure, host_hook_post_install_notes};
 pub use instance::{
     is_valid_session_color, AuxiliaryObservation, AuxiliaryTarget, ConversationBinding,
     ConversationProvenance, DetectionState, EnsureReadyError, EnsureReadyOutcome, ExecutionBinding,
@@ -120,9 +114,7 @@ pub(crate) use storage::acquire_session_identity_lock;
 #[cfg(test)]
 pub(crate) use storage::observe_lock_contention_for_test;
 pub(crate) use storage::SessionsFileCache;
-pub(crate) use storage::{
-    duplicate_reports, reconcile_profile_duplicates, DuplicateIdReport, ProfileMovePlan,
-};
+pub(crate) use storage::{reconcile_profile_duplicates, ProfileMovePlan};
 pub(crate) use storage::{
     try_acquire_terminal_handoff_driver, with_storages_locked, TerminalHandoffDriver,
 };
@@ -165,24 +157,7 @@ pub fn set_favorites_first(on: bool) {
 }
 
 pub(crate) use anchored_fs::ResolvedDataFile;
-/// Process-wide cache of `session.preview_link_prefixes`, read where OSC 8
-/// targets are extracted, off the TUI thread.
-static PREVIEW_LINK_PREFIXES: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
 
-/// Whether a pane link to `url` is worth keeping under the cached prefixes.
-pub fn preview_link_openable(url: &str) -> bool {
-    let prefixes = PREVIEW_LINK_PREFIXES
-        .read()
-        .unwrap_or_else(|e| e.into_inner());
-    crate::util::is_openable_link(url, &prefixes)
-}
-
-/// Update the cached preview link prefixes from resolved config.
-pub fn set_preview_link_prefixes(prefixes: &[String]) {
-    *PREVIEW_LINK_PREFIXES
-        .write()
-        .unwrap_or_else(|e| e.into_inner()) = prefixes.to_vec();
-}
 pub use config::profile_config::{
     load_profile_config, merge_configs, resolve_config, resolve_config_or_warn,
     save_profile_config, update_profile_config, validate_capability_format,
@@ -243,19 +218,6 @@ pub(crate) fn safe_load_label(value: &str) -> String {
         }
     }
     safe
-}
-
-pub(crate) fn sanitized_load_failure(error: &anyhow::Error) -> String {
-    if matches!(
-        error.downcast_ref::<crate::daemon::RuntimeConnectionError>(),
-        Some(crate::daemon::RuntimeConnectionError::Protocol)
-    ) {
-        return "Daemon runtime protocol is incompatible. Run `aoe serve --restart`, then reconnect.".to_owned();
-    }
-    match error.downcast_ref::<LoadSource>() {
-        Some(source) => format!("Unable to load {}. Repair this file, then wait for a fresh runtime snapshot.", safe_load_label(&source.0.to_string_lossy())),
-        None => "Native metadata is unavailable. Last complete state retained. Check daemon diagnostics; no file has been reset.".to_owned(),
-    }
 }
 
 /// App dir name under the XDG config base (`$XDG_CONFIG_HOME`, default
@@ -561,14 +523,6 @@ pub fn profile_display_order(left: &str, right: &str) -> std::cmp::Ordering {
 
 pub fn sort_profiles_for_display<T: AsRef<str>>(profiles: &mut [T]) {
     profiles.sort_by(|left, right| profile_display_order(left.as_ref(), right.as_ref()));
-}
-
-/// [`list_profiles`] in picker order, for surfaces a human chooses from.
-/// Programmatic resolution keeps [`list_profiles`].
-pub fn list_profiles_for_display() -> Result<Vec<String>> {
-    let mut profiles = list_profiles()?;
-    sort_profiles_for_display(&mut profiles);
-    Ok(profiles)
 }
 
 /// Refuse an explicit `-p`/`--profile` naming a profile that does not exist
@@ -1651,8 +1605,10 @@ mod tests {
             get_profile_dir("").unwrap(),
             dir.join("profiles").join("default")
         );
+        let mut picker = list_profiles().unwrap();
+        sort_profiles_for_display(&mut picker);
         assert_eq!(
-            list_profiles_for_display().unwrap(),
+            picker,
             vec!["work".to_string(), "default".to_string()],
             "only the picker order sinks default"
         );

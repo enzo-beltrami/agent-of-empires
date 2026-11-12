@@ -197,7 +197,7 @@ mod tests {
             seed(
                 app,
                 "profiles/work/config.toml",
-                "description = 'keep me'\n[theme]\nname = 'rose-pine'\ncolor_mode = 'palette'\nidle_decay_minutes = 5\n[session]\nconfirm_before_quit = false\nsession_id_poller_max_threads = 12\nsidebar_position = 'right'\ndefault_tool = 'codex'\n[web]\nnotify_on_error = false\n[unknown]\nkeep = 'profile'\n",
+                "description = 'keep me'\n[theme]\nname = 'rose-pine'\nidle_decay_minutes = 5\n[session]\nfavorites_first = false\nsession_id_poller_max_threads = 12\nshow_session_colors = false\ndefault_tool = 'codex'\n[web]\nnotify_on_error = false\n[unknown]\nkeep = 'profile'\n",
             );
 
             run_in(app, atomic_write).unwrap();
@@ -217,19 +217,22 @@ mod tests {
             assert_eq!(global["theme"]["name"].as_str(), Some(theme), "{default:?}");
             let work = winner == Some("work");
             let alpha = winner == Some("alpha");
-            assert_eq!(get("theme", "color_mode").is_some(), work, "{default:?}");
-            assert_eq!(get("session", "confirm_before_quit").is_some(), work);
+            assert_eq!(
+                get("session", "favorites_first").is_some(),
+                work,
+                "{default:?}"
+            );
             assert_eq!(
                 get("session", "session_id_poller_max_threads").is_some(),
                 work
             );
-            assert_eq!(get("session", "sidebar_position").is_some(), work);
+            assert_eq!(get("session", "show_session_colors").is_some(), work);
             assert_eq!(get("web", "notify_on_error").is_some(), work);
             assert_eq!(get("web", "notify_on_idle").is_some(), alpha);
             if work {
                 assert_eq!(
-                    global["session"]["sidebar_position"].as_str(),
-                    Some("right")
+                    global["session"]["show_session_colors"].as_bool(),
+                    Some(false)
                 );
             }
             assert_eq!(global["unknown"]["keep"].as_integer(), Some(7));
@@ -296,7 +299,7 @@ mod tests {
             ("profiles/work/config.toml", "[invalid"),
             (
                 "profiles/aaa/config.toml",
-                "[session]\nconfirm_before_quit = 'wrong type'\n",
+                "[session]\nfavorites_first = 'wrong type'\n",
             ),
         ] {
             let dir = tempfile::tempdir().unwrap();

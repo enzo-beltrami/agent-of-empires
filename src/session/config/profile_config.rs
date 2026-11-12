@@ -711,20 +711,18 @@ mod tests {
 
     #[test]
     fn test_merge_configs_keeps_global_only_fields() {
-        use crate::session::config::SidebarPosition;
-
         let mut global = Config::default();
         global.theme.name = "catppuccin-latte".to_string();
-        global.session.sidebar_position = SidebarPosition::Right;
+        global.session.show_session_colors = false;
         let profile = profile_from(json!({
-            "session": {"sidebar_position": "left", "snooze_duration_minutes": 12},
+            "session": {"show_session_colors": true, "snooze_duration_minutes": 12},
             "theme": {"name": "tokyo-night", "idle_decay_minutes": 20}
         }));
 
         let merged = merge_configs(global, &profile);
 
         assert_eq!(merged.theme.name, "catppuccin-latte");
-        assert_eq!(merged.session.sidebar_position, SidebarPosition::Right);
+        assert!(!merged.session.show_session_colors);
         assert_eq!(merged.session.snooze_duration_minutes, 12);
         assert_eq!(merged.theme.idle_decay_minutes, 20);
     }
@@ -960,7 +958,7 @@ mod tests {
         let temp = tempfile::TempDir::new().unwrap();
         let _guard = crate::session::test_support::isolate_app_dir_at(temp.path());
         crate::session::config::update_config(|c| {
-            c.session.confirm_before_quit = false;
+            c.session.confirm_delete = false;
             c.theme.name = "rose-pine".to_string();
         })
         .unwrap();
@@ -968,7 +966,7 @@ mod tests {
         std::fs::write(profile_dir.join("config.toml"), "[session\n").unwrap();
 
         let config = resolve_config_or_warn("broken");
-        assert!(!config.session.confirm_before_quit);
+        assert!(!config.session.confirm_delete);
         assert_eq!(config.theme.name, "rose-pine");
     }
     fn set_leaf(profile: &mut ProfileConfig, section: &str, field: &str, value: serde_json::Value) {
@@ -1038,7 +1036,7 @@ mod tests {
         .unwrap();
 
         let failed = update_profile_config::<()>("work", |p| {
-            set_leaf(p, "diff", "split_view", json!(false));
+            set_leaf(p, "diff", "default_branch", json!("main"));
             anyhow::bail!("boom")
         });
         assert!(failed.is_err());

@@ -3301,8 +3301,7 @@ pub(crate) struct DuplicateIdReport {
 
 impl DuplicateIdReport {
     /// Single-line, user-actionable summary naming every copy's profile,
-    /// store file, and mtime. Written to the log by the reconciliation
-    /// layer; the TUI surfaces a count marker derived from these reports.
+    /// store file, and mtime, for the startup recovery log.
     pub(crate) fn actionable_message(&self) -> String {
         let copies = self
             .copies
@@ -3328,6 +3327,7 @@ impl DuplicateIdReport {
         )
     }
 }
+
 fn file_mtime_epoch_ms(path: &Path) -> Option<u64> {
     fs::metadata(path)
         .and_then(|metadata| metadata.modified())

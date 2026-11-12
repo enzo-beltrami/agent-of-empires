@@ -43,9 +43,7 @@ impl RestartPrompt for LocalDaemon {
 
     async fn restart(&self) -> Result<()> {
         eprintln!("Restarting the daemon...");
-        crate::cli::serve::restart_daemon_with_receipt(None, false)
-            .await
-            .map(|_| ())
+        crate::cli::serve::restart_daemon_with_receipt(false).await
     }
 }
 
@@ -263,7 +261,6 @@ mod tests {
     use super::RestartPrompt;
     use crate::migrations::DaemonBlocksMigration;
     use std::cell::Cell;
-    use std::sync::atomic::{AtomicU32, Ordering};
 
     struct FakeDaemon {
         confirmed: bool,
@@ -322,34 +319,15 @@ mod tests {
         }
     }
 
-    /// Drives the plain-TUI startup path with a migration the daemon blocks until restarted.
-    async fn tui_startup(daemon: &FakeDaemon) -> (anyhow::Result<()>, u32) {
-        let runs = std::sync::Arc::new(AtomicU32::new(0));
-        let counted = runs.clone();
-        let result = crate::tui::migrate_for_startup(
-            move |_| {
-                if counted.fetch_add(1, Ordering::SeqCst) == 0 {
-                    blocked()
-                } else {
-                    Ok(())
-                }
-            },
-            true,
-            daemon,
-        )
+    /// Settles a blocked startup migration, counting the initial run.
+    async fn startup(daemon: &FakeDaemon) -> (anyhow::Result<()>, u32) {
+        let runs = Cell::new(1);
+        let result = super::resolve_blocked_migration(blocked(), true, daemon, || {
+            runs.set(runs.get() + 1);
+            Ok(())
+        })
         .await;
-        (result, runs.load(Ordering::SeqCst))
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn plain_tui_startup_restarts_and_retries_for_a_local_daemon() {
-        // SAFETY: serialized; no other thread reads this variable meanwhile.
-        unsafe { std::env::remove_var("AOE_DAEMON_URL") };
-        let daemon = FakeDaemon::new(true);
-        let (result, runs) = tui_startup(&daemon).await;
-        assert!(result.is_ok());
-        assert_eq!((daemon.restarts.get(), runs), (1, 2));
+        (result, runs.get())
     }
 
     #[tokio::test]
@@ -367,7 +345,7 @@ mod tests {
                 }
             }
             let daemon = FakeDaemon::new(true);
-            let (result, runs) = tui_startup(&daemon).await;
+            let (result, runs) = startup(&daemon).await;
             unsafe { std::env::remove_var("AOE_DAEMON_URL") };
             assert!(result.unwrap_err().is::<DaemonBlocksMigration>());
             assert_eq!((daemon.restarts.get(), runs), (0, 1), "flag={flag}");

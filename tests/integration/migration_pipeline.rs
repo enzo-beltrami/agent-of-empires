@@ -49,14 +49,14 @@ fn post_v029_migrations_run_together_before_version_advances() -> Result<()> {
     assert_eq!(fs::read_to_string(app.join(".schema_version"))?, "29");
     assert_eq!(fs::read_to_string(&profile)?, "[invalid");
 
-    fs::write(&profile, "[theme]\nname = 'dracula'\n[session]\nconfirm_before_quit = false\ndefault_tool = 'codex'\n")?;
+    fs::write(&profile, "[theme]\nname = 'dracula'\n[session]\nshow_session_colors = false\ndefault_tool = 'codex'\n")?;
     agent_of_empires::migrations::run_migrations()?;
     let global = agent_of_empires::session::Config::load()?;
     assert_eq!(global.theme.name, "dracula");
-    assert!(!global.session.confirm_before_quit);
+    assert!(!global.session.show_session_colors);
     let effective = agent_of_empires::session::resolve_config("work")?;
     assert_eq!(effective.theme.name, "dracula");
-    assert!(!effective.session.confirm_before_quit);
+    assert!(!effective.session.show_session_colors);
     assert_eq!(effective.session.default_tool.as_deref(), Some("codex"));
     let saved: toml::Table = fs::read_to_string(&profile)?.parse()?;
     assert!(!saved.contains_key("theme"));

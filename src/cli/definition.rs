@@ -45,7 +45,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[command(
     long_about = "Agent of Empires (aoe) is a terminal session manager that uses tmux to help \
     you manage and monitor AI coding agents like Claude Code and OpenCode.\n\n\
-    Run without arguments to launch the TUI dashboard."
+    Run `aoe serve` to start the daemon and web dashboard."
 )]
 pub struct Cli {
     /// Profile to use (separate workspace with its own sessions). Commands that
@@ -58,7 +58,7 @@ pub struct Cli {
     #[arg(short = 'p', long, global = true)]
     pub profile: Option<String>,
 
-    /// Select a daemon endpoint for read-only CLI commands or the TUI.
+    /// Select a daemon endpoint for read-only CLI commands.
     ///
     /// Explicit endpoints and `AOE_DAEMON_URL` never fall back to local storage
     /// or start a local daemon. Authenticate with `AOE_DAEMON_TOKEN` or

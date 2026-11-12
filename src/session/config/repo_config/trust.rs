@@ -148,11 +148,7 @@ pub struct RepoTrust {
     pub mcp: TrustSurface<Vec<ProjectMcpServer>>,
 }
 
-impl RepoTrust {
-    pub fn needs_prompt(&self) -> bool {
-        self.hooks.needs_trust() || self.mcp.needs_trust()
-    }
-}
+impl RepoTrust {}
 
 /// Canonical creation-review fingerprint shared by the daemon validator and
 /// clients that can only present a synchronous trust dialog. The daemon

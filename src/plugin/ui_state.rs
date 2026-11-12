@@ -36,15 +36,6 @@ pub enum BadgePresentation {
     Glyph,
 }
 
-impl BadgePresentation {
-    pub(crate) fn separator_width(self) -> usize {
-        match self {
-            Self::Text => 2,
-            Self::Glyph => 1,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SortDirection {

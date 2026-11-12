@@ -171,7 +171,7 @@ pub struct ServeArgs {
     /// Open the dashboard URL in the default browser once the server is ready.
     /// Ignored in a build with no dashboard bundle, under --daemon or --remote,
     /// and whenever no browser the user could see is reachable (see
-    /// `tui::open_url`): over SSH without a forwarded display, or on Linux/BSD
+    /// `server::open_url`): over SSH without a forwarded display, or on Linux/BSD
     /// with no display server. `BROWSER` overrides the check on platforms whose
     /// launcher reads it, which excludes macOS.
     #[arg(long)]
@@ -682,29 +682,6 @@ impl ServeLaunch {
             allowed_host: self.allowed_host.clone(),
             allowed_origin: self.allowed_origin.clone(),
         }
-    }
-}
-
-impl ServeLaunch {
-    /// Replay the recorded launch, taking only what the TUI restart controls
-    /// (bind, exposure, port, dashboard enablement, passphrase) from `requested`,
-    /// so recorded policy such as `--read-only` and the allowlists survives.
-    fn overlay_tui_args(&self, requested: ServeArgs) -> ServeArgs {
-        let mut args = self.to_serve_args(None);
-        if self.core_only {
-            args.auth = requested.auth;
-        }
-        args.core_only = requested.core_only;
-        args.port = requested.port;
-        args.host = requested.host;
-        args.remote = requested.remote;
-        if !args.remote {
-            args.tunnel_name = None;
-            args.tunnel_url = None;
-        }
-        args.no_tailscale = requested.no_tailscale;
-        args.passphrase = requested.passphrase;
-        args
     }
 }
 
@@ -1246,11 +1223,6 @@ pub fn daemon_pid() -> Option<u32> {
     }
 }
 
-/// The verified daemon's recorded launch, which a TUI restart replays.
-pub(crate) fn recorded_launch() -> Option<ServeLaunch> {
-    managed_launch(daemon_pid()?).ok()
-}
-
 /// Whether `serve.launch` proves aoe launched `pid` and replay can use it. Replay
 /// reconciles older schemas first, so judge the record in that upgraded shape.
 fn launch_is_replayable(pid: u32) -> Result<bool> {
@@ -1300,19 +1272,6 @@ fn pin_protocol_skew(error: crate::daemon::LocalRuntimeError, pid: Option<u32>) 
         remedy,
     }
     .into()
-}
-
-/// Whether the verified daemon already runs `passphrase`.
-pub(crate) fn daemon_runs_passphrase(passphrase: &str) -> bool {
-    recorded_launch()
-        .and_then(|launch| recall_serve_passphrase(&launch).ok().flatten())
-        .is_some_and(|running| running == passphrase)
-}
-
-/// Returns a verified daemon only when it exposes the web dashboard.
-pub(crate) fn web_daemon_pid() -> Option<u32> {
-    let pid = daemon_pid()?;
-    (!managed_launch(pid).is_ok_and(|launch| launch.core_only)).then_some(pid)
 }
 
 /// Validate exposure and prerequisites before stopping a predecessor.
@@ -1549,7 +1508,7 @@ pub async fn run(profile: &str, mut args: ServeArgs, startup: Option<ServeStartu
 /// Path the daemon's stdout/stderr are redirected to. Resolved from the
 /// configured `[logging].file_path` so panic backtraces interleave with
 /// the structured tracing stream. Used by `start_daemon()` for the stdio
-/// redirect, by the TUI serve dialog for the tail pane, and by `aoe logs`
+/// redirect and by `aoe logs`
 /// for the viewer target.
 pub fn stdio_redirect_path() -> Result<PathBuf> {
     let dir = crate::session::get_app_dir()?;
@@ -1740,55 +1699,6 @@ pub(crate) async fn ensure_local_daemon(
         );
     }
     Ok((endpoint, started))
-}
-pub(crate) async fn start_dashboard_for_tui(
-    profile: &str,
-    mut args: ServeArgs,
-    predecessor_epoch: Option<&str>,
-    restart: bool,
-) -> Result<(
-    crate::daemon::RuntimeConnection,
-    crate::daemon::DaemonClient,
-)> {
-    let launch = if restart {
-        restart_daemon_with_receipt(Some(args), false).await?
-    } else {
-        let startup = lock_for_startup(profile, &mut args)
-            .await?
-            .context("Dashboard startup guard is unavailable")?;
-        let startup = tokio::task::spawn_blocking(move || {
-            startup.run_migrations(None)?;
-            Ok::<_, anyhow::Error>(startup)
-        })
-        .await??;
-        let ServeStartup { lock, transaction } = startup;
-        validate_launch_args(profile, &args).await?;
-        drop(lock);
-        start_daemon(profile, &args, &transaction, false).await?;
-        managed_launch(daemon_pid().context("Dashboard successor is unavailable")?)?
-    };
-    anyhow::ensure!(!launch.core_only, "Successor did not enable the dashboard");
-    let instance = launch
-        .instance_id
-        .context("Successor instance proof is missing")?;
-    let endpoint = crate::acp::client::discovery::local_unix_endpoint(
-        crate::daemon::transport::local_socket_path()?,
-    );
-    let connection = crate::daemon::RuntimeConnection::connect(
-        &endpoint,
-        (!profile.is_empty()).then_some(profile),
-    )
-    .await?;
-    anyhow::ensure!(
-        connection.info().owner_instance_id.as_deref() == Some(instance.as_str()),
-        "Dashboard successor identity changed before reconnect"
-    );
-    anyhow::ensure!(
-        predecessor_epoch.is_none_or(|epoch| epoch != connection.info().epoch),
-        "Dashboard successor reused the predecessor epoch"
-    );
-    let client = endpoint.daemon_client()?;
-    Ok((connection, client))
 }
 
 async fn start_daemon(
@@ -2106,61 +2016,18 @@ async fn migrate_managed_launch_reporting(
 /// Replay the managed launch with the current executable, retaining it before stop.
 #[tracing::instrument(target = "serve.lifecycle", skip_all)]
 pub async fn restart_daemon() -> Result<()> {
-    restart_daemon_with_receipt(None, true).await.map(|_| ())
+    restart_daemon_with_receipt(true).await
 }
 
-pub(crate) async fn restart_daemon_with_receipt(
-    override_args: Option<ServeArgs>,
-    announce: bool,
-) -> Result<ServeLaunch> {
+pub(crate) async fn restart_daemon_with_receipt(announce: bool) -> Result<()> {
     let transaction = crate::daemon::lifecycle::Transaction::acquire().await?;
-    replay_managed_launch(transaction, override_args, announce, None).await
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TuiRestart {
-    Restarted,
-    /// The Daemon the offer was made for is gone; nothing was touched.
-    DaemonChanged,
-}
-
-/// `aoe serve --restart` for the TUI, which must not write to the terminal it
-/// owns, limited to the Daemon `expected` that the offer was made for.
-pub(crate) async fn restart_daemon_for_tui(
-    expected: crate::daemon::DaemonIncarnation,
-    progress: crate::migrations::progress::Reporter,
-) -> Result<TuiRestart> {
-    restart_daemon_if_current(expected, daemon_status, progress).await
-}
-
-async fn restart_daemon_if_current(
-    expected: crate::daemon::DaemonIncarnation,
-    status: impl FnOnce() -> DaemonStatus,
-    progress: crate::migrations::progress::Reporter,
-) -> Result<TuiRestart> {
-    let transaction = crate::daemon::lifecycle::Transaction::acquire().await?;
-    let current = match status() {
-        DaemonStatus::Verified(pid) => crate::daemon::DaemonIncarnation::of(pid)?,
-        DaemonStatus::Absent | DaemonStatus::Unverified => None,
-    };
-    if current != Some(expected) {
-        return Ok(TuiRestart::DaemonChanged);
-    }
-    replay_managed_launch(transaction, None, false, Some(progress)).await?;
-    Ok(TuiRestart::Restarted)
+    replay_managed_launch(transaction, announce).await
 }
 
 async fn replay_managed_launch(
     transaction: crate::daemon::lifecycle::Transaction,
-    override_args: Option<ServeArgs>,
     announce: bool,
-    progress: Option<crate::migrations::progress::Reporter>,
-) -> Result<ServeLaunch> {
-    let stage = |message: &str| {
-        if let Some(progress) = &progress {
-            progress(crate::migrations::progress::Event::Step(message.to_owned()));
-        }
-    };
+) -> Result<()> {
     let Some(pid) = daemon_pid() else {
         bail!(
             "No running aoe serve daemon to restart.\n\
@@ -2171,10 +2038,7 @@ async fn replay_managed_launch(
 
     let launch = managed_launch(pid)?;
     let predecessor_passphrase = recall_serve_passphrase(&launch)?;
-    let mut args = match override_args {
-        Some(requested) => launch.overlay_tui_args(requested),
-        None => launch.to_serve_args(None),
-    };
+    let mut args = launch.to_serve_args(None);
     args.passphrase = resolve_launch_passphrase(
         args.passphrase.take(),
         Some(predecessor_passphrase.as_deref()),
@@ -2187,18 +2051,14 @@ async fn replay_managed_launch(
         println!("Restarting aoe serve daemon (PID {pid})…");
     }
     tracing::info!(target: "serve.lifecycle", old_pid = pid, "restarting daemon");
-    stage("Stopping the old Daemon");
     stop_daemon_locked(&transaction, announce).await?;
-    stage("Applying data migrations");
-    let reporter = progress
-        .clone()
-        .unwrap_or_else(crate::cli::migrate::stderr_reporter);
-    let transaction = migrate_managed_launch_reporting(transaction, true, reporter).await?;
-    stage("Starting the new Daemon");
+    let transaction =
+        migrate_managed_launch_reporting(transaction, true, crate::cli::migrate::stderr_reporter())
+            .await?;
     complete_rollback_after(start_daemon(&launch.profile, &args, &transaction, announce).await)?;
     let new_pid = daemon_pid().context("Restart successor is unavailable")?;
     tracing::info!(target: "serve.lifecycle", old_pid = pid, new_pid, "daemon restarted");
-    managed_launch(new_pid)
+    Ok(())
 }
 
 fn stale_cleanup_notice(pid: i32, announce: bool) -> Option<&'static str> {
@@ -2854,56 +2714,6 @@ mod tests {
             allowed_origin: vec!["https://aoe.example.com:8443".to_string()],
             additional_fields: serde_json::Map::new(),
         }
-    }
-
-    #[test]
-    fn tui_restart_overlay_keeps_recorded_policy() {
-        use clap::Parser;
-        let tui_args = |argv: &[&str]| {
-            let parsed = crate::cli::Cli::try_parse_from(argv).unwrap();
-            let Some(crate::cli::Commands::Serve(args)) = parsed.command else {
-                unreachable!();
-            };
-            args
-        };
-        let mut recorded = sample_launch();
-        recorded.auth_mode = AuthMode::Token;
-        let local = recorded.overlay_tui_args(tui_args(&[
-            "aoe", "serve", "--daemon", "--port", "8080", "--host", "0.0.0.0",
-        ]));
-        let tunnel = recorded.overlay_tui_args(tui_args(&[
-            "aoe",
-            "serve",
-            "--daemon",
-            "--port",
-            "8080",
-            "--remote",
-            "--host",
-            "127.0.0.1",
-            "--no-tailscale",
-        ]));
-        for args in [&local, &tunnel] {
-            assert!(args.read_only && args.behind_proxy && args.cityhall);
-            assert!(args.dangerously_allow_plaintext_remote);
-            assert_eq!(args.allowed_host, recorded.allowed_host);
-            assert_eq!(args.allowed_origin, recorded.allowed_origin);
-            assert_eq!(args.auth, Some(AuthMode::Token));
-            assert_eq!(args.port, Some(8080));
-        }
-        assert!(!local.remote && local.host == "0.0.0.0");
-        assert!(tunnel.remote && tunnel.host == "127.0.0.1");
-        // clap requires `--remote` for the tunnel flags, so a Local restart must not replay them.
-        assert_eq!((&local.tunnel_name, &local.tunnel_url), (&None, &None));
-        assert_eq!(tunnel.tunnel_name, recorded.tunnel_name);
-        assert_eq!(tunnel.tunnel_url, recorded.tunnel_url);
-
-        let mut core = sample_launch();
-        core.core_only = true;
-        let dashboard = core.overlay_tui_args(tui_args(&[
-            "aoe", "serve", "--daemon", "--port", "8080", "--host", "0.0.0.0",
-        ]));
-        assert!(!dashboard.core_only);
-        assert_eq!((dashboard.port, dashboard.auth), (Some(8080), None));
     }
 
     #[test]
@@ -3582,49 +3392,6 @@ mod tests {
             Some(Some(OutdatedDaemonRemedy::External))
         );
         assert_eq!(remedy(E::Identity, None), None);
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn tui_restart_leaves_a_changed_daemon_alone() -> Result<()> {
-        use crate::daemon::DaemonIncarnation;
-        let home = tempfile::tempdir()?;
-        let _home = crate::session::test_support::isolate_app_dir_at(home.path());
-        let me = std::process::id();
-        let record = launch_record(1, me, None).to_string();
-        launch_file("serve.launch")?.replace(record.as_bytes())?;
-        let progress = || -> crate::migrations::progress::Reporter { std::sync::Arc::new(|_| {}) };
-        let classified = DaemonIncarnation::of(me)?.unwrap();
-        // The same PID with another birth is a successor, not the classified Daemon.
-        let successor = DaemonIncarnation {
-            birth: DaemonIncarnation::sample("successor").birth,
-            ..classified
-        };
-
-        for (expected, status) in [
-            (successor, DaemonStatus::Verified(me)),
-            (classified, DaemonStatus::Absent),
-            (classified, DaemonStatus::Unverified),
-        ] {
-            let outcome = restart_daemon_if_current(expected, || status, progress()).await?;
-            assert_eq!(outcome, TuiRestart::DaemonChanged, "{status:?}");
-            assert_eq!(
-                launch_file("serve.launch")?.read()?.unwrap(),
-                record,
-                "revalidation precedes every mutation"
-            );
-        }
-
-        // The classified Daemon proceeds to replay, which stops at the real (absent) PID file.
-        let replay =
-            restart_daemon_if_current(classified, || DaemonStatus::Verified(me), progress())
-                .await
-                .unwrap_err();
-        assert!(
-            replay.to_string().contains("No running aoe serve daemon"),
-            "{replay}"
-        );
-        Ok(())
     }
 
     #[tokio::test]

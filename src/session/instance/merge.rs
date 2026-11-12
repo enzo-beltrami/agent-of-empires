@@ -177,33 +177,6 @@ impl Instance {
         }
     }
 
-    /// Splice TUI-mirrored, persisted fields from `src` onto `self`. Used by
-    /// `HomeView::save` for fields the TUI is the canonical disk writer of
-    /// (the daemon's `status_poll_loop` keeps these in memory only). The
-    /// server's `send_message` respawn briefly writes `status` via
-    /// `apply_post_restart_sync`; the resulting transient mis-paint
-    /// converges on the next `status_poll` tick.
-    /// User-action fields (archived/favorited/snoozed/title/group_path/...)
-    /// are NOT here; they go through `apply_user_action` per-action so peer
-    /// writers (CLI) cannot be clobbered by a stale TUI snapshot.
-    pub fn merge_from_tui(&mut self, src: &Self) {
-        if src.lifecycle_generation >= self.lifecycle_generation {
-            self.lifecycle_generation = src.lifecycle_generation;
-            self.status = src.status;
-            self.last_accessed_at = self.last_accessed_at.max(src.last_accessed_at);
-            self.idle_entered_at = src.idle_entered_at;
-            // A snapshot taken before a peer archived the row carries a
-            // pre-archive observation of a pane that no longer exists.
-            if self.is_archived() {
-                self.settle_archived_status();
-            }
-        }
-        // Apply changed launch configuration without overwriting concurrent runtime state.
-        self.tool = src.tool.clone();
-        self.command = src.command.clone();
-        self.extra_args = src.extra_args.clone();
-    }
-
     /// Run `new_tool` in terminal view with a fresh conversation after a
     /// structured view agent switch.
     pub(crate) fn rebind_terminal_tool_fresh(&mut self, new_tool: &str) {
@@ -738,18 +711,11 @@ mod tests {
             assert!(disk.archived_at.is_some());
             assert_eq!(disk.status, Status::Idle, "diff {status:?}");
 
-            // A stale poll or TUI snapshot must not land a live status on an archived row.
+            // A stale poll must not land a live status on an archived row.
             let mut disk = inst();
             disk.archived_at = Some(Utc::now());
             disk.merge_passive_status_patch(&disk.id.clone(), &patch(status, None, None));
             assert_eq!(disk.status, Status::Idle, "patch {status:?}");
-
-            let mut stored = inst();
-            stored.archived_at = Some(Utc::now());
-            let mut src = stored.clone();
-            src.status = status;
-            stored.merge_from_tui(&src);
-            assert_eq!(stored.status, Status::Idle, "tui {status:?}");
         }
         // A resting status survives archive; an unarchived row keeps its live status.
         let mut pre = inst();
@@ -811,7 +777,7 @@ mod tests {
         stored.merge_post_restart(&working);
         assert_eq!(stored.status, Status::Idle);
 
-        // A stale async or TUI result must not overwrite a newer lifecycle commit.
+        // A stale async result must not overwrite a newer lifecycle commit.
         stored.lifecycle_generation = 2;
         stored.status = Status::Stopped;
         stored.capture_started_at = floor(2_000_000);
@@ -821,8 +787,6 @@ mod tests {
         stored.merge_post_start(&working);
         assert_eq!(stored.status, Status::Stopped);
         assert_eq!(stored.capture_started_at, floor(2_000_000));
-        stored.merge_from_tui(&working);
-        assert_eq!(stored.status, Status::Stopped);
     }
 
     #[test]
@@ -1371,70 +1335,6 @@ mod tests {
                 "{disk_ts:?} <- {patch_ts:?}"
             );
         }
-    }
-
-    #[test]
-    fn merge_from_tui_copies_status_and_launch_config_only() {
-        let earlier = Utc::now() - chrono::Duration::minutes(5);
-        let later = Utc::now();
-        let mut stored = inst();
-        let (id, path, created) = (
-            stored.id.clone(),
-            stored.project_path.clone(),
-            stored.created_at,
-        );
-        stored.last_accessed_at = Some(later);
-        stored.archived_at = Some(later);
-        stored.title = "peer-renamed".to_string();
-        stored.agent_session_id = Some("daemon-sid".to_string());
-        stored.notify_on_waiting = Some(true);
-        stored.base_branch_override = Some("upstream/main".to_string());
-        stored.tool = "claude".to_string();
-
-        let mut src = Instance::new("tui-stale", "/tmp/different");
-        src.id = "different-id".to_string();
-        src.status = Status::Error;
-        src.idle_entered_at = Some(later);
-        src.last_accessed_at = Some(earlier);
-        src.agent_session_id = Some("tui-stale-sid".to_string());
-        src.notify_on_waiting = Some(false);
-        src.tool = "codex".to_string();
-        src.command = "codex-wrapper".to_string();
-        src.extra_args = "--foo".to_string();
-        stored.merge_from_tui(&src);
-
-        assert_eq!(
-            (stored.status, stored.idle_entered_at),
-            (Status::Error, Some(later))
-        );
-        assert_eq!(stored.last_accessed_at, Some(later));
-        assert_eq!(
-            (
-                stored.tool.as_str(),
-                stored.command.as_str(),
-                stored.extra_args.as_str()
-            ),
-            ("codex", "codex-wrapper", "--foo")
-        );
-        assert_eq!(
-            (stored.id, stored.project_path, stored.created_at),
-            (id, path, created)
-        );
-        assert_eq!(stored.archived_at, Some(later));
-        assert_eq!(stored.title, "peer-renamed");
-        assert_eq!(stored.agent_session_id.as_deref(), Some("daemon-sid"));
-        assert_eq!(stored.notify_on_waiting, Some(true));
-        assert_eq!(
-            stored.base_branch_override.as_deref(),
-            Some("upstream/main")
-        );
-
-        let mut stale = inst();
-        stale.last_accessed_at = Some(earlier);
-        let mut src = stale.clone();
-        src.last_accessed_at = Some(later);
-        stale.merge_from_tui(&src);
-        assert_eq!(stale.last_accessed_at, Some(later));
     }
 
     #[test]

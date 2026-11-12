@@ -144,14 +144,6 @@ impl ToolSession {
         Self::from_resolution(session_id, session_title, tool_name, false)
     }
 
-    /// [`Self::new`] for **render paths**: resolved from the shared snapshot
-    /// only, never refreshing. A stale snapshot yields the derived name until
-    /// the background snapshot poller refreshes it; paint must never wait on
-    /// tmux.
-    pub fn for_display(session_id: &str, session_title: &str, tool_name: &str) -> Self {
-        Self::from_resolution(session_id, session_title, tool_name, true)
-    }
-
     fn from_resolution(
         session_id: &str,
         session_title: &str,

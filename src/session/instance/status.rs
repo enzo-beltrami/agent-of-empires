@@ -67,13 +67,6 @@ impl Status {
         }
     }
 
-    /// Every status in [`Self::attention_tier`] order, ties broken by the API spelling.
-    pub(crate) fn attention_order() -> Vec<Status> {
-        let mut all: Vec<Status> = Self::ALL.iter().map(|(status, _, _)| *status).collect();
-        all.sort_by_key(|status| (status.attention_tier(), status.wire_str()));
-        all
-    }
-
     /// Whether the worktree may be mid-use, so an in-place worktree edit must wait.
     pub fn blocks_worktree_edit(self) -> bool {
         matches!(

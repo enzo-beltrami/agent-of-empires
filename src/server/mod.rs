@@ -21,6 +21,7 @@ pub mod lifecycle_feed;
 pub mod live_ws;
 pub mod login;
 mod mcp;
+mod open_url;
 mod pane;
 pub mod passkeys;
 pub(crate) mod peer;
@@ -78,5 +79,5 @@ pub(crate) use sleep_inhibit::{
 pub(crate) use startup::resolve_auth_mode;
 pub(crate) use startup::{start_server, ServerConfig};
 pub use state::{AppState, CleanupDefaultsCache};
+pub(crate) use token::generate_token;
 pub use token::TokenManager;
-pub(crate) use token::{generate_token, TOKEN_REUSE_MAX_AGE};

@@ -379,19 +379,6 @@ impl Instance {
         self.is_trashed() || self.is_snoozed() || self.is_archived()
     }
 
-    /// Remaining snooze duration as a `chrono::Duration`, or `None` if the
-    /// session isn't snoozed (or the timestamp has already expired).
-    pub fn snooze_remaining(&self) -> Option<chrono::Duration> {
-        self.snoozed_until.and_then(|t| {
-            let delta = t - Utc::now();
-            if delta > chrono::Duration::zero() {
-                Some(delta)
-            } else {
-                None
-            }
-        })
-    }
-
     /// Mark this session pinned. Pin is a web-only surfacing primitive:
     /// pinned workspaces sort to the top of the web sidebar (across all
     /// sort modes), regardless of last-activity. Distinct from
