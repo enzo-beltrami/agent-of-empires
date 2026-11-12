@@ -104,7 +104,7 @@ pub fn validate_patch(patch: &Value, scope: Scope, elevated: bool) -> Result<(),
     validate_patch_with(&schema(), patch, scope, elevated)
 }
 
-/// [`validate_patch`] against the runtime schema, including plugin sections.
+/// [`validate_patch`] against the given descriptors.
 pub fn validate_patch_with(
     descriptors: &[FieldDescriptor],
     patch: &Value,

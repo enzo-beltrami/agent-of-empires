@@ -148,7 +148,7 @@ pub struct AppState {
     pub(crate) runtime: super::runtime::NativeRuntime,
     // Lock instances before the cache for coherent reads and reload commits.
     pub(crate) runtime_read_cache: std::sync::RwLock<super::reload::RuntimeReadCache>,
-    /// Shared session-domain service for HTTP and plugin entry points.
+    /// Shared session-domain service for HTTP entry points.
     pub session_service: Arc<session_service::SessionService>,
     pub token_manager: Arc<TokenManager>,
     pub login_manager: Arc<login::LoginManager>,
@@ -298,13 +298,6 @@ pub struct AppState {
     /// Owns the per-session ACP agent subprocesses.
     pub acp_supervisor:
         Arc<crate::acp::supervisor::Supervisor<crate::acp::supervisor::ChannelSink>>,
-    /// The Tier 1 plugin worker host. `None` in test harnesses that do not
-    /// stand up a host; `Some` in a live daemon.
-    pub plugin_host: Option<Arc<crate::plugin::host::PluginHost>>,
-    /// Tracks in-flight web plugin install / update / uninstall jobs so the
-    /// dashboard can tail their host-side log. In-memory; see
-    /// `api::plugins::PluginJobRegistry`.
-    pub plugin_jobs: Arc<crate::server::api::plugins::PluginJobRegistry>,
     /// Per-window foreground dashboard presence. Entries are keyed by a hash
     /// of the device-binding secret plus the window's id and expire when the
     /// window stops sending its visibility heartbeat. Push suppression must

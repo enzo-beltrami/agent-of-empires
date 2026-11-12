@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type RefObject } from "react";
+import { useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { SessionResponse, Workspace } from "../../lib/types";
 import {
@@ -29,7 +29,7 @@ import { useSessionActions } from "./usePendingSetting";
 
 type Modal = "snooze" | "workdir" | "group" | null;
 
-/** What a session's actions call back into; the sidebar and a plugin page's host menu both supply them. */
+/** What a session's actions call back into. */
 export interface SessionActionHandlers {
   onSessionMutation: (mutation: SessionMutation) => void;
   /** Receives the row's sessions, which a group slice narrows to a subset of the workspace. */
@@ -62,7 +62,6 @@ export function SessionActionsMenu({
   handlers,
   onRename,
   bulkApi,
-  extraItems,
 }: {
   menu: SessionMenuState | null;
   menuRef: RefObject<HTMLDivElement | null>;
@@ -77,7 +76,6 @@ export function SessionActionsMenu({
   onRename: () => void;
   /** Required for a menu that can open on a bulk scope. */
   bulkApi?: RowBulkApi;
-  extraItems?: ReactNode;
 }) {
   const [modal, setModal] = useState<Modal>(null);
   const [recreating, setRecreating] = useState<SessionResponse | null>(null);
@@ -152,7 +150,6 @@ export function SessionActionsMenu({
               colorsEnabled={colorsEnabled}
               unreadEnabled={unreadEnabled}
               actions={actions}
-              extraItems={extraItems}
             />
           )}
         </ContextMenu>

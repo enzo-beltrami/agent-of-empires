@@ -1,6 +1,4 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { usePluginUiEntries } from "../lib/pluginUiContext";
-import { pluginSortSpecs } from "../lib/pluginUi";
 import type { ProjectInfo, RepoGroup, Workspace } from "../lib/types";
 import type { RuntimeCursor, SessionMutation } from "../lib/api";
 import { SidebarSystemHealth } from "./SystemHealthStrip";
@@ -37,9 +35,8 @@ import {
 } from "./sidebar/filterGroups";
 import { FlatGroupList, NestedGroupList, OrgGroupList, type ListContext } from "./sidebar/GroupLists";
 import { SessionRow } from "./sidebar/SessionRow";
-import { FacetPanel, SidebarToolbar } from "./sidebar/SidebarToolbar";
+import { SidebarToolbar } from "./sidebar/SidebarToolbar";
 import { TrashMenu } from "./sidebar/TrashMenu";
-import { useFacetFilter } from "./sidebar/useFacetFilter";
 import { useSidebarSelection } from "./sidebar/useSidebarSelection";
 import { useSidebarWidth } from "./sidebar/useSidebarWidth";
 
@@ -100,8 +97,6 @@ interface Props {
   canManageProjects?: boolean;
   sortMode: SidebarSortMode;
   onSortModeChange: (mode: SidebarSortMode) => void;
-  pluginSortRef: { pluginId: string; entryId: string } | null;
-  onPluginSortChange: (ref: { pluginId: string; entryId: string }) => void;
   axis: SidebarAxis;
   onAxisChange: (axis: SidebarAxis) => void;
 }
@@ -124,40 +119,27 @@ export function WorkspaceSidebar(props: Props) {
   const offline = useServerDown();
   const { effectiveWidth, startResize } = useSidebarWidth(compact);
 
-  const pluginUiEntries = usePluginUiEntries();
-  const pluginSorts = useMemo(() => pluginSortSpecs(pluginUiEntries), [pluginUiEntries]);
-  const facets = useFacetFilter(pluginUiEntries);
-  const pluginSortActive =
-    props.pluginSortRef != null &&
-    pluginSorts.some((s) => s.pluginId === props.pluginSortRef!.pluginId && s.entryId === props.pluginSortRef!.entryId);
-
   // Reorder rebuilds order from the full list, so it is off whenever the visible order is computed or filtered,
   // and on axes (the user-group axis) whose groups cannot persist an order.
   const reorderDisabled =
-    !!readOnly ||
-    props.sortMode === "lastActivity" ||
-    pluginSortActive ||
-    facets.activeFacets.length > 0 ||
-    groups.some((g) => !g.capabilities.reorder);
+    !!readOnly || props.sortMode === "lastActivity" || groups.some((g) => !g.capabilities.reorder);
   const dragClickGuard = useRef<DragClickGuard>(newDragClickGuard());
   useSuppressClickAfterDrag(dragClickGuard);
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
-  const [facetOpen, setFacetOpen] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
   const [sunkExpanded, toggleSunkExpanded] = usePersistedFlag("aoe-sidebar-sunk-expanded", false);
   // The compact rail has no filter controls, so a query typed earlier stops applying without being cleared.
   const activeFilterQuery = compact ? "" : filterQuery;
   const q = activeFilterQuery.trim().toLowerCase();
-  const hasFilter = !!q || facets.activeFacets.length > 0;
+  const hasFilter = !!q;
 
-  const { matchesFacets } = facets;
   const [filteredGroups, filteredNested, filteredOrgGroups] = useMemo(() => {
     if (!hasFilter) return [groups, nestedGroups, orgGroups] as const;
-    const keep = makeRowFilter(q, matchesFacets);
+    const keep = makeRowFilter(q);
     return [filterFlat(groups, keep), filterNested(nestedGroups, keep), filterOrg(orgGroups, keep)] as const;
-  }, [hasFilter, q, matchesFacets, groups, nestedGroups, orgGroups]);
+  }, [hasFilter, q, groups, nestedGroups, orgGroups]);
   const isNested = axis === "repo+group";
   const isOrgAxis = axis === "org";
 
@@ -318,13 +300,6 @@ export function WorkspaceSidebar(props: Props) {
           onAxisChange={props.onAxisChange}
           sortMode={props.sortMode}
           onSortModeChange={props.onSortModeChange}
-          pluginSorts={pluginSorts}
-          pluginSortRef={props.pluginSortRef}
-          onPluginSortChange={props.onPluginSortChange}
-          hasFacets={facets.facetSpecs.length > 0}
-          facetsActive={facets.activeFacets.length > 0}
-          facetOpen={facetOpen}
-          onToggleFacets={() => setFacetOpen((o) => !o)}
           filterOpen={filterOpen}
           onToggleFilter={toggleFilter}
           offline={offline}
@@ -348,14 +323,6 @@ export function WorkspaceSidebar(props: Props) {
               className="w-full bg-surface-800 border border-surface-700 rounded-md px-2.5 py-1.5 text-[13px] text-text-primary placeholder:text-text-dim focus:border-brand-600 focus:outline-none"
             />
           </div>
-        )}
-
-        {facetOpen && !compact && facets.facetSpecs.length > 0 && (
-          <FacetPanel
-            facetSpecs={facets.facetSpecs}
-            selectedValues={facets.selectedValues}
-            onToggle={facets.toggleValue}
-          />
         )}
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden border-t border-surface-700/60">

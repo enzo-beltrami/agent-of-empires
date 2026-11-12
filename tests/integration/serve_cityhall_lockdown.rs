@@ -109,8 +109,7 @@ async fn sensitive_routes_are_blocked() {
             "/api/sessions/x/acp/mode",
             r#"{"mode_id":"plan"}"#,
         ),
-        // Project, MCP, and plugin admin. A plugin install runs arbitrary code
-        // from a client-supplied source, so it must never be reachable.
+        // Project, MCP, and plugin admin.
         (Method::POST, "/api/projects", r#"{"path":"/tmp"}"#),
         (
             Method::POST,
@@ -142,11 +141,6 @@ async fn sensitive_routes_are_blocked() {
         (Method::DELETE, "/api/skills/review", ""),
         (Method::POST, "/api/skills/claude-user/review/adopt", "{}"),
         (Method::POST, "/api/skills/sync", "{}"),
-        (
-            Method::POST,
-            "/api/plugins/install",
-            r#"{"source":"gh:owner/repo","expected_fingerprint":"x"}"#,
-        ),
         (
             Method::POST,
             "/api/plugins/x/enabled",
@@ -225,19 +219,11 @@ async fn sensitive_routes_are_blocked() {
             r#"{"answers":{}}"#,
         ),
         // Host-side admin reads: skills and MCP definitions are read out of the
-        // agents' own config files under $HOME, and the plugin surface is the
-        // installed third-party code (its manifests, icons, workers' UI state,
-        // and job logs); the same host state the denied plugin mutations act on.
+        // agents' own config files under $HOME.
         (Method::GET, "/api/skills", ""),
         (Method::GET, "/api/skills/claude-user/review", ""),
         (Method::GET, "/api/mcp/servers?agent=claude", ""),
         (Method::GET, "/api/plugins", ""),
-        (Method::GET, "/api/plugins/x/icon", ""),
-        (Method::GET, "/api/plugins/commands", ""),
-        (Method::GET, "/api/plugins/ui-state", ""),
-        (Method::GET, "/api/plugins/discover", ""),
-        (Method::GET, "/api/plugins/details?source=gh%3Ao%2Fr", ""),
-        (Method::GET, "/api/plugins/jobs/job-1", ""),
         // Import discovery exposes native session titles and paths for every agent.
         (Method::GET, "/api/importable-sessions?agent=claude", ""),
         (Method::GET, "/api/importable-sessions?agent=codex", ""),

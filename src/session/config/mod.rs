@@ -155,76 +155,28 @@ pub struct StatusRule {
     pub regex: Option<String>,
 }
 
-/// Configuration for one plugin: whether it is enabled, its install source and
-/// capability grant (external plugins only), plus its schema-free persisted
-/// settings.
+/// Configuration for one plugin: whether it is enabled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginConfig {
-    /// Whether the plugin is active. A disabled plugin contributes nothing to
-    /// any surface.
+    /// Whether the plugin is active.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
-
-    /// Install source for an external plugin: a `gh:owner/repo[@ref]` slug or a
-    /// local path. Absent for builtins, which are compiled in.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-
-    /// The plugin's persisted settings (`[plugins."<id>".settings]`). Kept as
-    /// an opaque `toml::Table` so values survive on disk even while the plugin
-    /// is disabled; the typed schema that validates and renders them lands
-    /// with Tier 0 registries (#2094). The toml serializer emits scalars before
-    /// subtables regardless, so field order here is for readability. Empty is
-    /// omitted.
-    #[serde(default, skip_serializing_if = "toml::Table::is_empty")]
-    pub settings: toml::Table,
-
-    /// The capability grant the user approved for an external plugin, pinned to
-    /// the manifest hash it was approved against. Absent until granted;
-    /// builtins are auto-granted and never store one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grant: Option<CapabilityGrant>,
-
-    /// Installed with `--dev` from a local directory: may claim a reserved
-    /// namespace, is never featured, and is refused under remote exposure.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub dev: bool,
-}
-
-/// A user's approval of an external plugin's requested capabilities, pinned to
-/// the exact manifest it was approved against. When the installed manifest hash
-/// later differs (an update that changed the capability set), the grant no
-/// longer applies and the plugin's runtime contributions stay inactive until
-/// re-approved.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapabilityGrant {
-    /// `sha256:<hex>` of the manifest bytes this grant was approved against.
-    pub manifest_hash: String,
-    /// The capabilities the user approved.
-    #[serde(default)]
-    pub capabilities: Vec<String>,
-    /// When the user approved the grant.
-    pub granted_at: chrono::DateTime<chrono::Utc>,
 }
 
 fn default_enabled() -> bool {
     true
 }
 
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
 impl Default for PluginConfig {
     fn default() -> Self {
         Self {
             enabled: default_enabled(),
-            source: None,
-            settings: toml::Table::new(),
-            grant: None,
-            dev: false,
         }
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Configuration for a user-defined tool session (lazygit, yazi, tig, etc.)
@@ -1554,11 +1506,9 @@ pub struct AcpAgentDefaults {
     /// Make `model` a pin instead of a default. Off, `model` fills in only
     /// when a request names none. On, every structured-view spawn of this
     /// agent runs on `model`: [`resolve_spawn_model_effort`] replaces any
-    /// other value at creation and respawn, plugin `sessions.create` refuses
-    /// one (`model_pinned`), and the plugin settings model picker offers only
-    /// the pin. A running session's live model switch is separate. Meaningless
-    /// without a non-empty `model`; global/profile only, like the rest of
-    /// `acp`.
+    /// other value at creation and respawn. A running session's live model
+    /// switch is separate. Meaningless without a non-empty `model`;
+    /// global/profile only, like the rest of `acp`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pin_model: bool,
 
@@ -1668,9 +1618,8 @@ impl AcpConfig {
 /// model so `effort_by_model` applies to a defaulted or pinned model too; the
 /// pin is on the model only, so an explicit effort is still honored.
 ///
-/// Single source for every spawn path (CLI create, respawn, web and plugin
-/// create), so a request carrying another model cannot launch off the pin;
-/// plugin `sessions.create` additionally refuses such a request up front.
+/// Single source for every spawn path (CLI create, respawn, web create), so a
+/// request carrying another model cannot launch off the pin.
 pub fn resolve_spawn_model_effort(
     defaults: Option<&AcpAgentDefaults>,
     req_model: Option<String>,
@@ -1859,7 +1808,7 @@ pub fn is_resolvable_agent_config_dir(dir: &str) -> bool {
 }
 
 impl SessionConfig {
-    /// Resolve the explicit command, custom command, or installed plugin agent command.
+    /// Resolve the explicit command or custom command.
     pub fn resolve_tool_command(&self, tool: &str) -> String {
         self.agent_command_override
             .get(tool)
@@ -1871,20 +1820,11 @@ impl SessionConfig {
                     .filter(|command| !command.trim().is_empty())
                     .cloned()
             })
-            .or_else(|| {
-                crate::plugin::agent_integration::agent_command(
-                    tool,
-                    self.custom_agents
-                        .iter()
-                        .filter(|(_, command)| !command.trim().is_empty())
-                        .map(|(name, _)| name.as_str()),
-                )
-            })
             .unwrap_or_default()
     }
 
     /// The launch command when no per-session override is set: explicit
-    /// override, custom command, active plugin agent command, then built-in binary.
+    /// override, custom command, then built-in binary.
     pub fn launch_command_for(&self, tool: &str) -> String {
         let resolved = self.resolve_tool_command(tool);
         if !resolved.is_empty() {

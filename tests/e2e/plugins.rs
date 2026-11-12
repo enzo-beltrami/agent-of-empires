@@ -1,8 +1,6 @@
-//! E2E coverage for the minimal plugin management core: `plugin list` shows the
-//! bundled plugins with version and state, enable/disable round-trips through
-//! config, `plugin info` prints the manifest details, `aoe serve` refuses to
-//! start while the `aoe.web` plugin is disabled, and the command palette opens
-//! the plugin manager listing the builtins.
+//! E2E coverage for the built-in plugin toggle: `plugin list` shows the
+//! built-in plugins with version and state, enable/disable round-trips through
+//! config, and `aoe serve` refuses to start while `aoe.web` is disabled.
 //!
 //! Compiled only under `web`: the sole bundled plugin is the `web`-gated
 //! `aoe.web`, so without that feature the builtin set is empty and there is
@@ -23,9 +21,8 @@ fn web_row(h: &TuiTestHarness) -> String {
         .to_string()
 }
 
-/// `plugin list` shows the builtin `aoe.web` with version and state,
-/// `plugin info` prints its manifest details, and disable/enable flip the
-/// listed state. Unknown ids error and name the fix.
+/// `plugin list` shows the builtin `aoe.web` with version and state, and
+/// disable/enable flip the listed state. Unknown ids error and name the fix.
 #[test]
 #[parallel]
 fn test_plugin_cli_lists_describes_and_toggles_builtins() {
@@ -38,18 +35,6 @@ fn test_plugin_cli_lists_describes_and_toggles_builtins() {
     );
     let row = web_row(&h);
     assert!(row.contains("1.0.0") && row.contains("enabled"), "{row}");
-
-    let info = h.run_cli_ok(&["plugin", "info", "aoe.web"]);
-    for needle in [
-        "Web Dashboard (aoe.web)",
-        "version:",
-        "1.0.0",
-        "state:",
-        "enabled",
-        "about:",
-    ] {
-        assert!(info.contains(needle), "{needle} missing:\n{info}");
-    }
 
     h.run_cli_ok(&["plugin", "disable", "aoe.web"]);
     assert!(web_row(&h).contains("disabled"));

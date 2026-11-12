@@ -1,9 +1,9 @@
 //! Protocol-agnostic plumbing for supervised worker subprocesses.
 //!
-//! This is the neutral substrate that both `src/acp/` and the future
-//! plugin host build on: process-group signalling and liveness probes,
-//! the on-disk layout helpers for a `<dir>/<id>.{json,sock,log,restart}`
-//! worker directory, and the runner self-inspection state machine. None
+//! This is the neutral substrate `src/acp/` builds on: process-group
+//! signalling and liveness probes, the on-disk layout helpers for a
+//! `<dir>/<id>.{json,sock,log,restart}` worker directory, and the runner
+//! self-inspection state machine. None
 //! of it knows about ACP, agents, or any specific worker payload; the
 //! consumer supplies the base directory and (for record inspection) how
 //! to pull a pid out of its own record format. The dependency arrow runs
@@ -418,9 +418,8 @@ mod tests {
     }
 
     /// The path builders are parameterized by an arbitrary base dir, not a
-    /// hardcoded ACP one: this is what makes them reusable by the plugin
-    /// host. Prove they compose against a non-ACP directory and reject bad
-    /// ids regardless of dir.
+    /// hardcoded ACP one. Prove they compose against a non-ACP directory and
+    /// reject bad ids regardless of dir.
     #[test]
     fn path_builders_use_arbitrary_dir_and_validate() {
         let dir = Path::new("/var/lib/example-workers");

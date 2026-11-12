@@ -66,7 +66,6 @@ function toastErrors(): string[] {
       errors.push(msg);
     },
     info: () => {},
-    openLink: () => {},
   };
   return errors;
 }

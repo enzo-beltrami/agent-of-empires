@@ -140,13 +140,3 @@ export function shouldApplyPlacement(
   const from = grp ? grp.tabs.indexOf(tabId) : -1;
   return from >= 0 && from !== target.index;
 }
-
-/** Translate an insertion index in a group's *visible* tab list to the index in its *full* persisted list. */
-export function visibleToFullIndex(
-  fullBase: string[],
-  visibleIndex: number,
-  isVisible: (id: string) => boolean,
-): number {
-  const visibleSlots = fullBase.map((id, index) => ({ id, index })).filter(({ id }) => isVisible(id));
-  return visibleIndex >= visibleSlots.length ? fullBase.length : visibleSlots[visibleIndex]!.index;
-}

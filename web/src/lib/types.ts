@@ -297,7 +297,7 @@ export interface AgentInfo {
   name: string;
   /** How copy names the agent; the registry id for custom agents. */
   display_name: string;
-  kind: "builtin" | "custom" | "plugin";
+  kind: "builtin" | "custom";
   binary: string;
   host_only: boolean;
   /** Always runs in Yolo mode in a terminal session, so the wizard locks the switch on. */
@@ -365,8 +365,6 @@ export interface ProjectOverrides {
   worktree_enabled?: boolean;
   smart_rename?: boolean;
   sandbox_enabled?: boolean;
-  /** Values of plugin settings declared `per_project`, by plugin id then setting key. */
-  plugin_settings?: Record<string, Record<string, unknown>>;
 }
 
 export interface ProjectInfo {
@@ -484,39 +482,8 @@ export type SettingsWidget =
   | { kind: "slider"; min: number; max: number; step: number }
   | { kind: "select"; options: SettingsSelectOption[] }
   | { kind: "list" }
-  | { kind: "dynamic_select"; source: SettingsOptionSource; depends_on?: string[] }
-  | {
-      kind: "object_list";
-      id_field: string;
-      fields: SettingsObjectField[];
-      min_items?: number;
-      max_items?: number;
-    }
-  | { kind: "cron" }
   /** Bespoke widget keyed by `id`. */
   | { kind: "custom"; id: string };
-
-export type SettingsOptionSource = "acp_agents" | "acp_models" | "acp_modes" | "projects" | "groups";
-
-export type SettingsObjectFieldWidget =
-  | { kind: "toggle" }
-  | { kind: "text"; multiline?: boolean; mono?: boolean }
-  | { kind: "number"; min?: number; max?: number }
-  | { kind: "select"; options: SettingsSelectOption[] }
-  | { kind: "dynamic_select"; source: SettingsOptionSource; depends_on?: string[] }
-  | { kind: "dynamic_multi_select"; source: SettingsOptionSource; depends_on?: string[] }
-  | { kind: "cron" }
-  | { kind: "list" };
-
-export interface SettingsObjectField {
-  field: string;
-  label: string;
-  description?: string;
-  required?: boolean;
-  widget: SettingsObjectFieldWidget;
-  validation: SettingsValidation;
-  default?: unknown;
-}
 
 /** `local_only` fields are rejected by the server PATCH. */
 export type SettingsWebWritePolicy =
@@ -527,12 +494,7 @@ export type SettingsWebWritePolicy =
 /** Server-enforced; widget min/max is advisory. */
 export type SettingsValidation =
   | { rule: "none" }
-  | { rule: "bool" }
-  | { rule: "str" }
-  | { rule: "str_list" }
   | { rule: "range_u64"; min: number; max?: number }
-  | { rule: "range_i64"; min?: number; max?: number }
-  | { rule: "one_of"; options: string[] }
   | { rule: "non_empty_string" }
   | { rule: "memory_limit" }
   | { rule: "volume_list" }
@@ -541,15 +503,7 @@ export type SettingsValidation =
   | { rule: "capability_list" }
   | { rule: "security_opt_list" }
   | { rule: "network" }
-  | { rule: "systemd_slice" }
-  | { rule: "cron" }
-  | {
-      rule: "object_list";
-      id_field: string;
-      fields: SettingsObjectField[];
-      min_items?: number;
-      max_items?: number;
-    };
+  | { rule: "systemd_slice" };
 
 /** The dotted `${section}.${field}` is its stable id. */
 export interface SettingsFieldDescriptor {
@@ -564,8 +518,4 @@ export interface SettingsFieldDescriptor {
   profile_overridable: boolean;
   validation: SettingsValidation;
   advanced: boolean;
-  /** Present only on plugin fields, which have no stored value until saved. */
-  default?: unknown;
-  /** Plugin field that can also be set per registered project. */
-  per_project?: boolean;
 }

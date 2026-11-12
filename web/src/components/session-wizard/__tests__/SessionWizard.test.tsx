@@ -641,7 +641,7 @@ describe("SessionWizard unknown create outcome", () => {
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    toastBus.handler = { push: vi.fn(), error: toastError, info: vi.fn(), openLink: vi.fn() };
+    toastBus.handler = { push: vi.fn(), error: toastError, info: vi.fn() };
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -1551,7 +1551,7 @@ describe("SessionWizard create failures", () => {
    *  `whileSending` runs after Launch, before the progress view replaces the form. */
   const backgroundFailure = async (sent: ReturnType<typeof failure>, tool = "claude", whileSending?: () => void) => {
     const toastAction = vi.fn();
-    toastBus.handler = { push: vi.fn(), error: vi.fn(), info: vi.fn(), openLink: vi.fn(), action: toastAction };
+    toastBus.handler = { push: vi.fn(), error: vi.fn(), info: vi.fn(), action: toastAction };
     let finish!: (r: unknown) => void;
     createSession.mockReturnValueOnce(new Promise((r) => (finish = r)));
     const onReopenFailure = vi.fn();

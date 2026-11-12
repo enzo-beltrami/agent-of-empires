@@ -149,7 +149,7 @@ pub enum Commands {
         command: GroupCommands,
     },
 
-    /// Manage plugins (list, info, enable, disable, install, update, uninstall)
+    /// List, enable and disable the built-in plugins
     Plugin {
         #[command(subcommand)]
         command: PluginCommands,

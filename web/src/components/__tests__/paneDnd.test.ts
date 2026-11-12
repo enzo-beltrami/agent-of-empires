@@ -5,14 +5,13 @@ import {
   pointerInsertsAfter,
   resolvePlacement,
   shouldApplyPlacement,
-  visibleToFullIndex,
   type PlacementOver,
   type RenderGroup,
 } from "../paneDnd";
 
 const groupsByDock: Record<"right" | "bottom", RenderGroup[]> = {
   right: [{ group: 0, tabs: ["diff", "terminal:0", "terminal:1"] }],
-  bottom: [{ group: 0, tabs: ["plugin:p:a"] }],
+  bottom: [{ group: 0, tabs: ["files"] }],
 };
 
 function over(partial: Partial<PlacementOver>): PlacementOver {
@@ -101,15 +100,5 @@ describe("shouldApplyPlacement", () => {
     for (const [name, tab, target, want] of cases) {
       expect(shouldApplyPlacement(groupsByDock, tab, target, src), name).toBe(want);
     }
-  });
-});
-
-describe("visibleToFullIndex", () => {
-  it("maps visible slots past hidden persisted tabs", () => {
-    const visible = (id: string) => !id.startsWith("plugin:");
-    expect(visibleToFullIndex(["diff", "terminal:0"], 1, visible)).toBe(1);
-    // Visible slot 1 is terminal:0 at full index 2, past the hidden plugin tab.
-    expect(visibleToFullIndex(["diff", "plugin:p:x", "terminal:0"], 1, visible)).toBe(2);
-    expect(visibleToFullIndex(["diff", "plugin:p:x"], 1, visible)).toBe(2);
   });
 });

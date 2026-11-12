@@ -1,25 +1,17 @@
 //! Settings resolution with provenance, for `aoe settings explain` and `GET /api/settings/resolved`.
 //!
-//! Core keys: the user value, else the schema default (plugin `setting_defaults`
-//! are reported but never applied). Plugin keys: the stored value, else the manifest default.
+//! A key resolves to the user value, else the schema default.
 
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{runtime_schema, section_plugin_id, FieldDescriptor};
+use super::{schema_ref, FieldDescriptor};
 
 /// Where a resolved value came from.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SettingSource {
     User,
-    /// Reported only; never applied to runtime config.
-    PluginDefault {
-        plugin: String,
-    },
-    ManifestDefault {
-        plugin: String,
-    },
     SchemaDefault,
 }
 
@@ -31,7 +23,7 @@ pub struct Candidate {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ResolvedSetting {
-    /// `section.field` or `plugin:<id>.<key>`.
+    /// `section.field`.
     pub key: String,
     pub value: Value,
     pub source: SettingSource,
@@ -39,7 +31,6 @@ pub struct ResolvedSetting {
     pub candidates: Vec<Candidate>,
 }
 
-/// The field is the last segment, since plugin sections may contain dots.
 fn split_key(key: &str) -> Option<(&str, &str)> {
     key.rsplit_once('.')
 }
@@ -48,14 +39,14 @@ fn split_key(key: &str) -> Option<(&str, &str)> {
 pub fn resolve(key: &str) -> Option<ResolvedSetting> {
     let cfg = serde_json::to_value(crate::session::Config::load_or_warn()).ok()?;
     let default_cfg = serde_json::to_value(crate::session::Config::default()).ok()?;
-    resolve_with(key, &cfg, &default_cfg, &runtime_schema())
+    resolve_with(key, &cfg, &default_cfg, schema_ref())
 }
 
 pub fn resolve_all() -> Vec<ResolvedSetting> {
     let cfg = serde_json::to_value(crate::session::Config::load_or_warn()).unwrap_or(Value::Null);
     let default_cfg =
         serde_json::to_value(crate::session::Config::default()).unwrap_or(Value::Null);
-    let schema = runtime_schema();
+    let schema = schema_ref();
     schema
         .iter()
         .filter_map(|d| {
@@ -63,7 +54,7 @@ pub fn resolve_all() -> Vec<ResolvedSetting> {
                 &format!("{}.{}", d.section, d.field),
                 &cfg,
                 &default_cfg,
-                &schema,
+                schema,
             )
         })
         .collect()
@@ -82,11 +73,7 @@ fn resolve_with(
     {
         return None;
     }
-    if let Some(plugin_id) = section_plugin_id(section) {
-        Some(resolve_plugin_own(key, plugin_id, field, cfg))
-    } else {
-        Some(resolve_core(key, section, field, cfg, default_cfg))
-    }
+    Some(resolve_core(key, section, field, cfg, default_cfg))
 }
 
 fn resolve_core(
@@ -113,19 +100,6 @@ fn resolve_core(
         });
     }
 
-    for p in crate::plugin::registry().active() {
-        if let Some(tv) = p.manifest.setting_defaults.get(key) {
-            if let Ok(v) = serde_json::to_value(tv) {
-                candidates.push(Candidate {
-                    source: SettingSource::PluginDefault {
-                        plugin: p.id().to_string(),
-                    },
-                    value: v,
-                });
-            }
-        }
-    }
-
     candidates.push(Candidate {
         source: SettingSource::SchemaDefault,
         value: schema_default.clone(),
@@ -143,56 +117,6 @@ fn resolve_core(
     }
 }
 
-fn resolve_plugin_own(key: &str, plugin_id: &str, field: &str, cfg: &Value) -> ResolvedSetting {
-    let mut candidates = Vec::new();
-
-    if let Some(v) = super::plugin_storage_value(cfg, plugin_id, field) {
-        candidates.push(Candidate {
-            source: SettingSource::User,
-            value: v.clone(),
-        });
-    }
-
-    if let Some(p) = crate::plugin::registry().get(plugin_id) {
-        if let Some(s) = p.manifest.settings.iter().find(|s| s.key == field) {
-            if let Some(tv) = &s.default {
-                if let Ok(v) = serde_json::to_value(tv) {
-                    candidates.push(Candidate {
-                        source: SettingSource::ManifestDefault {
-                            plugin: plugin_id.to_string(),
-                        },
-                        value: v,
-                    });
-                }
-            }
-        }
-    }
-
-    if candidates.is_empty() {
-        candidates.push(Candidate {
-            source: SettingSource::ManifestDefault {
-                plugin: plugin_id.to_string(),
-            },
-            value: Value::Null,
-        });
-    }
-
-    finish(key, candidates)
-}
-
-fn finish(key: &str, candidates: Vec<Candidate>) -> ResolvedSetting {
-    let winner = candidates.first().cloned().unwrap_or(Candidate {
-        source: SettingSource::SchemaDefault,
-        value: Value::Null,
-    });
-    ResolvedSetting {
-        key: key.to_string(),
-        value: winner.value,
-        source: winner.source,
-        candidates,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,10 +126,6 @@ mod tests {
         assert_eq!(
             split_key("acp.default_agent"),
             Some(("acp", "default_agent"))
-        );
-        assert_eq!(
-            split_key("plugin:acme.kit.retries"),
-            Some(("plugin:acme.kit", "retries"))
         );
         assert_eq!(split_key("nodot"), None);
     }

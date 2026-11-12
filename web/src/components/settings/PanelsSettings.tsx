@@ -20,12 +20,6 @@ export function PanelsSettings() {
           checked={settings.autoOpenTerminalPane}
           onChange={(v) => update({ autoOpenTerminalPane: v })}
         />
-        <CheckboxRow
-          title="Open plugin panels automatically"
-          description="Auto-open panes contributed by installed plugins, such as the GitHub pull-request pane. Turn off to keep them closed until you open one from the activity bar."
-          checked={settings.autoOpenPluginPanes}
-          onChange={(v) => update({ autoOpenPluginPanes: v })}
-        />
       </div>
     </div>
   );

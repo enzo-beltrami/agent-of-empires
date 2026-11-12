@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 import type { RepoGroup } from "../lib/types";
 import { buildNestedSidebarGroups, type NestedSidebarGroup } from "../lib/sidebarGroups";
-import type { PluginSortContext, SidebarSortMode } from "../lib/sidebarSort";
+import type { SidebarSortMode } from "../lib/sidebarSort";
 import { useIdleDecayWindowMs } from "../lib/idleDecay";
 import { useCollapsedKeys } from "./useCollapsedKeys";
 
@@ -12,8 +12,6 @@ const subgroupKey = (repoId: string, groupPath: string) =>
 export function useNestedSidebarGroups(
   repoGroups: RepoGroup[],
   sortMode: SidebarSortMode,
-  pluginSort?: PluginSortContext,
-  pluginAttention?: ReadonlySet<string>,
 ): {
   groups: NestedSidebarGroup[];
   toggleSubgroupCollapsed: (repoId: string, groupPath: string) => void;
@@ -26,11 +24,9 @@ export function useNestedSidebarGroups(
       buildNestedSidebarGroups(repoGroups, {
         idleDecayWindowMs,
         sortMode,
-        pluginSort,
-        pluginAttention,
         isSubgroupCollapsed: (repoId, groupPath) => isCollapsed(subgroupKey(repoId, groupPath)),
       }),
-    [repoGroups, idleDecayWindowMs, sortMode, pluginSort, pluginAttention, isCollapsed],
+    [repoGroups, idleDecayWindowMs, sortMode, isCollapsed],
   );
 
   const toggleSubgroupCollapsed = useCallback(

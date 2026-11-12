@@ -2,34 +2,6 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Whether `url` is a plain web URL, the only kind aoe hands to a browser.
-///
-/// Deliberately narrow: agent output, plugin UI state and pane text are all
-/// untrusted, and `javascript:`, `file:` and `data:` must never reach an
-/// opener. Scheme comparison is case-insensitive because a URL's scheme is.
-/// Mirrors the web `isExternalHttpUrl`.
-pub(crate) fn is_http_url(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://")
-}
-
-/// Whether `url` is safe for a plugin-supplied UI link: an [`is_http_url`]
-/// address, or a same-origin relative path.
-///
-/// A plugin cannot know aoe's own host, so a link back into aoe (e.g. a
-/// session) must be relative. A leading `//` is rejected because browsers
-/// resolve it as a scheme-relative URL to a different host, not a path. A
-/// backslash or embedded tab/CR/LF is also rejected: browsers normalize `\`
-/// to `/` for special schemes and strip tab/CR/LF anywhere in the string, so
-/// e.g. `/\evil.com` or `/\n/evil.com` would otherwise pass this check but
-/// resolve to a different origin. Mirrors the web `isAllowedHref`.
-pub(crate) fn is_allowed_href(url: &str) -> bool {
-    is_http_url(url)
-        || (url.starts_with('/')
-            && !url.starts_with("//")
-            && !url.contains(['\\', '\t', '\r', '\n']))
-}
-
 /// `path` with a leading `home` replaced by `~`, only when `path` is `home` or
 /// lies under it; a sibling that merely shares a string prefix is unchanged.
 pub(crate) fn collapse_home(path: &str, home: &str) -> String {
@@ -111,25 +83,5 @@ mod tests {
         let t = SystemTime::now();
         let secs = t.duration_since(UNIX_EPOCH).unwrap().as_secs();
         assert_eq!(system_time_to_ms(t) / 1_000, secs);
-    }
-
-    #[test]
-    fn is_allowed_href_accepts_only_http_and_same_origin_paths() {
-        for url in ["https://example.com", "http://example.com", "/session/xyz"] {
-            assert!(is_allowed_href(url), "{url}");
-        }
-        for url in [
-            "javascript:alert(1)",
-            "file:///etc/passwd",
-            "data:text/html,evil",
-            "//evil.com",
-            "//evil.com/path",
-            "/\\evil.com",
-            "/\t/evil.com",
-            "/\r/evil.com",
-            "/\n/evil.com",
-        ] {
-            assert!(!is_allowed_href(url), "{url:?}");
-        }
     }
 }

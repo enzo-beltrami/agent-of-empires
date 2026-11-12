@@ -1,4 +1,4 @@
-//! Handshake-only ACP catalog probe (plugin-picker model-discovery fix).
+//! Handshake-only ACP catalog probe.
 
 use std::time::Duration;
 

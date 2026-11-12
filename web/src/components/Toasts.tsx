@@ -11,15 +11,12 @@ import {
 } from "react";
 import { toastBus, type ToastApi, type ToastKind } from "../lib/toastBus";
 import { requestOpenSession } from "../lib/sessionRoute";
-import { openPluginLink } from "../lib/pluginCommands";
-import { isAllowedHref } from "../lib/pluginHref";
 
 interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
   sessionId?: string;
-  href?: string;
   action?: { label: string; run: () => void };
 }
 
@@ -125,17 +122,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [scheduleDismiss],
   );
 
-  // A click-to-open toast (worker `ui.open_url`): a browser blocks `window.open`
-  // from an async push, so opening waits for the tap.
-  const pushWithHref = useCallback(
-    (message: string, href: string, kind: ToastKind = "info") => {
-      const id = nextId.current++;
-      setToasts((t) => [...t, { id, kind, message, href }]);
-      scheduleDismiss(id);
-    },
-    [scheduleDismiss],
-  );
-
   const pushWithAction = useCallback((message: string, label: string, run: () => void) => {
     const id = nextId.current++;
     // Stays until used or dismissed: its action can be the only way back to what failed.
@@ -147,10 +133,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       push,
       error: (m: string) => push(m, "error"),
       info: (m: string) => push(m, "info"),
-      openLink: pushWithHref,
       action: pushWithAction,
     }),
-    [push, pushWithHref, pushWithAction],
+    [push, pushWithAction],
   );
 
   // Service worker forwards incoming push payloads here when the PWA is already visible and focused, so we show
@@ -204,17 +189,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         className="fixed bottom-4 right-4 z-[80] flex flex-col gap-2 max-w-[92vw] sm:max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto"
       >
         {toasts.map((t) => {
-          const clickable = !!t.sessionId || !!t.href;
+          const clickable = !!t.sessionId;
           const onToastClick = () => {
-            if (t.href) {
-              // Defensive re-check: the server already rejects disallowed notification hrefs, but never hand an
-              // unvalidated scheme to window.open in case a future push path skips that gate.
-              if (isAllowedHref(t.href)) openPluginLink(t.href);
-            } else if (t.sessionId) {
-              requestOpenSession(t.sessionId);
-            } else {
-              return;
-            }
+            if (!t.sessionId) return;
+            requestOpenSession(t.sessionId);
             dismiss(t.id);
           };
           return (

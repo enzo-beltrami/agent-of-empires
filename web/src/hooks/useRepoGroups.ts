@@ -9,17 +9,13 @@ import {
 } from "../lib/repoAppearance";
 import { loadRepoGroupOrder, persistRepoGroupOrder } from "../lib/repoGroupOrder";
 import { useCollapsedKeys } from "./useCollapsedKeys";
-import { compareSortValues } from "../lib/pluginUi";
 import {
   compareWorkspacesByAttention,
   compareWorkspacesByLastActivityDesc,
-  compareWorkspacesByPluginSort,
-  type PluginSortContext,
   repoGroupAttentionRank,
   repoGroupIsFavorited,
   repoGroupIsUrgent,
   repoGroupLastActivityMs,
-  repoGroupPluginSortValue,
   workspaceTriageTier,
   type SidebarSortMode,
 } from "../lib/sidebarSort";
@@ -40,8 +36,6 @@ export function useRepoGroups(
   workspaceOrdering: readonly string[] = [],
   sortMode: SidebarSortMode = "manual",
   projects: readonly ProjectInfo[] = [],
-  pluginSort?: PluginSortContext,
-  pluginAttention?: ReadonlySet<string>,
   // From `axisDrawsRepoHeaders`: false lists every registered Project in `savedProjects` (#5065).
   drawsRepoHeaders = true,
 ): {
@@ -71,13 +65,9 @@ export function useRepoGroups(
         if (ar > br) return 1;
         return a.id.localeCompare(b.id);
       });
-    const pluginCompare = pluginSort ? compareWorkspacesByPluginSort(pluginSort) : null;
     const sortWorkspaces = (list: Workspace[]) => {
-      if (pluginCompare) {
-        return [...list].sort(pluginCompare);
-      }
       if (sortMode === "attention") {
-        return [...list].sort((a, b) => compareWorkspacesByAttention(a, b, pluginAttention));
+        return [...list].sort(compareWorkspacesByAttention);
       }
       if (sortMode === "lastActivity") {
         return [...list].sort(compareWorkspacesByLastActivityDesc);
@@ -139,20 +129,14 @@ export function useRepoGroups(
 
     const isRegisteredEmpty = (g: RepoGroup) => g.workspaces.length === 0 && g.registeredProjects.length > 0;
 
-    const autoCompare = pluginSort
-      ? (a: RepoGroup, b: RepoGroup) =>
-          compareSortValues(
-            repoGroupPluginSortValue(a.workspaces, pluginSort),
-            repoGroupPluginSortValue(b.workspaces, pluginSort),
-            pluginSort.direction,
-          )
-      : sortMode === "attention"
+    const autoCompare =
+      sortMode === "attention"
         ? (a: RepoGroup, b: RepoGroup) => {
             const au = repoGroupIsUrgent(a.workspaces);
             const bu = repoGroupIsUrgent(b.workspaces);
             if (au !== bu) return au ? -1 : 1;
-            const ar = repoGroupAttentionRank(a.workspaces, pluginAttention);
-            const br = repoGroupAttentionRank(b.workspaces, pluginAttention);
+            const ar = repoGroupAttentionRank(a.workspaces);
+            const br = repoGroupAttentionRank(b.workspaces);
             if (ar !== br) return ar - br;
             const af = repoGroupIsFavorited(a.workspaces);
             const bf = repoGroupIsFavorited(b.workspaces);
@@ -208,18 +192,7 @@ export function useRepoGroups(
     );
 
     return { groups: merged, savedProjects };
-  }, [
-    workspaces,
-    workspaceOrdering,
-    sortMode,
-    pluginSort,
-    pluginAttention,
-    projects,
-    isCollapsed,
-    appearanceMap,
-    groupOrder,
-    drawsRepoHeaders,
-  ]);
+  }, [workspaces, workspaceOrdering, sortMode, projects, isCollapsed, appearanceMap, groupOrder, drawsRepoHeaders]);
 
   const updateRepoAppearance = useCallback((repoId: string, update: RepoAppearanceUpdate) => {
     setAppearanceMap((prev) => {

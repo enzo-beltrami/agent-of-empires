@@ -33,7 +33,7 @@ export const HOST_STATE_VARS = new Set([
   // Discovery must not prefer a host endpoint over the private daemon.
   "AOE_DAEMON_TOKEN",
   "AOE_DAEMON_URL",
-  // Browser origin used to resolve plugin-relative links. A host value would
+  // Dashboard origin attached to a discovered endpoint. A host value would
   // point the private daemon's own navigation at a host dashboard.
   "AOE_DASHBOARD_URL",
   // A host passphrase would let discovery log in against a host daemon's
@@ -54,7 +54,6 @@ export const HOST_STATE_VARS = new Set([
   "AOE_THEME_TEST_CHILD",
   "AOE_UDS_UMASK_TEST_CHILD",
   "AOE_UDS_UMASK_TEST_ENTERED",
-  "AOE_GITHUB_CLONE_BASE", // redirects plugin clones at a host path or tree
   "AOE_OPEN_URL_TO", // appends every URL `aoe serve --open` opens to a host file
   "AOE_SERVE_INSTANCE_ID", // identifies a host daemon process as this one
   "AOE_SERVE_PASSPHRASE", // host credential for the daemon's own auth
@@ -62,8 +61,6 @@ export const HOST_STATE_VARS = new Set([
   // pane, so a host shell exporting it would only make a hook or an
   // `extract-session-id` call read a launch that is not this run's.
   "AOE_SESSION_SOURCE",
-  // Host endpoints for the daemon's outbound calls.
-  "AOE_UPDATE_API_BASE",
   // The session the runner was launched from, and its agent process and capture markers.
   "AOE_AGENT_BIN",
   "AOE_AGENT_PID",

@@ -389,8 +389,6 @@ The response carries a strong `ETag` built from the runtime epoch, revision and
 `If-None-Match` names it (weak comparison, `*` included) gets `304 Not Modified`
 with no body and the same `aoe-runtime-*` headers. A snapshot's revision changes
 exactly when its contents do, so polling an unchanged list costs headers only.
-`GET /api/plugins/ui-state` follows the same scheme, with an `ETag` derived from
-the response body.
 
 Each session row includes `context_resume`, the request-invariant availability
 of preserving that agent's context across a later lifecycle transition. It is
@@ -470,7 +468,7 @@ provisioning or hooks roll back only the matching creation generation, using
 shared-resource guards and the recorded ownership of checkouts and branches.
 Cleanup failures retain resources.
 Structured rows cannot resume, receive prompts, or replay an unfinished creation
-while these hooks are pending. Matching plugin retries wait for finalization.
+while these hooks are pending.
 An orphaned HTTP retry receives `409 create_outcome_unknown`; concurrent keyed
 HTTP requests wait for the admitted creation to finish.
 Repository hook and MCP approvals are persisted against the source repository
@@ -482,10 +480,8 @@ Selectors, project registries, configuration and paths are resolved on the Daemo
 A `cli.parent` follows `parent_session_id`'s rules and codes: a missing or trashed parent is
 `400 parent_not_found` and a sub-session is `400 parent_is_sub_session`. The parent is checked
 before anything is provisioned, so a refusal leaves no worktree, branch or workspace behind.
-CLI agent selection also resolves approved plugin agents on the Daemon host.
-Nonblank configured custom commands take precedence over plugin commands; blank
-custom commands allow built-in or plugin fallback. Plugin `--tool` selections
-reject command overrides, matching configured custom-agent selections.
+Nonblank configured custom commands take precedence; blank custom commands
+fall back to the built-in agent.
 A terminal creation with `cli` runs creation hooks and finishes **Stopped**, without
 launching the agent. Launch is a separate epoch-checked request. The CLI client
 allows up to 30 minutes for creation and launch, including host hooks. Requests without
@@ -534,7 +530,6 @@ For `trust_hooks`, omission refuses unapproved repository hooks with
 `hooks_need_trust`; `true` approves hooks and project MCP; `false` explicitly
 skips untrusted hooks and MCP. Skipping retains global/profile hooks and any
 already-trusted repository surfaces without granting or revoking approval.
-Plugin creation always refuses unapproved repository hooks.
 
 `POST /api/sessions/creation-trust` reviews `{path, profile?, scratch?}` without
 granting trust or provisioning a session. It returns merged and repository-only

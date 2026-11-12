@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
-import { Check, Clock, ListOrdered, SlidersHorizontal, Siren } from "lucide-react";
+import { Check, Clock, ListOrdered, Siren } from "lucide-react";
 import type { SidebarSortMode } from "../lib/sidebarSort";
-import type { PluginSortSpec } from "../lib/pluginUi";
 import { Tooltip } from "./Tooltip";
 import { useOutsideDismiss } from "./useOutsideDismiss";
 
@@ -23,53 +22,32 @@ const BUILTIN_TOOLTIP: Record<SidebarSortMode, string> = {
   attention: "Sort: attention, drag disabled",
 };
 
-interface PluginSortRef {
-  pluginId: string;
-  entryId: string;
-}
-
 interface Props {
   sortMode: SidebarSortMode;
   onSortModeChange: (mode: SidebarSortMode) => void;
-  pluginSorts?: PluginSortSpec[];
-  pluginSortRef?: PluginSortRef | null;
-  onPluginSortChange?: (ref: PluginSortRef) => void;
 }
 
-/** Sort mode dropdown; plugin `sort-key` entries follow the built-ins as computed modes. */
-export function SidebarSortPicker({
-  sortMode,
-  onSortModeChange,
-  pluginSorts = [],
-  pluginSortRef = null,
-  onPluginSortChange,
-}: Props) {
+/** Sort mode dropdown. */
+export function SidebarSortPicker({ sortMode, onSortModeChange }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useOutsideDismiss(open, [ref], () => setOpen(false));
 
-  // A stale ref (for example after a daemon restart) falls back to the built-in trigger.
-  const activePlugin = pluginSortRef
-    ? pluginSorts.find((s) => s.pluginId === pluginSortRef.pluginId && s.entryId === pluginSortRef.entryId)
-    : undefined;
-
-  const activeBuiltin = MODES.find((m) => m.mode === sortMode) ?? MODES[0]!;
-  const ActiveIcon = activePlugin ? SlidersHorizontal : activeBuiltin.Icon;
-  const activeLabel = activePlugin ? activePlugin.label : activeBuiltin.label;
-  const computed = activePlugin != null || sortMode !== "manual";
-  const triggerTooltip = activePlugin ? `Sort: ${activePlugin.label}, drag disabled` : BUILTIN_TOOLTIP[sortMode];
+  const active = MODES.find((m) => m.mode === sortMode) ?? MODES[0]!;
+  const ActiveIcon = active.Icon;
+  const computed = sortMode !== "manual";
 
   return (
     <div ref={ref} className="relative">
-      <Tooltip text={triggerTooltip}>
+      <Tooltip text={BUILTIN_TOOLTIP[sortMode]}>
         <button
           onClick={() => setOpen((o) => !o)}
           aria-haspopup="menu"
           aria-expanded={open}
-          aria-label={`Sort sessions, current: ${activeLabel}`}
+          aria-label={`Sort sessions, current: ${active.label}`}
           data-testid="sidebar-sort-toggle"
-          data-sort-mode={activePlugin ? "plugin" : sortMode}
+          data-sort-mode={sortMode}
           className={`w-8 h-8 flex items-center justify-center cursor-pointer rounded-md transition-colors ${
             computed ? "text-brand-500" : "text-text-dim hover:text-text-secondary"
           }`}
@@ -90,25 +68,10 @@ export function SidebarSortPicker({
               testId={`sidebar-sort-option-${mode}`}
               Icon={Icon}
               label={label}
-              selected={!activePlugin && mode === sortMode}
+              selected={mode === sortMode}
               onSelect={(selected) => {
                 setOpen(false);
                 if (!selected) onSortModeChange(mode);
-              }}
-            />
-          ))}
-          {pluginSorts.length > 0 && <div className="my-1 border-t border-surface-700/50" role="separator" />}
-          {pluginSorts.map((spec) => (
-            <SortOption
-              key={`${spec.pluginId}:${spec.entryId}`}
-              testId={`sidebar-sort-option-plugin-${spec.entryId}`}
-              Icon={SlidersHorizontal}
-              label={spec.label}
-              truncate
-              selected={activePlugin?.pluginId === spec.pluginId && activePlugin.entryId === spec.entryId}
-              onSelect={(selected) => {
-                setOpen(false);
-                if (!selected) onPluginSortChange?.({ pluginId: spec.pluginId, entryId: spec.entryId });
               }}
             />
           ))}
@@ -122,14 +85,12 @@ function SortOption({
   testId,
   Icon,
   label,
-  truncate = false,
   selected,
   onSelect,
 }: {
   testId: string;
   Icon: typeof Clock;
   label: string;
-  truncate?: boolean;
   selected: boolean;
   onSelect: (selected: boolean) => void;
 }) {
@@ -144,7 +105,7 @@ function SortOption({
       }`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span className={`flex-1 text-left${truncate ? " truncate" : ""}`}>{label}</span>
+      <span className="flex-1 text-left">{label}</span>
       {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
     </button>
   );

@@ -18,7 +18,6 @@ use super::access::{host_from_url, resolve_access_policy};
 use super::acp_events::{acp_event_listener, seed_acp_statuses};
 use super::disk_watch::{disk_watcher_consumer, init_disk_watch_subscriptions};
 use super::ip_discovery::{local_published_hosts, IpKind};
-use super::reload::load_all_instances;
 use super::router::build_router;
 use super::startup_recovery::{daemon_startup_recovery_cascade, daemon_startup_recovery_mark};
 use super::state::{
@@ -30,7 +29,7 @@ use super::token::{
     load_or_generate_token, test_token_grace_override, test_token_lifetime_override,
     write_secret_file, TokenManager, DEFAULT_TOKEN_GRACE,
 };
-use crate::server::{api, callback, login, plugin_status, push, session_service, tunnel};
+use crate::server::{callback, login, push, session_service, tunnel};
 
 /// Build the owner-only `serve.url` contents for a remotely exposed daemon.
 /// The public tunnel stays first for backwards-compatible display/QR consumers,
@@ -84,23 +83,12 @@ where
 
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
-/// Post-signal shutdown: cancel the shared token, arm the force-exit
-/// deadline, then reap plugin workers within four fifths of the window,
-/// leaving the rest for the caller's own cleanup.
-///
-/// A worker that never terminates therefore cannot keep the daemon alive.
-/// It is not free: a reap cut short can leave a worker group SIGTERMed
-/// without the SIGKILL escalation, and a forced exit skips the
-/// post-`axum::serve` cleanup entirely (acp detach, tunnel SIGTERM of
-/// cloudflared, removal of serve.passphrase). The PID file is swept by
-/// `daemon_pid`'s stale-PID check on the next start.
-async fn run_shutdown_sequence<R, F>(
-    shutdown: &CancellationToken,
-    grace: Duration,
-    reap: R,
-    force_exit: F,
-) where
-    R: Future<Output = ()>,
+/// Post-signal shutdown: cancel the shared token and arm the force-exit
+/// deadline. A forced exit skips the post-`axum::serve` cleanup (acp detach,
+/// tunnel SIGTERM of cloudflared, removal of serve.passphrase); the PID file
+/// is swept by `daemon_pid`'s stale-PID check on the next start.
+fn arm_shutdown_deadline<F>(shutdown: &CancellationToken, grace: Duration, force_exit: F)
+where
     F: FnOnce() + Send + 'static,
 {
     shutdown.cancel();
@@ -115,12 +103,6 @@ async fn run_shutdown_sequence<R, F>(
         );
         force_exit();
     });
-    if tokio::time::timeout(grace * 4 / 5, reap).await.is_err() {
-        tracing::warn!(
-            target: "shutdown",
-            "plugin worker reap did not finish in time, continuing shutdown"
-        );
-    }
 }
 
 /// Raise the soft `RLIMIT_NOFILE` so the server can sustain many WS
@@ -575,7 +557,6 @@ pub(crate) async fn start_server(
     };
     let cityhall_mode = std::env::var_os("AOE_CITYHALL_MODE").is_some();
     let status_tx = broadcast::channel(STATUS_CHANNEL_CAPACITY).0;
-    // The Tier 1 plugin worker host.
     let instances = Arc::new(RwLock::new(loaded.instances));
     let instance_locks = Arc::new(RwLock::new(std::collections::HashMap::new()));
     let idempotency_locks = Arc::new(RwLock::new(std::collections::HashMap::new()));
@@ -591,55 +572,6 @@ pub(crate) async fn start_server(
             control_cache: acp_control_cache.clone(),
         },
     ));
-
-    // the daemon serves fine without plugin workers.
-    // The host API includes mutating session.meta.set/cas, so a read-only
-    // daemon must not run plugin workers at all: gate the host on !read_only.
-    let plugin_host = if read_only {
-        tracing::info!(target: "plugin.host", "plugin host disabled in read-only serve mode");
-        None
-    } else {
-        match crate::session::get_app_dir() {
-            Ok(app_dir) => {
-                // Session RPCs need the automation-policy ledger; if it cannot
-                // open, workers still run but session RPCs answer
-                // service_unavailable (fail closed on limits, not open).
-                let session_rpc = match crate::plugin::automation_policy::AutomationPolicy::open(
-                    &app_dir.join("plugin_events.db"),
-                ) {
-                    Ok(policy) => Some(Arc::new(crate::plugin::session_api::SessionRpcDeps {
-                        session_service: Arc::clone(&session_service),
-                        policy: Arc::new(policy),
-                        profile: profile.to_string(),
-                        cityhall_mode,
-                    })),
-                    Err(e) => {
-                        tracing::warn!(
-                            target: "plugin.host",
-                            "plugin session RPCs disabled: automation policy store failed: {e:#}"
-                        );
-                        None
-                    }
-                };
-                match crate::plugin::host::PluginHost::new(
-                    &app_dir,
-                    profile,
-                    session_rpc,
-                    session_service.work.clone(),
-                ) {
-                    Ok(host) => Some(host),
-                    Err(e) => {
-                        tracing::warn!(target: "plugin.host", "plugin host disabled: {e:#}");
-                        None
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!(target: "plugin.host", "plugin host disabled: {e:#}");
-                None
-            }
-        }
-    };
 
     // Resolve the coarse auth mode once at launch for `/api/about`.
     let auth_mode = resolve_auth_mode(&token_manager, &login_manager).await;
@@ -963,8 +895,6 @@ pub(crate) async fn start_server(
         acp_event_store: acp_event_store.clone(),
         acp_control_cache: acp_control_cache.clone(),
         acp_supervisor: acp_supervisor.clone(),
-        plugin_host: plugin_host.clone(),
-        plugin_jobs: Arc::new(api::plugins::PluginJobRegistry::new()),
         push: push_state,
         push_enabled,
         web_config: config.web.clone(),
@@ -1177,35 +1107,6 @@ pub(crate) async fn start_server(
     push::spawn_consumer(state.clone()).await;
     callback::spawn_consumer(state.clone()).await;
 
-    // Report this process's own session commits exactly; the disk consumer covers the rest.
-    // Held for the server's lifetime, and only worth running when a plugin host consumes it.
-    let _lifecycle_observer = state
-        .plugin_host
-        .as_ref()
-        .map(|_| state.lifecycle.install_commit_observer());
-
-    // Launch plugin workers for every active plugin that declares a runtime.
-    // Non-blocking: each worker runs in its own supervised task. A daemon with
-    // no community plugin workers (the common case) does nothing here.
-    if let Some(host) = state.plugin_host.clone() {
-        // Record the sessions on disk before a worker can list them, so a change made after
-        // its list is reported against that baseline instead of being absorbed into it.
-        let (feed, file_watch) = (state.lifecycle.clone(), state.file_watch.clone());
-        let baseline = feed
-            .establish_baseline(move || load_all_instances(&file_watch))
-            .await;
-        if !baseline {
-            tracing::warn!(
-                target: "server.lifecycle",
-                "no lifecycle baseline could be read; workers start anyway and session.lifecycle.changed may miss changes made before the next disk reload"
-            );
-        }
-        // Subscribe before any worker can register, or a transition published meanwhile has no
-        // forwarder to carry it.
-        plugin_status::spawn_forwarder(state.clone(), host.clone());
-        host.start(&crate::plugin::registry()).await;
-    }
-
     rate_limiter.spawn_cleanup_task(state.shutdown.clone());
     login_manager.spawn_cleanup_task(state.shutdown.clone());
 
@@ -1237,18 +1138,9 @@ pub(crate) async fn start_server(
             _ = terminated.cancelled() => {}
         }
         notify_stopping().await;
-        let plugin_host = shutdown_state.plugin_host.clone();
-        run_shutdown_sequence(
-            &shutdown_state.shutdown,
-            SHUTDOWN_GRACE,
-            async move {
-                if let Some(host) = plugin_host {
-                    host.shutdown().await;
-                }
-            },
-            || std::process::exit(0),
-        )
-        .await;
+        arm_shutdown_deadline(&shutdown_state.shutdown, SHUTDOWN_GRACE, || {
+            std::process::exit(0)
+        });
     };
 
     tracing::info!(
@@ -1689,67 +1581,19 @@ mod tests {
             .expect("rotation loop stops before app guard drops");
     }
 
-    #[tokio::test]
-    async fn shutdown_sequence_bounds_a_plugin_reap_that_never_finishes() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-
-        const GRACE: Duration = Duration::from_millis(100);
-
-        // Arming the deadline first must not skip the plugin teardown.
-        let shutdown = CancellationToken::new();
-        let reaped = Arc::new(AtomicBool::new(false));
-        let flag = reaped.clone();
-        run_shutdown_sequence(
-            &shutdown,
-            GRACE,
-            async move { flag.store(true, Ordering::SeqCst) },
-            || {},
-        )
-        .await;
-        assert!(shutdown.is_cancelled());
-        assert!(reaped.load(Ordering::SeqCst));
-
-        // A reap that never finishes is bounded, so the caller still reaches
-        // its own cleanup, and the deadline still forces the exit.
-        let shutdown = CancellationToken::new();
-        let forced = Arc::new(AtomicBool::new(false));
-        let flag = forced.clone();
-        tokio::time::timeout(
-            GRACE * 10,
-            run_shutdown_sequence(&shutdown, GRACE, std::future::pending::<()>(), move || {
-                flag.store(true, Ordering::SeqCst)
-            }),
-        )
-        .await
-        .expect("a hung reap must not block the shutdown sequence");
-
-        for _ in 0..200 {
-            if forced.load(Ordering::SeqCst) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        assert!(forced.load(Ordering::SeqCst));
-    }
-
-    /// Advancing before the reap yields delays the watchdog's first poll,
-    /// but must not restart the grace window from that poll.
+    /// Advancing before the watchdog first polls must not restart the grace
+    /// window from that poll.
     #[tokio::test(start_paused = true)]
     async fn shutdown_deadline_runs_from_the_cancel_not_the_watchdog_poll() {
         const GRACE: Duration = Duration::from_millis(100);
 
         let shutdown = CancellationToken::new();
         let (forced_tx, forced_rx) = tokio::sync::oneshot::channel();
-        run_shutdown_sequence(
-            &shutdown,
-            GRACE,
-            async { tokio::time::advance(GRACE * 2).await },
-            move || {
-                let _ = forced_tx.send(());
-            },
-        )
-        .await;
+        arm_shutdown_deadline(&shutdown, GRACE, move || {
+            let _ = forced_tx.send(());
+        });
         assert!(shutdown.is_cancelled());
+        tokio::time::advance(GRACE * 2).await;
         tokio::time::timeout(GRACE / 2, forced_rx)
             .await
             .expect("watchdog must not start a fresh grace period at its first poll")

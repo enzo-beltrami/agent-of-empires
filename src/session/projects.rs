@@ -5,7 +5,6 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -26,10 +25,6 @@ pub enum RegistryError {
     /// the requested scope.
     #[error("{0}")]
     NotFound(String),
-
-    /// A guard refused the write under the registry locks.
-    #[error("{0}")]
-    Forbidden(String),
 
     /// Any other failure (I/O, JSON parse, missing app dir).
     #[error(transparent)]
@@ -85,9 +80,6 @@ pub struct ProjectOverrides {
     /// for new sessions launched against this project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox_enabled: Option<bool>,
-    /// Plugin settings declared `per_project`, keyed by plugin id then setting key.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub plugin_settings: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
 }
 
 impl ProjectOverrides {
@@ -95,32 +87,6 @@ impl ProjectOverrides {
         self.worktree_enabled.is_none()
             && self.smart_rename.is_none()
             && self.sandbox_enabled.is_none()
-            && self.plugin_settings.is_empty()
-    }
-
-    /// Set (`Some`) or clear (`None`) one plugin setting, dropping emptied plugin entries.
-    pub fn set_plugin_setting(
-        &mut self,
-        plugin_id: &str,
-        key: &str,
-        value: Option<serde_json::Value>,
-    ) {
-        match value {
-            Some(value) => {
-                self.plugin_settings
-                    .entry(plugin_id.to_string())
-                    .or_default()
-                    .insert(key.to_string(), value);
-            }
-            None => {
-                if let Some(settings) = self.plugin_settings.get_mut(plugin_id) {
-                    settings.remove(key);
-                    if settings.is_empty() {
-                        self.plugin_settings.remove(plugin_id);
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -167,7 +133,6 @@ pub struct ProjectPatch {
     pub worktree_enabled: Option<Option<bool>>,
     pub smart_rename: Option<Option<bool>>,
     pub sandbox_enabled: Option<Option<bool>>,
-    pub plugin_settings: BTreeMap<String, BTreeMap<String, Option<serde_json::Value>>>,
 }
 
 impl Serialize for ProjectPatch {
@@ -180,8 +145,6 @@ impl Serialize for ProjectPatch {
             smart_rename: Option<&'a Option<bool>>,
             #[serde(skip_serializing_if = "Option::is_none")]
             sandbox_enabled: Option<&'a Option<bool>>,
-            #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-            plugin_settings: &'a BTreeMap<String, BTreeMap<String, Option<serde_json::Value>>>,
         }
         #[derive(Serialize)]
         struct Body<'a> {
@@ -194,13 +157,11 @@ impl Serialize for ProjectPatch {
         }
         let overrides = (self.worktree_enabled.is_some()
             || self.smart_rename.is_some()
-            || self.sandbox_enabled.is_some()
-            || !self.plugin_settings.is_empty())
+            || self.sandbox_enabled.is_some())
         .then_some(Overrides {
             worktree_enabled: self.worktree_enabled.as_ref(),
             smart_rename: self.smart_rename.as_ref(),
             sandbox_enabled: self.sandbox_enabled.as_ref(),
-            plugin_settings: &self.plugin_settings,
         });
         Body {
             default_base_branch: self.base_branch.as_ref(),
@@ -288,25 +249,12 @@ pub struct ProjectCommit<R> {
     pub result: R,
     pub projects: Vec<Project>,
     pub(crate) target: super::anchored_fs::ResolvedDataFile,
-    pub(crate) effect: Option<EffectiveChange>,
 }
 
 impl<R> ProjectCommit<R> {
     pub(crate) fn map_result<S>(self, map: impl FnOnce(R) -> S) -> ProjectCommit<S> {
         ProjectCommit {
             result: map(self.result),
-            projects: self.projects,
-            target: self.target,
-            effect: self.effect,
-        }
-    }
-}
-
-impl<R> ProjectCommit<(R, Option<EffectiveChange>)> {
-    fn with_effect(self) -> ProjectCommit<R> {
-        ProjectCommit {
-            result: self.result.0,
-            effect: self.result.1,
             projects: self.projects,
             target: self.target,
         }
@@ -511,27 +459,29 @@ fn locked_update_scope<R>(
         result,
         projects,
         target,
-        effect: None,
     })
 }
 
-/// [`add`] that also reports what the new entry changes in the plugin values in effect at its path.
-/// `guard` sees that change under the registry locks and can veto the write, so the decision and
-/// the write cannot be separated by another writer.
-pub fn add_guarded(
+/// Append a project to the given scope.
+///
+/// Errors if:
+/// - a project with the same name or canonical path already exists in the
+///   target scope (always; overriding within a scope makes no sense), or
+/// - the canonical path already exists in the *other* scope and
+///   `allow_override` is false. Pass `allow_override = true` to deliberately
+///   shadow a global entry from a profile (or vice versa).
+pub fn add(
     profile: &str,
     scope: ProjectScope,
     mut project: Project,
     allow_override: bool,
-    guard: impl FnOnce(&EffectiveChange) -> std::result::Result<(), RegistryError>,
 ) -> std::result::Result<ProjectCommit<usize>, RegistryError> {
     project.scope = scope;
     let path_buf = PathBuf::from(&project.path);
     let canonical = path_buf.canonicalize().unwrap_or(path_buf);
     project.path = canonical.to_string_lossy().to_string();
 
-    locked_update_both(profile, scope, |global, scoped, shared| {
-        let before = effective_in(scope, shared, global, scoped, &project.path);
+    locked_update_both(profile, scope, |global, scoped| {
         let (existing, other, other_scope) = match scope {
             ProjectScope::Global => (&mut *global, &*scoped, ProjectScope::Profile),
             ProjectScope::Profile => (&mut *scoped, &*global, ProjectScope::Global),
@@ -573,15 +523,9 @@ pub fn add_guarded(
         }
 
         let index = existing.len();
-        existing.push(project.clone());
-        let change = EffectiveChange {
-            path: project.path.clone(),
-            before,
-            after: effective_in(scope, shared, global, scoped, &project.path),
-        };
-        guard(&change)?;
-        Ok((index, Some(change)))
-    }).map(ProjectCommit::with_effect)
+        existing.push(project);
+        Ok(index)
+    })
 }
 
 /// Return the removed project and the complete committed registry.
@@ -618,68 +562,37 @@ pub fn update(
     patch: ProjectPatch,
 ) -> std::result::Result<ProjectCommit<usize>, RegistryError> {
     let canonical_target = canonical_key(name_or_path);
-    let changes_plugin_settings = !patch.plugin_settings.is_empty();
-    locked_update_scope(
-        profile,
-        scope,
-        changes_plugin_settings,
-        |existing, other, shared| {
-            let idx = existing
-                .iter()
-                .position(|project| {
-                    project.name.eq_ignore_ascii_case(name_or_path)
-                        || canonical_key(&project.path) == canonical_target
-                })
-                .ok_or_else(|| {
-                    RegistryError::NotFound(format!(
-                        "No project '{}' in {} scope",
-                        name_or_path,
-                        scope.as_str()
-                    ))
-                })?;
-            let values = |target: &[Project], other: &[Project], path: &str| match scope {
-                ProjectScope::Global => effective_in(scope, shared, target, other, path),
-                ProjectScope::Profile => effective_in(scope, shared, other, target, path),
-            };
-            let before = changes_plugin_settings.then(|| {
-                let path = existing[idx].path.clone();
-                let before = values(existing, other, &path);
-                (path, before)
-            });
-            if let Some(base) = patch.base_branch {
-                existing[idx].default_base_branch = normalize_base_branch(base);
-            }
-            if let Some(pinned) = patch.pinned {
-                existing[idx].pinned = pinned;
-            }
-            if let Some(enabled) = patch.worktree_enabled {
-                existing[idx].overrides.worktree_enabled = enabled;
-            }
-            if let Some(enabled) = patch.smart_rename {
-                existing[idx].overrides.smart_rename = enabled;
-            }
-            if let Some(enabled) = patch.sandbox_enabled {
-                existing[idx].overrides.sandbox_enabled = enabled;
-            }
-            for (plugin, settings) in patch.plugin_settings {
-                for (key, value) in settings {
-                    existing[idx]
-                        .overrides
-                        .set_plugin_setting(&plugin, &key, value);
-                }
-            }
-            let effect = before.map(|(path, before)| {
-                let after = values(existing, other, &path);
-                EffectiveChange {
-                    path,
-                    before,
-                    after,
-                }
-            });
-            Ok((idx, effect))
-        },
-    )
-    .map(ProjectCommit::with_effect)
+    locked_update_scope(profile, scope, false, |existing, _, _| {
+        let idx = existing
+            .iter()
+            .position(|project| {
+                project.name.eq_ignore_ascii_case(name_or_path)
+                    || canonical_key(&project.path) == canonical_target
+            })
+            .ok_or_else(|| {
+                RegistryError::NotFound(format!(
+                    "No project '{}' in {} scope",
+                    name_or_path,
+                    scope.as_str()
+                ))
+            })?;
+        if let Some(base) = patch.base_branch {
+            existing[idx].default_base_branch = normalize_base_branch(base);
+        }
+        if let Some(pinned) = patch.pinned {
+            existing[idx].pinned = pinned;
+        }
+        if let Some(enabled) = patch.worktree_enabled {
+            existing[idx].overrides.worktree_enabled = enabled;
+        }
+        if let Some(enabled) = patch.smart_rename {
+            existing[idx].overrides.smart_rename = enabled;
+        }
+        if let Some(enabled) = patch.sandbox_enabled {
+            existing[idx].overrides.sandbox_enabled = enabled;
+        }
+        Ok(idx)
+    })
 }
 
 /// `base_name`, or the first free `"{base_name}-N"` (N >= 2) in `scope`. For auto-derived names
@@ -736,35 +649,15 @@ fn update_entry(
     .map(|commit| commit.result)
 }
 
-/// Append a project to the given scope.
-///
-/// Errors if:
-/// - a project with the same name or canonical path already exists in the
-///   target scope (always; overriding within a scope makes no sense), or
-/// - the canonical path already exists in the *other* scope and
-///   `allow_override` is false. Pass `allow_override = true` to deliberately
-///   shadow a global entry from a profile (or vice versa).
-pub fn add(
-    profile: &str,
-    scope: ProjectScope,
-    project: Project,
-    allow_override: bool,
-) -> std::result::Result<ProjectCommit<usize>, RegistryError> {
-    add_guarded(profile, scope, project, allow_override, |_| Ok(()))
-}
-
-/// [`remove`] that also reports what removal changes in the plugin values in effect at the entry's
-/// path, which can reveal those of an entry it shadowed. `guard` sees the entry and that change
-/// under the registry locks and can veto the write.
-pub fn remove_guarded(
+/// [`remove`] that prefers the entry at `anchored_path` when no entry has the name.
+pub fn remove_anchored(
     profile: &str,
     scope: ProjectScope,
     name_or_path: &str,
     anchored_path: Option<&str>,
-    guard: impl FnOnce(&Project, &EffectiveChange) -> std::result::Result<(), RegistryError>,
 ) -> std::result::Result<ProjectCommit<Project>, RegistryError> {
     let canonical_target = canonical_key(anchored_path.unwrap_or(name_or_path));
-    locked_update_both(profile, scope, |global, scoped, shared| {
+    locked_update_both(profile, scope, |global, scoped| {
         let list = match scope {
             ProjectScope::Global => &*global,
             ProjectScope::Profile => &*scoped,
@@ -783,66 +676,11 @@ pub fn remove_guarded(
                     scope.as_str()
                 ))
             })?;
-        let entry = list[idx].clone();
-        let before = effective_in(scope, shared, global, scoped, &entry.path);
-        match scope {
+        Ok(match scope {
             ProjectScope::Global => global.remove(idx),
             ProjectScope::Profile => scoped.remove(idx),
-        };
-        let change = EffectiveChange {
-            path: entry.path.clone(),
-            before,
-            after: effective_in(scope, shared, global, scoped, &entry.path),
-        };
-        guard(&entry, &change)?;
-        Ok((entry, Some(change)))
+        })
     })
-    .map(ProjectCommit::with_effect)
-}
-
-/// [`update_overrides`] that also reports what the edit changes in the plugin values in effect at
-/// the entry's path (an edit to a shadowed entry changes none).
-pub fn update_overrides_with_effect(
-    profile: &str,
-    scope: ProjectScope,
-    name_or_path: &str,
-    mutate: impl FnOnce(&mut ProjectOverrides),
-) -> std::result::Result<(Project, EffectiveChange), RegistryError> {
-    let canonical_target = canonical_key(name_or_path);
-    locked_update_both(profile, scope, |global, scoped, shared| {
-        let list = match scope {
-            ProjectScope::Global => &*global,
-            ProjectScope::Profile => &*scoped,
-        };
-        let idx = list
-            .iter()
-            .position(|p| {
-                p.name.eq_ignore_ascii_case(name_or_path)
-                    || canonical_key(&p.path) == canonical_target
-            })
-            .ok_or_else(|| {
-                RegistryError::NotFound(format!(
-                    "No project '{}' in {} scope",
-                    name_or_path,
-                    scope.as_str()
-                ))
-            })?;
-        let path = list[idx].path.clone();
-        let before = effective_in(scope, shared, global, scoped, &path);
-        let entry = match scope {
-            ProjectScope::Global => &mut global[idx],
-            ProjectScope::Profile => &mut scoped[idx],
-        };
-        mutate(&mut entry.overrides);
-        let entry = entry.clone();
-        let change = EffectiveChange {
-            path,
-            before,
-            after: effective_in(scope, shared, global, scoped, &entry.path),
-        };
-        Ok((entry, change))
-    })
-    .map(|commit| commit.result)
 }
 
 /// Read-modify-write both registries under their locks, taken in a fixed order, so a decision
@@ -851,94 +689,12 @@ pub fn update_overrides_with_effect(
 fn locked_update_both<R>(
     profile: &str,
     scope: ProjectScope,
-    mutate: impl FnOnce(
-        &mut Vec<Project>,
-        &mut Vec<Project>,
-        bool,
-    ) -> std::result::Result<R, RegistryError>,
+    mutate: impl FnOnce(&mut Vec<Project>, &mut Vec<Project>) -> std::result::Result<R, RegistryError>,
 ) -> std::result::Result<ProjectCommit<R>, RegistryError> {
-    locked_update_scope(
-        profile,
-        scope,
-        true,
-        |existing, other, shared| match scope {
-            ProjectScope::Global => mutate(existing, other, shared),
-            ProjectScope::Profile => mutate(other, existing, shared),
-        },
-    )
-}
-
-/// Per-project plugin setting values by plugin id, then setting key.
-pub type PluginValues = BTreeMap<String, BTreeMap<String, serde_json::Value>>;
-
-/// The per-project plugin values in effect at one path before and after a registry edit. A
-/// profile entry shadows a global one, so adding or removing an entry can change them without
-/// touching its own values.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct EffectiveChange {
-    pub path: String,
-    pub before: PluginValues,
-    pub after: PluginValues,
-}
-
-impl EffectiveChange {
-    pub fn is_noop(&self) -> bool {
-        self.before == self.after
-    }
-
-    /// Plugin ids with the setting keys whose effective value differs.
-    pub fn changed_keys(&self) -> Vec<(String, Vec<String>)> {
-        let empty = BTreeMap::new();
-        let ids: std::collections::BTreeSet<&String> =
-            self.before.keys().chain(self.after.keys()).collect();
-        ids.into_iter()
-            .filter_map(|id| {
-                let before = self.before.get(id).unwrap_or(&empty);
-                let after = self.after.get(id).unwrap_or(&empty);
-                let keys: Vec<String> = before
-                    .keys()
-                    .chain(after.keys())
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .into_iter()
-                    .filter(|k| before.get(*k) != after.get(*k))
-                    .cloned()
-                    .collect();
-                (!keys.is_empty()).then(|| (id.clone(), keys))
-            })
-            .collect()
-    }
-}
-
-fn effective_in(
-    scope: ProjectScope,
-    shared: bool,
-    global: &[Project],
-    profile: &[Project],
-    path: &str,
-) -> PluginValues {
-    let key = canonical_key(path);
-    let selected = if shared {
-        match scope {
-            ProjectScope::Global => global
-                .iter()
-                .find(|project| canonical_key(&project.path) == key),
-            ProjectScope::Profile => profile
-                .iter()
-                .find(|project| canonical_key(&project.path) == key),
-        }
-    } else {
-        profile
-            .iter()
-            .find(|project| canonical_key(&project.path) == key)
-            .or_else(|| {
-                global
-                    .iter()
-                    .find(|project| canonical_key(&project.path) == key)
-            })
-    };
-    selected
-        .map(|project| project.overrides.plugin_settings.clone())
-        .unwrap_or_default()
+    locked_update_scope(profile, scope, true, |existing, other, _| match scope {
+        ProjectScope::Global => mutate(existing, other),
+        ProjectScope::Profile => mutate(other, existing),
+    })
 }
 
 /// Look up the merged-registry entry (profile shadows global) whose path
@@ -1448,139 +1204,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    #[serial]
-    fn plugin_settings_persist_and_profile_entry_shadows_global() -> Result<()> {
-        let temp = tempdir()?;
-        let _app_dir = isolate_app_dir_at(temp.path());
-        let repo = temp.path().join("repoP");
-        let _ = git2::Repository::init(&repo);
-        let set = |scope, name: &str, value| {
-            let project = Project::new(name, repo.to_string_lossy(), scope);
-            add("default", scope, project, true)?;
-            update_overrides("default", scope, name, |ov| {
-                ov.set_plugin_setting("acme.kit", "depth", Some(value))
-            })
-        };
-        let depth = |p: Option<Project>| {
-            p.and_then(|p| {
-                p.overrides.plugin_settings["acme.kit"]
-                    .get("depth")
-                    .cloned()
-            })
-        };
-
-        set(ProjectScope::Global, "g", serde_json::json!(1))?;
-        assert_eq!(
-            depth(find_by_canonical_path("default", &repo)),
-            Some(serde_json::json!(1))
-        );
-        set(ProjectScope::Profile, "p", serde_json::json!(2))?;
-        assert_eq!(
-            depth(find_by_canonical_path("default", &repo)),
-            Some(serde_json::json!(2)),
-            "the profile registry wins over the global one"
-        );
-
-        let mut ov = ProjectOverrides::default();
-        ov.set_plugin_setting("acme.kit", "depth", Some(serde_json::json!(3)));
-        assert!(!ov.is_empty());
-        ov.set_plugin_setting("acme.kit", "depth", None);
-        assert!(
-            ov.is_empty(),
-            "clearing the last key drops the plugin entry"
-        );
-        Ok(())
-    }
-
-    #[test]
-    #[serial]
-    fn registry_edits_report_the_effective_plugin_values_they_change() -> Result<()> {
-        let temp = tempdir()?;
-        let _app_dir = isolate_app_dir_at(temp.path());
-        let repo = temp.path().join("repoG");
-        let _ = git2::Repository::init(&repo);
-        let path = repo.to_string_lossy().to_string();
-        let depth = |v: i64| {
-            BTreeMap::from([(
-                "acme.kit".to_string(),
-                BTreeMap::from([("depth".to_string(), serde_json::json!(v))]),
-            )])
-        };
-        let entry = |name: &str, scope| Project::new(name, path.clone(), scope);
-
-        let mut global = entry("g", ProjectScope::Global);
-        global.overrides.plugin_settings = depth(7);
-        add("default", ProjectScope::Global, global, false)?;
-
-        // An empty profile entry shadows the global values, hiding them.
-        let shadow = entry("p", ProjectScope::Profile);
-        let change = add_guarded("default", ProjectScope::Profile, shadow, true, |_| Ok(()))?
-            .effect
-            .expect("guarded add effect");
-        assert_eq!(
-            (change.before.clone(), change.after.clone()),
-            (depth(7), PluginValues::new())
-        );
-        assert_eq!(
-            change.changed_keys(),
-            vec![("acme.kit".to_string(), vec!["depth".to_string()])]
-        );
-
-        // Removing the shadow reveals them again, though the removed entry holds none.
-        let commit = remove_guarded("default", ProjectScope::Profile, "p", None, |_, _| Ok(()))?;
-        let change = commit.effect.expect("guarded removal effect");
-        assert!(commit.result.overrides.plugin_settings.is_empty());
-        assert_eq!(
-            (change.before.clone(), change.after.clone()),
-            (PluginValues::new(), depth(7))
-        );
-        assert!(!change.is_noop());
-
-        // The shadow is gone again, so removing the global entry now drops the values for good.
-        let change = remove_guarded(
-            "default",
-            ProjectScope::Global,
-            "g",
-            None,
-            |entry, change| {
-                assert!(!entry.overrides.plugin_settings.is_empty());
-                assert!(!change.is_noop());
-                Ok(())
-            },
-        )?
-        .effect
-        .expect("guarded removal effect");
-        assert_eq!(change.after, PluginValues::new());
-        assert!(matches!(
-            remove_guarded("default", ProjectScope::Global, "missing", None, |_, _| Ok(
-                ()
-            )),
-            Err(RegistryError::NotFound(_))
-        ));
-
-        // A guard's veto leaves the registry untouched, and an unreadable registry fails the edit.
-        let kept = entry("kept", ProjectScope::Global);
-        let refusal = add_guarded("default", ProjectScope::Global, kept, false, |_| {
-            Err(RegistryError::Forbidden("no".into()))
-        });
-        assert!(matches!(refusal, Err(RegistryError::Forbidden(_))));
-        assert!(load_global()?.is_empty());
-        fs::write(global_path()?, "{ not json")?;
-        assert!(
-            remove_guarded("default", ProjectScope::Profile, "p", None, |_, _| Ok(())).is_err()
-        );
-        assert!(add_guarded(
-            "default",
-            ProjectScope::Profile,
-            entry("x", ProjectScope::Profile),
-            false,
-            |_| Ok(())
-        )
-        .is_err());
-        Ok(())
-    }
-
     #[cfg(unix)]
     #[test]
     #[serial]
@@ -1618,61 +1241,6 @@ mod tests {
             .map(|p| p.name)
             .collect();
         assert_eq!(names, ["p0", "p1"]);
-        Ok(())
-    }
-
-    #[test]
-    #[serial]
-    fn a_guard_sees_the_state_a_concurrent_writer_committed() -> Result<()> {
-        let temp = tempdir()?;
-        let _app_dir = isolate_app_dir_at(temp.path());
-        let repo = temp.path().join("repoC");
-        let _ = git2::Repository::init(&repo);
-        add(
-            "default",
-            ProjectScope::Global,
-            Project::new("g", repo.to_string_lossy(), ProjectScope::Global),
-            false,
-        )?;
-        let (held_tx, held_rx) = std::sync::mpsc::channel();
-        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
-
-        // The writer holds the registry locks while it prepares the protected value; the remover
-        // starts only once it does, so it must wait for the commit and then see the new value.
-        let removal = std::thread::scope(|s| {
-            let writer = s.spawn(move || {
-                update_overrides_with_effect("default", ProjectScope::Global, "g", |ov| {
-                    held_tx.send(()).unwrap();
-                    release_rx.recv().unwrap();
-                    ov.set_plugin_setting("acme.kit", "depth", Some(serde_json::json!(1)));
-                })
-            });
-            held_rx.recv().unwrap();
-            let remover = s.spawn(|| {
-                remove_guarded(
-                    "default",
-                    ProjectScope::Global,
-                    "g",
-                    None,
-                    |entry, change| {
-                        if entry.overrides.plugin_settings.is_empty() && change.is_noop() {
-                            return Ok(());
-                        }
-                        Err(RegistryError::Forbidden("needs elevation".into()))
-                    },
-                )
-            });
-            release_tx.send(()).unwrap();
-            writer.join().unwrap().expect("writer commits");
-            remover.join().unwrap()
-        });
-
-        assert!(matches!(removal, Err(RegistryError::Forbidden(_))));
-        let kept = find_by_canonical_path("default", &repo).expect("entry survives");
-        assert_eq!(
-            kept.overrides.plugin_settings["acme.kit"]["depth"],
-            serde_json::json!(1)
-        );
         Ok(())
     }
 

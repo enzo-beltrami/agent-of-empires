@@ -249,7 +249,7 @@ describe("AcpRuntime", () => {
     await setDraftAttachments("sess-readfail", [stored]);
     store.fail = true;
     const errors: string[] = [];
-    toastBus.handler = { push: () => {}, error: (m) => void errors.push(m), info: () => {}, openLink: () => {} };
+    toastBus.handler = { push: () => {}, error: (m) => void errors.push(m), info: () => {} };
     const view = mount("sess-readfail");
     await vi.waitFor(() => expect(store.reads).toBe(1));
     await store.lastRead;

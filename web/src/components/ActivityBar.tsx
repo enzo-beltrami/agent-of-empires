@@ -8,8 +8,8 @@ interface Props {
   onToggle: (id: string) => void;
 }
 
-/** Desktop icon strip (JetBrains-style tool-window bar): one icon per dockable pane (built-in or plugin-
- *  contributed), clicking toggles that pane open or closed. */
+/** Desktop icon strip (JetBrains-style tool-window bar): one icon per dockable pane; clicking toggles that pane
+ *  open or closed. */
 export function ActivityBar({ paneIds, descriptorFor, isOpen, onToggle }: Props) {
   if (paneIds.length === 0) return null;
   return (
@@ -30,7 +30,7 @@ export function ActivityBar({ paneIds, descriptorFor, isOpen, onToggle }: Props)
             title={`${open ? "Hide" : "Show"} ${name} pane`}
             aria-label={`Toggle ${name} pane`}
           >
-            <PaneIcon icon={desc.icon} iconAssetUrl={desc.iconAssetUrl} className="size-4" />
+            <PaneIcon icon={desc.icon} className="size-4" />
           </button>
         );
       })}

@@ -144,7 +144,7 @@ describe.each(SETTING_CASES)("accepted $kind settings across authority availabil
       let snapshot = { sessions: [A, B], workspace_ordering: ["A", "B"] };
       const writes: RequestInit[] = [];
       const error = vi.fn();
-      toastBus.handler = { error, info: vi.fn(), push: vi.fn(), openLink: vi.fn() };
+      toastBus.handler = { error, info: vi.fn(), push: vi.fn() };
       vi.stubGlobal(
         "fetch",
         vi.fn(async (url: string, init?: RequestInit) => {
@@ -249,7 +249,7 @@ describe.each(SETTING_CASES)("accepted $kind settings across authority availabil
     let failPoll = false;
     const writes: RequestInit[] = [];
     const error = vi.fn();
-    toastBus.handler = { error, info: vi.fn(), push: vi.fn(), openLink: vi.fn() };
+    toastBus.handler = { error, info: vi.fn(), push: vi.fn() };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
@@ -297,7 +297,7 @@ describe.each(SETTING_CASES)("accepted $kind settings across authority availabil
       const entered = Promise.withResolvers<void>();
       const writes: RequestInit[] = [];
       const error = vi.fn();
-      toastBus.handler = { error, info: vi.fn(), push: vi.fn(), openLink: vi.fn() };
+      toastBus.handler = { error, info: vi.fn(), push: vi.fn() };
       vi.stubGlobal(
         "fetch",
         vi.fn(async (url: string, init?: RequestInit) => {
@@ -340,7 +340,7 @@ describe.each(SETTING_CASES)("accepted $kind settings across authority availabil
       let failPoll = false;
       let writes = 0;
       const error = vi.fn();
-      toastBus.handler = { error, info: vi.fn(), push: vi.fn(), openLink: vi.fn() };
+      toastBus.handler = { error, info: vi.fn(), push: vi.fn() };
       vi.stubGlobal(
         "fetch",
         vi.fn(async (url: string) => {
@@ -447,7 +447,7 @@ describe("SessionRow canonical settings receipts", () => {
       let epoch = "boot";
       let calls = 0;
       const error = vi.fn();
-      toastBus.handler = { error, info: vi.fn(), push: vi.fn(), openLink: vi.fn() };
+      toastBus.handler = { error, info: vi.fn(), push: vi.fn() };
       vi.stubGlobal(
         "fetch",
         vi.fn(async (url: string) => {
@@ -486,7 +486,7 @@ describe("SessionRow canonical settings receipts", () => {
     const held = Promise.withResolvers<Response>();
     let calls = 0;
     const error = vi.fn();
-    toastBus.handler = { error, info: vi.fn(), push: vi.fn(), openLink: vi.fn() };
+    toastBus.handler = { error, info: vi.fn(), push: vi.fn() };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
@@ -652,7 +652,7 @@ describe("SessionRow canonical settings receipts", () => {
     const A = makeSession({ id: "A", color: "red" });
     const B = makeSession({ id: "B", color: "red" });
     const error = vi.fn();
-    toastBus.handler = { error, info: vi.fn(), push: vi.fn(), openLink: vi.fn() };
+    toastBus.handler = { error, info: vi.fn(), push: vi.fn() };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {

@@ -159,31 +159,6 @@ describe("service-worker push toasts", () => {
   });
 });
 
-describe("click-to-open (ui.open_url) toast", () => {
-  it("opens the href in a new tab on click and dismisses", () => {
-    const open = vi.spyOn(window, "open").mockReturnValue(null);
-    renderProvider();
-    act(() => toastBus.handler?.openLink("Open link", "https://example.com/pr/1"));
-
-    const toast = screen.getByText("Open link").closest("div");
-    expect(toast?.className).toContain("cursor-pointer");
-
-    act(() => fireEvent.click(toast as HTMLElement));
-    expect(open).toHaveBeenCalledWith("https://example.com/pr/1", "_blank", "noopener,noreferrer");
-    expect(screen.queryByText("Open link")).toBeNull();
-    open.mockRestore();
-  });
-
-  it("keeps the error styling of a clickable toast", () => {
-    renderProvider();
-    act(() => toastBus.handler?.openLink("Approve?", "/plugins/acme.kit/approvals?link=ab12", "error"));
-
-    const toast = screen.getByText("Approve?").closest("div");
-    expect(toast?.getAttribute("role")).toBe("alert");
-    expect(toast?.className).toContain("cursor-pointer");
-  });
-});
-
 describe("timed toast lifetime", () => {
   const LIFETIME = 6000;
   const GRACE = 2000;
@@ -196,7 +171,6 @@ describe("timed toast lifetime", () => {
   it.each([
     ["plain", () => act(() => toastBus.handler?.info("m"))],
     ["session", () => dispatchPush({ type: "aoe-push", payload: { title: "m", session_id: "s1" } })],
-    ["link", () => act(() => toastBus.handler?.openLink("m", "https://example.com"))],
   ])("expires a %s toast after its lifetime", (_name, push) => {
     renderProvider();
     push();
@@ -235,7 +209,7 @@ describe("timed toast lifetime", () => {
 
   it("pauses while focused", () => {
     renderProvider();
-    act(() => toastBus.handler?.openLink("focus", "https://example.com"));
+    act(() => toastBus.handler?.info("focus"));
     advance(5000);
     fireEvent.focusIn(dismissOf("focus"));
     advance(60_000);
@@ -249,7 +223,7 @@ describe("timed toast lifetime", () => {
 
   it("keeps the pause when focus moves within the toast", () => {
     renderProvider();
-    act(() => toastBus.handler?.openLink("focus", "https://example.com"));
+    act(() => toastBus.handler?.info("focus"));
     advance(5000);
     const dismiss = dismissOf("focus");
     fireEvent.focusIn(dismiss);

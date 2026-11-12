@@ -9,7 +9,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Puzzle } from "lucide-react";
 import { useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { IDLE_DECAY_WINDOW_MS } from "./lib/session";
 import { diffSelectionStale } from "./lib/diffSelection";
@@ -37,10 +36,6 @@ import { useStatusGroups } from "./hooks/useStatusGroups";
 import { useAttentionJump } from "./hooks/useAttentionJump";
 import { useNestedSidebarGroups } from "./hooks/useNestedSidebarGroups";
 import { useOrgGroups } from "./hooks/useOrgGroups";
-import { PluginUiProvider, usePluginAttention, usePluginPages, usePluginUiEntries } from "./lib/pluginUiContext";
-import { buildPluginPageActions } from "./lib/pluginPages";
-import { buildSortValueMap, pluginSortSpecs } from "./lib/pluginUi";
-import type { PluginSortContext, SidebarSortMode } from "./lib/sidebarSort";
 import { nextAttentionSessionId, workspaceIsTrashed } from "./lib/sidebarSort";
 import { useSidebarAxis, useSidebarSortMode } from "./hooks/useSidebarPrefs";
 import { axisDrawsRepoHeaders } from "./lib/sidebarAxis";
@@ -56,7 +51,6 @@ import { useDiffComments } from "./hooks/useDiffComments";
 import { clearStoredComments } from "./components/diff/comments/storage";
 import { SendCommentsDialog } from "./components/diff/comments/SendCommentsDialog";
 import { useCommandActions, buildConversationActions, type SessionStateAction } from "./hooks/useCommandActions";
-import { usePluginCommands } from "./hooks/usePluginCommands";
 import { useSettingsCommands } from "./hooks/useSettingsCommands";
 import { useDrawerSwipe, type DrawerSwipeAction } from "./hooks/useDrawerSwipe";
 import { useIsCoarsePointer } from "./hooks/useIsCoarsePointer";
@@ -64,10 +58,6 @@ import { useMobileViewportLock } from "./hooks/useMobileViewportLock";
 import { useIsWideViewport } from "./hooks/useIsWideViewport";
 import type { RightPanelView } from "./lib/rightPanelView";
 import { usePaneLayout, dockTabs, dockGroups, dockOf, isDockCollapsed } from "./lib/paneLayout";
-import { isPluginPaneId, resolvePaneIcon, usePluginPanes, type PluginPane } from "./lib/pluginPanes";
-import { PluginPaneBody } from "./components/plugin/PluginPane";
-import { PluginPageView } from "./components/plugin/PluginPageView";
-import { PluginSessionMenu } from "./components/plugin/PluginSessionMenu";
 import { TOUR_ANCHORS, tourAnchor } from "./lib/tourSteps";
 import {
   deleteWorkspaceSessions,
@@ -100,7 +90,6 @@ import {
   setSessionSnooze,
   trashSession,
   restoreSession,
-  fetchPlugins,
   ensureCoordinator,
 } from "./lib/api";
 import type { DeleteSessionOptions, RuntimeCursor, ServerAbout, SettingsResponse } from "./lib/api";
@@ -123,7 +112,7 @@ import { WithCoordinatorPanel } from "./components/CoordinatorPanel";
 import { restartForUpdate } from "./lib/restartForUpdate";
 import { startPendingCreates } from "./lib/pendingCreates";
 import { isAbsolutePath, resolveToRepoRelative, type FileRef } from "./lib/fileRef";
-import { NAVIGATE_EVENT, OPEN_SESSION_EVENT, openFocusWindow, replaceDocument } from "./lib/sessionRoute";
+import { OPEN_SESSION_EVENT, openFocusWindow, replaceDocument } from "./lib/sessionRoute";
 import { dispatchFocusTerminal, requestSessionInputFocus, setPendingTerminalFocus } from "./lib/terminalFocus";
 import {
   bindHiddenInput,
@@ -156,7 +145,7 @@ import { type PaneDisplay } from "./components/Dock";
 import { DockGroups, type DockGroupView } from "./components/DockGroups";
 import { BottomDock } from "./components/BottomDock";
 import { PaneDndController } from "./components/PaneDndController";
-import { visibleToFullIndex, type DropTarget } from "./components/paneDnd";
+import type { DropTarget } from "./components/paneDnd";
 import { BackgroundAgentsPanel } from "./components/acp/BackgroundAgentsPanel";
 import { hasStartedBefore } from "./components/acp/startupWait";
 import { DiffPane } from "./components/DiffPane";
@@ -319,12 +308,7 @@ export default function App() {
         <SessionRowTagContext.Provider value={sessionRowTagMode}>
           <SessionColorsContext.Provider value={sessionColorsEnabled}>
             <SystemHealthEnabledContext.Provider value={systemHealthEnabled}>
-              {/* PluginUiProvider must sit above AppContent: AppContent itself reads
-                the plugin UI snapshot (usePluginPanes), so the provider can't live
-                inside its own return. */}
-              <PluginUiProvider>
-                <AppContent loginRequired={loginRequired} onLogout={handleLogout} resolvedTheme={resolvedTheme} />
-              </PluginUiProvider>
+              <AppContent loginRequired={loginRequired} onLogout={handleLogout} resolvedTheme={resolvedTheme} />
               <ElevationPrompt />
             </SystemHealthEnabledContext.Provider>
           </SessionColorsContext.Provider>
@@ -382,37 +366,19 @@ function AppContent({
   const settingsRootMatch = useMatch("/settings");
   const settingsTabMatch = useMatch("/settings/:tab");
   const profilesMatch = useMatch("/profiles");
-  const pluginPageMatch = useMatch("/plugins/:pluginId/:pageId");
   // A focus-mode window shows one session only: no sidebar, no switching, and notifications for that session alone.
   const { focusSessionId, enterFocusMode, exitFocusMode } = useFocusMode(sessionMatch?.params.sessionId ?? null);
   const focusMode = focusSessionId !== null;
   useDashboardPresence(focusSessionId);
-  // A plugin page's split pane shows `?session=` as the routed session, docks and all.
-  const activeSessionId = sessionMatch?.params.sessionId ?? (pluginPageMatch ? searchParams.get("session") : null);
-  const selectPluginPageSession = useCallback(
-    (id: string | null) =>
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          if (id) next.set("session", id);
-          else next.delete("session");
-          return next;
-        },
-        { replace: true },
-      ),
-    [setSearchParams],
-  );
-  // Off a removed session: back to the dashboard, or on a plugin page just out of its split pane. A focus window
-  // stays and reports that its session is gone.
-  const onPluginPage = pluginPageMatch !== null;
+  const activeSessionId = sessionMatch?.params.sessionId ?? null;
+  // Off a removed session: back to the dashboard. A focus window stays and reports that its session is gone.
   const leaveActiveSession = useCallback(() => {
     if (focusMode) return;
-    if (onPluginPage) selectPluginPageSession(null);
-    else navigate("/");
-  }, [focusMode, onPluginPage, selectPluginPageSession, navigate]);
+    navigate("/");
+  }, [focusMode, navigate]);
   const showSettings = settingsRootMatch !== null || settingsTabMatch !== null;
-  // Settings and plugin pages take the full width, sidebar and session panels hidden.
-  const fullPageView = showSettings || pluginPageMatch !== null;
+  // Settings takes the full width, sidebar and session panels hidden.
+  const fullPageView = showSettings;
   const settingsTab = settingsTabMatch?.params.tab ?? null;
 
   const {
@@ -502,43 +468,6 @@ function AppContent({
   const [sidebarSortMode, setSidebarSortMode] = useSidebarSortMode();
   const [sidebarAxis, setSidebarAxis] = useSidebarAxis();
 
-  // Active plugin sort (#2401): an ephemeral selection of a live `sort-key`
-  // entry. Not persisted (plugin entries die with the daemon). The ref is only
-  // ever read by resolving it against the live snapshot, so a stale ref (entry
-  // gone after a daemon restart) is inert and the sidebar falls back to the
-  // built-in sort; if the entry reappears on a later poll the selection
-  // resumes. Selecting a built-in mode clears it via `selectSidebarSortMode`.
-  const pluginUiEntries = usePluginUiEntries();
-  const pluginPages = usePluginPages();
-  const pluginPageActions = useMemo(() => buildPluginPageActions(pluginPages ?? []), [pluginPages]);
-  const pluginAttention = usePluginAttention();
-  const [pluginSortRef, setPluginSortRef] = useState<{ pluginId: string; entryId: string } | null>(null);
-  const activePluginSort = useMemo(() => {
-    if (!pluginSortRef) return null;
-    return (
-      pluginSortSpecs(pluginUiEntries).find(
-        (s) => s.pluginId === pluginSortRef.pluginId && s.entryId === pluginSortRef.entryId,
-      ) ?? null
-    );
-  }, [pluginUiEntries, pluginSortRef]);
-  const pluginSort = useMemo<PluginSortContext | undefined>(
-    () =>
-      activePluginSort
-        ? {
-            direction: activePluginSort.direction,
-            values: buildSortValueMap(pluginUiEntries, activePluginSort.pluginId, activePluginSort.column),
-          }
-        : undefined,
-    [activePluginSort, pluginUiEntries],
-  );
-  const selectSidebarSortMode = useCallback(
-    (mode: SidebarSortMode) => {
-      setPluginSortRef(null);
-      setSidebarSortMode(mode);
-    },
-    [setSidebarSortMode],
-  );
-
   const { projects, profile: projectProfile, ready: projectsReady, refresh: refreshProjects } = useProjects();
   const requireProjectProfile = useCallback(() => {
     if (projectsReady && projectProfile) return projectProfile;
@@ -551,41 +480,21 @@ function AppContent({
     toggleRepoCollapsed,
     updateRepoAppearance,
     reorderRepoGroups,
-  } = useRepoGroups(
-    workspaces,
-    workspaceOrdering,
-    sidebarSortMode,
-    projects,
-    pluginSort,
-    pluginAttention,
-    axisDrawsRepoHeaders(sidebarAxis),
-  );
-  const { groups: sessionGroups, toggleGroupCollapsed } = useSessionGroups(
-    workspaces,
-    sidebarSortMode,
-    pluginSort,
-    pluginAttention,
-  );
+  } = useRepoGroups(workspaces, workspaceOrdering, sidebarSortMode, projects, axisDrawsRepoHeaders(sidebarAxis));
+  const { groups: sessionGroups, toggleGroupCollapsed } = useSessionGroups(workspaces, sidebarSortMode);
   // The status axis groups by execution status instead of by where a session
   // lives, so it owns its own grouping and collapse state.
   const { groups: statusGroups, toggleGroupCollapsed: toggleStatusGroupCollapsed } = useStatusGroups(
     workspaces,
     sidebarSortMode,
-    pluginSort,
-    pluginAttention,
   );
   // The nested `repo+group` axis reuses the already-built repo groups for
   // its top level (so repo collapse, appearance, and ordering are shared
   // with the repo axis) and splits each repo by `group_path` underneath.
   // See #1720.
-  const { groups: nestedGroups, toggleSubgroupCollapsed } = useNestedSidebarGroups(
-    repoGroups,
-    sidebarSortMode,
-    pluginSort,
-    pluginAttention,
-  );
+  const { groups: nestedGroups, toggleSubgroupCollapsed } = useNestedSidebarGroups(repoGroups, sidebarSortMode);
   // The org axis (#3283) partitions the same repo groups by remote owner;
-  // it needs no sort/plugin-sort input of its own since it reuses each
+  // it needs no sort input of its own since it reuses each
   // repo's already-ordered workspace list verbatim, just like the nested
   // axis's repo header.
   const {
@@ -648,7 +557,7 @@ function AppContent({
   const selectedRepoName = selectedFile?.repoName;
   const selectedFileLine = selectedFile?.line;
   // Dock panes render as tabbed groups (#2437): each dock holds an ordered set
-  // of tabs (diff, one-or-more terminals, plugin panes) with one active body.
+  // of tabs (diff, one-or-more terminals) with one active body.
   // The tab membership + active tab + terminal count are persisted per session;
   // dock sizes stay global (Dock/BottomDock own those localStorage keys).
   // Null until the active Session's row loads, so nothing is seeded from a guess.
@@ -663,89 +572,36 @@ function AppContent({
     moveTab,
     placeTab,
     toggleKind,
-    togglePlugin,
-    syncPlugins,
+    pinSeed,
     setDockCollapsed,
   } = usePaneLayout(activeSessionId, activeOutsideRepository);
-  const pluginPanes = usePluginPanes(activeSessionId);
-  const pluginPaneById = useMemo(() => {
-    const m = new Map<string, PluginPane>();
-    for (const p of pluginPanes) m.set(p.id, p);
-    return m;
-  }, [pluginPanes]);
-
-  // Auto-add newly available plugin panes as tabs in their default dock; the
-  // layout suppresses any the user explicitly closed. With plugin auto-open
-  // off (#3035) an empty list still pins the seeded diff/terminal defaults,
-  // which waits for the Session row so a non-git seed never keeps Diff (#4574).
+  // Pin the seeded diff/terminal defaults once the Session row loads, so a
+  // non-git seed never keeps Diff (#4574).
   useEffect(() => {
     if (activeOutsideRepository === null) return;
-    syncPlugins(
-      webSettings.autoOpenPluginPanes ? pluginPanes.map((p) => ({ id: p.id, defaultDock: p.defaultDock })) : [],
-    );
-  }, [pluginPanes, syncPlugins, webSettings.autoOpenPluginPanes, activeOutsideRepository]);
+    pinSeed();
+  }, [pinSeed, activeOutsideRepository]);
 
-  // One-shot lookup from plugin id to its manifest identity (icon name +
-  // icon_asset URL), so a pane gets a real identity glyph, up to the plugin's
-  // actual logo, even when it doesn't set its own per-pane icon. Fetched once
-  // on mount rather than polled: the installed-plugin list itself has no live
-  // sync anywhere else in the app today (Settings > Plugins only reloads on
-  // mount and after its own mutations), so this matches existing staleness
-  // tolerance rather than introducing a new one.
-  const [pluginIdentityById, setPluginIdentityById] = useState<
-    Record<string, { icon?: string; iconAssetUrl?: string }>
-  >({});
-  useEffect(() => {
-    void fetchPlugins().then((res) => {
-      if (!res) return;
-      setPluginIdentityById(
-        Object.fromEntries(
-          res.plugins.map((p) => [p.id, { icon: p.icon ?? undefined, iconAssetUrl: p.icon_asset_url ?? undefined }]),
-        ),
-      );
-    });
+  const paneDescriptor = useCallback((id: string): PaneDisplay => {
+    if (isTerminalTabId(id)) {
+      const idx = terminalIndexOf(id);
+      const term = BUILTIN_PANES.find((p) => p.id === "terminal")!;
+      return { title: idx === 0 ? term.title : `${term.title} ${idx + 1}`, icon: term.icon };
+    }
+    const d = BUILTIN_PANES.find((p) => p.id === id)!;
+    return { title: d.title, icon: d.icon };
   }, []);
 
-  const paneDescriptor = useCallback(
-    (id: string): PaneDisplay => {
-      const plugin = pluginPaneById.get(id);
-      if (plugin) {
-        const identity = pluginIdentityById[plugin.entry.plugin_id];
-        const icon = resolvePaneIcon(plugin.icon, identity?.icon) ?? Puzzle;
-        // A plugin's real logo outranks any lucide glyph, including a
-        // per-pane runtime icon a worker chose before icon_asset existed.
-        return { title: plugin.title, icon, iconAssetUrl: identity?.iconAssetUrl };
-      }
-      if (isTerminalTabId(id)) {
-        const idx = terminalIndexOf(id);
-        const term = BUILTIN_PANES.find((p) => p.id === "terminal")!;
-        return { title: idx === 0 ? term.title : `${term.title} ${idx + 1}`, icon: term.icon };
-      }
-      const d = BUILTIN_PANES.find((p) => p.id === id)!;
-      return { title: d.title, icon: d.icon };
-    },
-    [pluginPaneById, pluginIdentityById],
-  );
-
-  // A persisted tab is visible only if its backing pane currently exists: diff
-  // and terminals always do; a plugin tab does only while its plugin is loaded.
-  const tabAvailable = useCallback(
-    (id: string) => !id.startsWith("plugin:") || pluginPaneById.has(id),
-    [pluginPaneById],
-  );
-  // A dock's groups reduced to what's actually shown: each surviving group keeps
-  // its persisted index (so a drop addresses the right group) and a valid active
-  // tab. Groups with no visible tab (only unloaded plugins) are not rendered.
+  // A dock's groups as rendered: each keeps its persisted index, so a drop
+  // addresses the right group.
   const renderGroups = useCallback(
     (dock: DockLocation): DockGroupView[] =>
-      dockGroups(paneLayout, dock)
-        .map((g, group) => {
-          const tabs = g.tabs.filter(tabAvailable);
-          const active = g.active && tabs.includes(g.active) ? g.active : (tabs[0] ?? null);
-          return { group, tabs, active };
-        })
-        .filter((g) => g.tabs.length > 0),
-    [paneLayout, tabAvailable],
+      dockGroups(paneLayout, dock).map((g, group) => ({
+        group,
+        tabs: g.tabs,
+        active: g.active && g.tabs.includes(g.active) ? g.active : (g.tabs[0] ?? null),
+      })),
+    [paneLayout],
   );
 
   const availableRightGroups = useMemo(() => renderGroups("right"), [renderGroups]);
@@ -767,7 +623,7 @@ function AppContent({
     (d) => !isDockCollapsed(paneLayout, d) && dockTabs(paneLayout, d).some(isTerminalTabId),
   );
 
-  // Activity-bar entries are pane KINDS (diff, terminal, each plugin), not
+  // Activity-bar entries are pane KINDS (diff, terminal, ...), not
   // individual tabs; the strip's +/x manage terminal instances.
   const isPaneOpen = (kind: string): boolean => {
     if (kind === "terminal") return terminalOpen;
@@ -776,12 +632,10 @@ function AppContent({
   };
   const togglePaneAny = useCallback(
     (kind: string) => {
-      const defaultDock: DockLocation =
-        pluginPaneById.get(kind)?.defaultDock ?? BUILTIN_PANES.find((p) => p.id === kind)?.defaultDock ?? "right";
-      if (isPluginPaneId(kind)) togglePlugin(kind, defaultDock);
-      else toggleKind(kind as BuiltinPaneId, defaultDock);
+      const defaultDock: DockLocation = BUILTIN_PANES.find((p) => p.id === kind)?.defaultDock ?? "right";
+      toggleKind(kind as BuiltinPaneId, defaultDock);
     },
-    [toggleKind, togglePlugin, pluginPaneById],
+    [toggleKind],
   );
   // Open (or focus) the Sub agents pane. Used by an inline async
   // sub-agent card to jump to its panel entry.
@@ -793,7 +647,7 @@ function AppContent({
   const closePaneAny = useCallback(
     (id: string) => {
       // Closing an extra terminal tab kills its tmux shell so it does not leak;
-      // terminal 0 (shared with the native TUI) only hides. Diff/plugin tabs
+      // terminal 0 (shared with the native TUI) only hides. Diff tabs
       // have no backend shell to reap.
       if (isTerminalTabId(id)) {
         const idx = terminalIndexOf(id);
@@ -814,21 +668,16 @@ function AppContent({
     [closeTab, activeSessionId],
   );
   const movePaneAny = useCallback((id: string, dock: DockLocation) => moveTab(id, dock), [moveTab]);
-  // The dnd controller works in visible-tab space; map a drop index back to the
-  // target group's full persisted tab list, since a hidden (unloaded) plugin tab
-  // still holds a slot the visible index does not count. A split target carries
-  // no index (the new group starts with just the dragged tab).
+  // A split target carries no index (the new group starts with just the dragged tab).
   const placeVisibleTab = useCallback(
     (id: string, target: DropTarget) => {
       if (target.newGroup) {
         placeTab(id, { dock: target.dock, group: target.group, newGroup: true });
         return;
       }
-      const fullBase = (dockGroups(paneLayout, target.dock)[target.group]?.tabs ?? []).filter((tab) => tab !== id);
-      const index = visibleToFullIndex(fullBase, target.index ?? fullBase.length, tabAvailable);
-      placeTab(id, { dock: target.dock, group: target.group, index });
+      placeTab(id, { dock: target.dock, group: target.group, index: target.index });
     },
-    [paneLayout, placeTab, tabAvailable],
+    [placeTab],
   );
   // Layout topology is width-driven so it stays aligned with the `md:`
   // Tailwind classes the rest of the layout uses. At md and up the
@@ -897,14 +746,13 @@ function AppContent({
   const focusSession = useFocusSession(focusSessionId, activeSession, openedSessionSettled);
   const allPaneIds: string[] = [
     // CityHall client mode hides the code-inspection panes (diff, files) and
-    // the terminal (plus plugin panes below) so only the composer + structured
+    // the terminal so only the composer + structured
     // view remain. See #7.
     ...(caps.canUseDiff ? ["diff", "files"] : []),
     ...(caps.canUseTerminal ? ["terminal"] : []),
     // The background-agents panel only applies to structured-view (ACP)
     // sessions; a plain terminal session never launches sub-agents.
     ...(activeSession?.view === "structured" ? ["agents"] : []),
-    ...(caps.cityhall ? [] : pluginPanes.map((p) => p.id)),
   ];
   // The mobile picker/single-pane view reuses this exact list (minus
   // "terminal", desktop's multi-instance extra-terminal dock, which has no
@@ -998,14 +846,14 @@ function AppContent({
     setPairedMounted(true);
   }
 
-  // A gated mobile view (a builtin pane like diff/files/agents, or a plugin
-  // pane) can vanish out from under the current selection: plugin unloaded,
-  // capability change, or the session's structured-view state changed. Fall
+  // A gated mobile view (diff/files/agents) can vanish out from under the
+  // current selection: a capability change, or the session's structured-view
+  // state changed. Fall
   // back to the agent view so the user is never stranded on a blank pane.
   // Mirrors the paired guard above; render-phase derivation per the block at
   // the top.
   const isGatedBuiltinView = rightPanelView === "diff" || rightPanelView === "files" || rightPanelView === "agents";
-  if ((isGatedBuiltinView || isPluginPaneId(rightPanelView)) && !mobilePaneIds.includes(rightPanelView)) {
+  if (isGatedBuiltinView && !mobilePaneIds.includes(rightPanelView)) {
     setRightPanelView("agent");
   }
 
@@ -1100,9 +948,8 @@ function AppContent({
         }
         if (window.innerWidth < 768) setSidebarOpen(false);
       } else if (path && route) {
-        // Not yet in the locally known workspace list (e.g. a session a
-        // plugin just created); the route itself resolves the session
-        // independently of this list, so a bare navigation still works.
+        // Not yet in the locally known workspace list; the route itself
+        // resolves the session, so a bare navigation still works.
         navigate(route);
         if (window.innerWidth < 768) setSidebarOpen(false);
       }
@@ -1155,32 +1002,14 @@ function AppContent({
   // the user taps it; navigate to the session that triggered the push.
   useEffect(() => {
     const onOpen = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { sessionId?: string; path?: string } | undefined;
+      const detail = (e as CustomEvent).detail as { sessionId?: string } | undefined;
       if (detail?.sessionId) {
-        handleSelectSession(detail.sessionId, detail.path);
+        handleSelectSession(detail.sessionId);
       }
     };
     window.addEventListener(OPEN_SESSION_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_SESSION_EVENT, onOpen);
   }, [handleSelectSession]);
-
-  // A plugin-supplied link that resolves to aoe's own origin navigates via
-  // the router instead of opening a new tab.
-  useEffect(() => {
-    const onNavigate = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { path?: string } | undefined;
-      if (!detail?.path) return;
-      if (focusNavigation(focusSessionId) === "new-window") {
-        window.open(detail.path, "_blank");
-        return;
-      }
-      navigate(detail.path);
-      // See handleSelectSession: a mobile sidebar left open would cover the destination.
-      if (window.innerWidth < 768) setSidebarOpen(false);
-    };
-    window.addEventListener(NAVIGATE_EVENT, onNavigate);
-    return () => window.removeEventListener(NAVIGATE_EVENT, onNavigate);
-  }, [navigate, focusSessionId]);
 
   const [wizardPrefill, setWizardPrefill] = useState<WizardPrefill | undefined>(undefined);
   // A background create's failure to reopen on; the count remounts a wizard already open.
@@ -1706,12 +1535,6 @@ function AppContent({
     }
   }, [navigate, activeSessionId]);
 
-  const handleClosePluginPage = useCallback(() => {
-    // A deep link has no in-app history to pop.
-    if (location.key !== "default") navigate(-1);
-    else navigate("/");
-  }, [navigate, location.key]);
-
   const handleOpenHelp = useCallback(() => {
     setShowHelp(true);
   }, []);
@@ -1983,11 +1806,6 @@ function AppContent({
     readOnly: caps.readOnly,
     onOpenSettingsTab: openSettingsTab,
   });
-  const { actions: pluginCommandActions, overlay: pluginLinkPicker } = usePluginCommands(
-    pluginUiEntries,
-    activeSessionId,
-  );
-
   // Conversation-content search for the palette (#2515). paletteQuery is
   // declared above (near showPalette) so the keyboard handlers can clear it
   // on close/toggle; consumed here.
@@ -2003,14 +1821,12 @@ function AppContent({
     [conversationHits, sessions, activeSessionId, handleSelectSession, focusMode],
   );
 
-  /** The routed session with its docks: the session route, or a plugin page's split pane. */
+  /** The routed session with its docks. */
   const renderSessionLayout = () => {
     // Render a pane body by id. Passed to the docks as a callback (rather than
     // building an array of {icon, body} objects here) so the per-session JSX is
     // constructed inside the dock, not threaded through a prop object.
     const renderPaneBody = (id: string): ReactNode => {
-      const plugin = pluginPaneById.get(id);
-      if (plugin) return <PluginPaneBody entry={plugin.entry} />;
       if (id === "agents") {
         return <BackgroundAgentsPanel sessionId={activeSessionId} />;
       }
@@ -2205,45 +2021,6 @@ function AppContent({
   };
 
   const renderContent = () => {
-    if (pluginPageMatch) {
-      return (
-        <PluginPageView
-          key={pluginPageMatch.pathname}
-          pluginId={pluginPageMatch.params.pluginId ?? ""}
-          pageId={pluginPageMatch.params.pageId ?? ""}
-          onBack={handleClosePluginPage}
-          readOnly={caps.readOnly}
-          cityhall={caps.cityhall}
-          theme={resolvedTheme}
-          link={searchParams.get("link")}
-          selectedSessionId={activeSessionId}
-          onSelectSession={selectPluginPageSession}
-          renderSession={() => {
-            if (!sessionsLoaded) return { title: "", view: <MainPaneSkeleton /> };
-            if (openedSessionUnread) return { title: "", view: <TrashReadFailed onRetry={loadTrash} /> };
-            return activeSession ? { title: activeSession.title, view: renderSessionLayout() } : null;
-          }}
-          renderSessionMenu={(request) => (
-            <PluginSessionMenu
-              request={request}
-              workspaces={workspaces}
-              readOnly={caps.readOnly}
-              observedById={observedById}
-              runtimeEpoch={runtimeEpoch}
-              handlers={{
-                onSessionMutation: applySessionMutation,
-                onDelete: handleDeleteSession,
-                onStop: handleStopSession,
-                onStart: handleStartSession,
-                onRestartForUpdate: restartForUpdate,
-                onSwitchView: handleSwitchView,
-                onCreateSession: handleCreateSession,
-              }}
-            />
-          )}
-        />
-      );
-    }
     if (showSettings) {
       return (
         <SettingsView
@@ -2335,7 +2112,6 @@ function AppContent({
           onStartSession={(id) => void handleStartSession(id)}
           readOnly={caps.readOnly}
           view={rightPanelView}
-          pluginPanes={pluginPanes}
           onBackToAgent={() => handlePickView("agent")}
           onOpenAgentsPane={() => handlePickView("agents")}
           onSwitchToTerminal={canSwitchToTerminal ? (id) => handleSwitchView(id, false) : undefined}
@@ -2663,9 +2439,7 @@ function AppContent({
                 readOnly={caps.readOnly}
                 canManageProjects={caps.canManageProjects}
                 sortMode={sidebarSortMode}
-                onSortModeChange={selectSidebarSortMode}
-                pluginSortRef={pluginSortRef}
-                onPluginSortChange={setPluginSortRef}
+                onSortModeChange={setSidebarSortMode}
                 axis={sidebarAxis}
                 onAxisChange={setSidebarAxis}
               />
@@ -2795,18 +2569,10 @@ function AppContent({
               setShowPalette(false);
               setPaletteQuery("");
             }}
-            actions={[
-              ...commandActions,
-              ...conversationActions,
-              ...pluginPageActions,
-              ...settingsCommands,
-              ...pluginCommandActions,
-            ]}
+            actions={[...commandActions, ...conversationActions, ...settingsCommands]}
             onSearchChange={setPaletteQuery}
             searching={conversationSearching}
           />
-
-          {pluginLinkPicker}
 
           {snoozeTargetId && (
             <SnoozeModal

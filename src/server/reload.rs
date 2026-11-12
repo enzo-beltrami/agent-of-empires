@@ -133,8 +133,9 @@ impl From<Vec<Instance>> for LoadedInstances {
     }
 }
 
+#[cfg(test)]
 pub(super) fn load_all_instances(file_watch: &Arc<FileWatchService>) -> LoadedInstances {
-    load_read_instances(file_watch, None)
+    load_read_instances_cached(file_watch, None, None)
 }
 
 fn read_inventory_instances(
@@ -155,13 +156,6 @@ fn read_inventory_instances(
     };
     storage.verify_bound_profile()?;
     Ok(instances)
-}
-
-fn load_read_instances(
-    file_watch: &Arc<FileWatchService>,
-    canonical: Option<LoadedInstances>,
-) -> LoadedInstances {
-    load_read_instances_cached(file_watch, canonical, None)
 }
 
 fn load_read_instances_cached(

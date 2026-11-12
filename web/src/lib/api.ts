@@ -445,13 +445,13 @@ export function sessionRawFileUrl(id: string, filePath: string): string {
 // --- Settings ---
 
 /** Sections and fields come from the server schema (`SchemaSettings`, generated), so a name the
- *  server lacks fails to compile. `app_state`, `hooks` and plugin sections are outside the schema. */
+ *  server lacks fails to compile. `app_state` and `hooks` are outside the schema. */
 export type SettingsResponse = SchemaSettings & {
   app_state?: {
     has_seen_web_tour?: boolean;
   };
   hooks?: HooksOverride;
-} & { [K in `plugin:${string}`]?: Record<string, unknown> };
+};
 
 export interface SystemHealthAgent {
   id: string;
@@ -583,358 +583,23 @@ export function resetSettingsSchemaCache(): void {
 
 // --- Plugins ---
 
+/** A built-in plugin the user can turn on or off. */
 export interface PluginView {
   id: string;
   name: string;
   version: string;
   description: string;
-  /** Lucide kebab-case identity icon name, straight from the manifest. */
-  icon: string | null;
-  /** Resolved URL for the manifest's `icon_asset` (served from the plugin's
-   *  install directory), null for a builtin or a plugin with no icon_asset. */
-  icon_asset_url: string | null;
   enabled: boolean;
-  builtin: boolean;
-  /** Validation provenance: "builtin" | "featured" | "community" | "local" | "dev". */
-  validation: string;
-  source: string | null;
-  capabilities: string[];
-  /** UI slots the plugin declares it will render into (#2366), disclosed so the
-   *  user sees the plugin modifies the dashboard. Not a capability (needs no
-   *  grant). `slot` is the kebab-case slot name. */
-  ui_contributions: { slot: string; id: string }[];
-  granted: boolean;
-  needs_reapproval: boolean;
 }
 
 export interface PluginListResponse {
   plugins: PluginView[];
-  load_errors: string[];
 }
 
-/** Outcome of a plugin enable/disable toggle. On success the server returns
- *  the refreshed list; on failure it returns the error JSON (403 read_only /
- *  elevation_required, or 400 plugin_error). A 403 `elevation_required` is
- *  handled globally by the fetch interceptor, which pops the passphrase
- *  prompt, the same as any other elevated request. */
 export type PluginToggleResult = { kind: "ok"; data: PluginListResponse } | { kind: "error"; message: string };
 
 export function fetchPlugins(): Promise<PluginListResponse | null> {
   return fetchJson<PluginListResponse>("/api/plugins");
-}
-
-/** A command's client-executed action (`api_version >= 6`). `open-ui-link` opens
- *  the `href` from the plugin's own per-session UI-state entry at `(slot, id)`. */
-export type PluginClientAction = { kind: "open-ui-link"; slot: PluginUiSlot; id: string };
-
-/** One active plugin command (`GET /api/plugins/commands`), normalized for the
- *  command palette and keymap. */
-export interface PluginCommand {
-  fqid: string;
-  plugin_id: string;
-  id: string;
-  title: string;
-  description: string;
-  keybinds: string[];
-  action: PluginClientAction | null;
-}
-
-export interface PluginCommandsResponse {
-  commands: PluginCommand[];
-}
-
-export function fetchPluginCommands(): Promise<PluginCommandsResponse | null> {
-  return fetchJson<PluginCommandsResponse>("/api/plugins/commands");
-}
-
-/** One discovery result (`GET /api/plugins/discover`). Repo-level: the dashboard
- *  has no install path, so it shows `install_command` for the user to copy. */
-export interface PluginDiscoveryResult {
-  slug: string;
-  html_url: string;
-  description: string | null;
-  stars: number;
-  badge: "installed" | "featured" | "unvetted";
-  install_command: string;
-  /** The repo owner's GitHub avatar; a source-identity affordance, NOT the
-   *  plugin's own icon (unknown until a manifest fetch, which discovery
-   *  results never do). */
-  source_avatar_url: string;
-}
-
-export type DiscoverResult = { kind: "ok"; results: PluginDiscoveryResult[] } | { kind: "error"; message: string };
-
-/** Search the `aoe-plugin` GitHub topic. Returns the error message (notably the
- *  unauthenticated rate limit) so the UI can show it rather than failing
- *  silently. */
-export async function discoverPlugins(query: string): Promise<DiscoverResult> {
-  const qs = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
-  try {
-    return await kindRequest(
-      `/api/plugins/discover${qs}`,
-      { headers: ACCEPT_JSON },
-      (p) => (Array.isArray(p.results) ? { kind: "ok" as const, results: p.results as PluginDiscoveryResult[] } : null),
-      "Discovery failed",
-    );
-  } catch {
-    return { kind: "error", message: "Network error." };
-  }
-}
-
-/** A plugin's manifest fields as shown in the detail modal (parsed leniently
- *  server-side, so a plugin targeting a newer api_version still renders). */
-export interface PluginDetailManifest {
-  id: string;
-  name: string;
-  version: string;
-  description: string;
-  api_version: number;
-  capabilities: string[];
-  ui_contributions: { slot: string; id: string }[];
-  /** Screenshot/GIF previews, each resolved server-side to a raw.githubusercontent.com URL. */
-  screenshots: { src: string; alt: string; caption: string }[];
-  /** Lucide kebab-case identity icon name. */
-  icon: string | null;
-  /** The manifest's `icon_asset`, resolved server-side to a raw.githubusercontent.com URL. */
-  icon_asset_url: string | null;
-}
-
-/** On-demand detail for one plugin source (`GET /api/plugins/details`): manifest
- *  fields plus the repo's published release tags (the available versions). */
-export interface PluginDetail {
-  source: string;
-  manifest: PluginDetailManifest | null;
-  manifest_error: string | null;
-  release_tags: string[];
-}
-
-export type PluginDetailResult = { kind: "ok"; detail: PluginDetail } | { kind: "error"; message: string };
-
-/** Fetch a plugin source's detail (manifest + release tags) for the modal.
- *  Only gh:owner/repo sources are supported server-side. */
-export async function fetchPluginDetails(source: string): Promise<PluginDetailResult> {
-  try {
-    return await kindRequest(
-      `/api/plugins/details?source=${encodeURIComponent(source)}`,
-      { headers: ACCEPT_JSON },
-      (p) => (typeof p.source === "string" ? { kind: "ok" as const, detail: p as unknown as PluginDetail } : null),
-      "Details failed",
-    );
-  } catch {
-    return { kind: "error", message: "Network error." };
-  }
-}
-
-/** One UI slot disclosed in an install consent (mirrors the engine `UiView`). */
-export interface PluginUpdateUiView {
-  slot: string;
-  id: string;
-}
-
-export interface PluginAgentIntegration {
-  tool: string;
-  command?: string;
-}
-
-/** Structured install disclosure (`POST /api/plugins/install/preview`),
- *  mirroring the Rust `InstallConsent`. Drives the install consent modal. */
-export interface PluginInstallConsent {
-  id: string;
-  version: string;
-  source: string;
-  /** One line stating what is being installed (resolved release, ref, etc). */
-  notice: string;
-  /** The source is off the audited-release default path; warn on it. */
-  unverified: boolean;
-  /** Trust class: "featured" | "community" | "local". */
-  validation: string;
-  capabilities: string[];
-  ui: PluginUpdateUiView[];
-  agent_integrations: PluginAgentIntegration[];
-  build_steps: string[];
-  fingerprint: string;
-}
-
-export type PluginInstallPreviewResult =
-  | { kind: "ok"; consent: PluginInstallConsent }
-  | { kind: "error"; message: string };
-
-/** Classify a gh: install candidate and return its disclosure, without
- *  installing. Backs the install consent modal. */
-export async function previewPluginInstall(source: string): Promise<PluginInstallPreviewResult> {
-  try {
-    return await kindRequest(
-      "/api/plugins/install/preview",
-      jsonInit("POST", { source }, ACCEPT_JSON),
-      (p) =>
-        typeof p.fingerprint === "string"
-          ? { kind: "ok" as const, consent: p as unknown as PluginInstallConsent }
-          : null,
-      "Install preview failed",
-    );
-  } catch {
-    return { kind: "error", message: "Network error." };
-  }
-}
-
-/** Outcome of starting a lifecycle job: a job id to poll, or an error (403
- *  read_only / elevation_required is handled by the fetch interceptor). */
-export type PluginJobStartResult = { kind: "ok"; jobId: string } | { kind: "error"; message: string };
-
-async function startPluginJob(url: string, body: unknown): Promise<PluginJobStartResult> {
-  try {
-    return await kindRequest(
-      url,
-      jsonInit("POST", body, ACCEPT_JSON),
-      (p) => (typeof p.job_id === "string" ? { kind: "ok" as const, jobId: p.job_id } : null),
-      "Request failed",
-    );
-  } catch {
-    return { kind: "error", message: "Network error." };
-  }
-}
-
-/** Start a host-side install job for an approved gh: source. Poll the returned
- *  job id with `fetchPluginJob`. */
-export async function startPluginInstall(source: string, expectedFingerprint: string): Promise<PluginJobStartResult> {
-  return startPluginJob("/api/plugins/install", { source, expected_fingerprint: expectedFingerprint });
-}
-
-/** Start a host-side uninstall job for an installed external plugin. */
-export async function startPluginUninstall(id: string): Promise<PluginJobStartResult> {
-  return startPluginJob(`/api/plugins/${encodeURIComponent(id)}/uninstall`, {});
-}
-
-/** A lifecycle job's status, mirroring the Rust `PluginJobStatus` tag. */
-export type PluginJobState = { state: "running" } | { state: "succeeded" } | { state: "failed"; error: string };
-
-/** A lifecycle job plus a bounded tail of its host-side log
- *  (`GET /api/plugins/jobs/{id}`). */
-export interface PluginJob {
-  job: {
-    id: string;
-    kind: "install" | "uninstall";
-    target: string;
-    status: PluginJobState;
-    started_at: number;
-    finished_at: number | null;
-  };
-  log: {
-    exists: boolean;
-    tail: string;
-    lines_returned: number;
-    truncated: boolean;
-  };
-}
-
-export type PluginJobResult = { kind: "ok"; job: PluginJob } | { kind: "error"; status: number; message: string };
-
-/** Fetch a lifecycle job's status plus a tail of its log. Polled by the
- *  progress modal until the job reaches a terminal state. The HTTP `status` is
- *  preserved so the caller can tell a terminal 404 (the job is gone, e.g. after
- *  a daemon restart) from a transient failure worth retrying. */
-export async function fetchPluginJob(jobId: string, tail = 200): Promise<PluginJobResult> {
-  try {
-    const reply = await send(`/api/plugins/jobs/${encodeURIComponent(jobId)}?tail=${tail}`, {
-      headers: ACCEPT_JSON,
-    }).catch(() => null);
-    if (!reply) return { kind: "error", status: 0, message: "Network error." };
-    const { ok, status, payload } = reply;
-    if (ok && typeof payload?.job === "object" && payload.job !== null) {
-      return { kind: "ok", job: payload as unknown as PluginJob };
-    }
-    return { kind: "error", status, message: stringField(payload, "message") ?? `Job status failed (HTTP ${status}).` };
-  } catch {
-    return { kind: "error", status: 0, message: "Network error." };
-  }
-}
-
-// Plugin UI extension points (#2366).
-
-/** Display tone a plugin attaches to a slot entry or notification. The host
- *  validates it to this closed set; each surface maps it to a color. */
-export type PluginUiTone = "neutral" | "info" | "success" | "warn" | "danger";
-
-/** The host-rendered slots, kebab-case as the host serializes them. */
-export type PluginUiSlot =
-  | "status-bar"
-  | "header-start"
-  | "row-badge"
-  | "row-column"
-  | "sort-key"
-  | "filter-facet"
-  | "card"
-  | "pane"
-  | "composer-action"
-  | "detail-badge"
-  | "home-pane"
-  | "page"
-  | "notification";
-
-/** One piece of UI state a worker pushed. `payload` shape is determined by
- *  `slot`; the dashboard renders it (no plugin code runs here). */
-export interface PluginUiEntry {
-  plugin_id: string;
-  slot: PluginUiSlot;
-  id: string;
-  session_id?: string;
-  payload: Record<string, unknown>;
-}
-
-/** A notification pushed via `ui.notify`. `seq` is monotonic so the client
- *  toasts each one exactly once. */
-export interface PluginUiNotification {
-  seq: number;
-  plugin_id: string;
-  tone: PluginUiTone;
-  title: string;
-  body?: string;
-  session_id?: string;
-  /** A URL a worker asked the surface to open (`ui.open_url`). When present the
-   *  toast is rendered as click-to-open: a browser blocks `window.open` from an
-   *  async push, so the open happens on the user's click. Always http/https. */
-  href?: string;
-  /** A dashboard path to a deep-linked plugin page (`ui.notify` `link`). The toast keeps its tone and opens the path on click. */
-  link?: string;
-}
-
-/** A page an active plugin declares; `url` serves its HTML to a sandboxed frame. */
-export interface PluginPage {
-  plugin_id: string;
-  id: string;
-  title: string;
-  icon: string | null;
-  url: string;
-  /** The plugin's granted capabilities; the page bridge gates on them. */
-  capabilities: string[];
-  /** The page takes the `?link=` value of its dashboard URL over the bridge. Absent on older daemons. */
-  deep_link?: boolean;
-}
-
-export interface PluginUiState {
-  entries: PluginUiEntry[];
-  notifications: PluginUiNotification[];
-  /** Absent on older daemons. */
-  pages?: PluginPage[];
-  /** Mutation counter per plugin, then per scope (session id, or `""` for global). Absent on older daemons. */
-  revisions?: Record<string, Record<string, number>>;
-}
-
-/** A plugin's sessions in its worker's `sessions.list` row shape; null unless it declares `session.read`. */
-export function fetchPluginSessions(pluginId: string): Promise<{ sessions: Record<string, unknown>[] } | null> {
-  return fetchJson(`/api/plugins/${encodeURIComponent(pluginId)}/sessions`);
-}
-
-/** The host's aggregated UI-state snapshot. Returns an empty state (not null)
- *  shape on the server when no plugin host is running. */
-export function fetchPluginUiState(): Promise<PluginUiState | null> {
-  return fetchJson<PluginUiState>("/api/plugins/ui-state");
-}
-
-/** Lets the next frame load of a page's `url` authenticate when device binding is on; the ticket rides an HttpOnly cookie. */
-export async function mintPluginPageTicket(url: string): Promise<boolean> {
-  const reply = await send(`${url}/ticket`, { method: "POST" }).catch(() => null);
-  return reply?.ok ?? false;
 }
 
 export async function setPluginEnabled(id: string, enabled: boolean): Promise<PluginToggleResult> {
@@ -942,71 +607,11 @@ export async function setPluginEnabled(id: string, enabled: boolean): Promise<Pl
     return await kindRequest(
       `/api/plugins/${encodeURIComponent(id)}/enabled`,
       jsonInit("POST", { enabled }),
-      (p) =>
-        Array.isArray(p.plugins) && Array.isArray(p.load_errors)
-          ? { kind: "ok" as const, data: p as unknown as PluginListResponse }
-          : null,
+      (p) => (Array.isArray(p.plugins) ? { kind: "ok" as const, data: p as unknown as PluginListResponse } : null),
       (status) => `Failed to ${enabled ? "enable" : "disable"} plugin (${status}).`,
     );
   } catch {
     return { kind: "error", message: "Network error." };
-  }
-}
-
-/** A worker accepted an action. `baselineRevision` is the scope's UI mutation
- *  counter the host read before forwarding; the UI action can hold its spinner
- *  until the polled counter moves off this value. `null` means the daemon did
- *  not report a baseline (older daemon), so the caller skips the wait and just
- *  clears when the POST settles. */
-export interface PluginActionAccepted {
-  baselineRevision: number | null;
-}
-
-/**
- * Forward a plugin UI action (e.g. a "Refresh" or composer button) to the
- * plugin's worker. Fire-and-forget at the worker: the worker runs the named
- * method and re-pushes its UI state, which a later ui-state poll renders.
- * `sessionId` scopes the baseline revision to the firing UI's session. Returns the
- * accepted baseline (or null if the daemon omitted one), or null on read-only
- * (403), no running worker (404), or network failure.
- */
-export async function invokePluginAction(
-  pluginId: string,
-  method: string,
-  sessionId?: string,
-  params: Record<string, unknown> = {},
-): Promise<PluginActionAccepted | null> {
-  try {
-    const res = await fetch(
-      `/api/plugins/${encodeURIComponent(pluginId)}/action`,
-      jsonInit("POST", { method, params, session_id: sessionId ?? null }),
-    );
-    if (!res.ok) return null;
-    const payload = (await res.json().catch(() => null)) as Payload | null;
-    // A missing baseline is a sentinel, not revision 0, which would wedge the spinner.
-    const revision = payload?.baseline_revision;
-    return { baselineRevision: typeof revision === "number" ? revision : null };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Invoke an action-less plugin command (`POST /api/plugins/commands/{fqid}/invoke`).
- * These commands (e.g. the GitHub plugin's `status` / `refresh`) carry no client
- * `action`, so the host dispatches a fixed `plugin.command.invoke` notification
- * to the worker. Fire-and-forget: `true` means the daemon accepted and
- * dispatched it, `false` on read-only, unknown command/session, no worker, or
- * network failure.
- */
-export async function invokePluginCommand(fqid: string, sessionId: string): Promise<boolean> {
-  try {
-    return await fetchOk(
-      `/api/plugins/commands/${encodeURIComponent(fqid)}/invoke`,
-      jsonInit("POST", { session_id: sessionId }),
-    );
-  } catch {
-    return false;
   }
 }
 
@@ -1819,27 +1424,6 @@ export async function browseFilesystem(
 export async function fetchGroups(profile?: string): Promise<GroupInfo[]> {
   const query = profile ? `?profile=${encodeURIComponent(profile)}` : "";
   return (await fetchJson<GroupInfo[]>(`/api/groups${query}`)) ?? [];
-}
-
-/** Resolve a plugin `dynamic_select` widget's options from the host (#2897).
- *  `depends` carries the current values of the widget's `depends_on` siblings
- *  in declaration order (for acp_models/acp_modes the first entry is the
- *  selected agent). Returns [] on any failure so the picker degrades to an
- *  empty list rather than throwing. */
-export async function resolvePluginOptions(
-  pluginId: string,
-  source: string,
-  depends: string[],
-): Promise<{ value: string; label: string }[]> {
-  try {
-    const body = await fetchJson<{ options?: { value: string; label: string }[] }>(
-      `/api/plugins/${encodeURIComponent(pluginId)}/settings/options/resolve`,
-      jsonInit("POST", { source, depends }),
-    );
-    return body?.options ?? [];
-  } catch {
-    return [];
-  }
 }
 
 export type ProjectTarget = { scope: "global" } | { scope: "profile"; profile: string };

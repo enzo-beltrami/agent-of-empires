@@ -1,4 +1,4 @@
-// Dockable panes: tab strips, activity-bar toggles, moves between docks, split groups, and plugin panes.
+// Dockable panes: tab strips, activity-bar toggles, moves between docks, and split groups.
 
 import { test, expect } from "./helpers/mockedTest";
 import type { Page } from "@playwright/test";
@@ -79,64 +79,6 @@ test.describe("Dockable pane system", () => {
 
     await expect(page.getByTestId("bottom-dock-resize")).toBeVisible();
     await expect(page.getByLabel("Move diff to right dock")).toBeVisible();
-  });
-
-  test("a plugin pane renders as a dockable tool-window, its action hits the worker, and it survives a dock collapse", async ({
-    page,
-  }) => {
-    await openSession(page);
-
-    await page.route("**/api/plugins/ui-state", (route) =>
-      route.fulfill({
-        json: {
-          entries: [
-            {
-              plugin_id: "acme.demo",
-              slot: "pane",
-              id: "demo_pane",
-              session_id: SESSION,
-              payload: {
-                title: "Demo",
-                default_location: "right",
-                blocks: [
-                  { kind: "heading", text: "Demo" },
-                  { kind: "action", label: "Reload", method: "demo.reload" },
-                ],
-              },
-            },
-          ],
-          notifications: [],
-        },
-      }),
-    );
-
-    let actionBody: { method?: string } | null = null;
-    await page.route("**/api/plugins/acme.demo/action", async (route) => {
-      actionBody = route.request().postDataJSON();
-      await route.fulfill({ status: 202, json: { ok: true } });
-    });
-
-    await page.goto(`/session/${SESSION}`);
-
-    // Plugin panes get a toggle but open only on demand (`autoOpenPluginPanes` defaults off).
-    const paneId = "plugin:acme.demo:demo_pane";
-    await expect(page.locator(`[data-testid="pane-toggle-${paneId}"]`)).toBeVisible();
-    await expect(page.getByTestId(`pane-tab-${paneId}`)).toHaveCount(0);
-    await page.locator(`[data-testid="pane-toggle-${paneId}"]`).click();
-    await expect(page.getByTestId(`pane-tab-${paneId}`)).toBeVisible();
-    await expect(page.locator('[data-testid="plugin-pane-body"][data-plugin-id="acme.demo"]')).toBeVisible();
-
-    await page.getByTestId("plugin-pane-action").click();
-    await expect.poll(() => actionBody?.method).toBe("demo.reload");
-
-    // Collapsing and re-expanding the right dock keeps the active plugin pane.
-    const handle = page.getByTestId("content-split-resize-handle");
-    await page.keyboard.press("ControlOrMeta+Alt+b");
-    await expect(handle).toBeHidden();
-    await page.keyboard.press("ControlOrMeta+Alt+b");
-    await expect(handle).toBeVisible();
-    await expect(page.getByTestId(`pane-tab-${paneId}`)).toBeVisible();
-    await expect(page.locator('[data-testid="plugin-pane-body"][data-plugin-id="acme.demo"]')).toBeVisible();
   });
 
   test("dragging a tab reorders it within a dock and the order persists across reload", async ({ page }) => {

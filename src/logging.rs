@@ -126,7 +126,6 @@ pub const KNOWN_SUB_TARGETS: &[&str] = &[
     "acp.supervisor",
     "acp.event_store",
     "acp.runner",
-    "plugin.host",
     "terminal.ws",
     "auth.token",
     "auth.middleware",
@@ -159,7 +158,6 @@ pub const KNOWN_SUB_TARGETS: &[&str] = &[
     "migrations.v052",
     "migrations.v053",
     "server.file_watch",
-    "server.lifecycle",
     "server.idle_reap",
     "server.runtime",
     "server.session_service",
@@ -186,7 +184,6 @@ pub const KNOWN_SUB_TARGETS: &[&str] = &[
     "serve.shutdown",
     "daemon.client",
     "acp.queue",
-    "plugin.install",
     "http.api.system",
 ];
 

@@ -11,7 +11,6 @@ import { useQueuedCountForSessions } from "../../hooks/useAcpQueueCount";
 import { summarizeRateLimits } from "../../lib/rateLimitSummary";
 import { computeSessionRowTag, useSessionRowTagMode } from "../../lib/sessionRowTag";
 import { FoldChevron } from "../icons";
-import { PluginRowLine } from "../plugin/PluginSlots";
 import { formatDurationSecondsShort, formatSnoozeRemainingShort } from "./format";
 import type { RowModel } from "./rowModel";
 
@@ -267,7 +266,7 @@ function PlanProgressMini({ summary }: { summary: NonNullable<SessionResponse["p
   );
 }
 
-/** Plugin line, plan progress, and multi-repo chips below the label; hidden in the compact rail. */
+/** Plan progress and multi-repo chips below the label; hidden in the compact rail. */
 export function RowSubRows({ first }: { first: SessionResponse | undefined }) {
   if (!first) return null;
   const plan = first.plan_summary;
@@ -275,7 +274,6 @@ export function RowSubRows({ first }: { first: SessionResponse | undefined }) {
   const showPlan = plan && plan.total > 0 && !(plan.completed >= plan.total && first.status === "Idle");
   return (
     <>
-      <PluginRowLine sessionId={first.id} />
       {showPlan && <PlanProgressMini summary={plan} />}
       {(first.workspace_repos?.length ?? 0) > 1 && (
         <span

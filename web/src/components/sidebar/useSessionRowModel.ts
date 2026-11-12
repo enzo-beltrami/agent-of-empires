@@ -2,7 +2,6 @@ import type { Workspace } from "../../lib/types";
 import type { RuntimeCursor, SessionMutation } from "../../lib/api";
 import { useIdleDecayWindowMs } from "../../lib/idleDecay";
 import { useUnreadIndicatorEnabled } from "../../lib/unreadIndicator";
-import { usePluginAttention } from "../../lib/pluginUiContext";
 import type { OptimisticTriage } from "../../lib/sidebarOptimistic";
 import { deriveRowModel, SESSION_COLOR_OPTIONS, type RowModel } from "./rowModel";
 import { sessionActionTarget, usePendingSetting } from "./usePendingSetting";
@@ -22,12 +21,10 @@ export function useSessionRowModel(
 ) {
   const idleDecayWindowMs = useIdleDecayWindowMs();
   const unreadIndicatorEnabled = useUnreadIndicatorEnabled();
-  const pluginAttention = usePluginAttention();
   const derived = deriveRowModel(workspace, optimistic, {
     idleDecayWindowMs,
     isActive,
     unreadIndicatorEnabled,
-    pluginAttention,
   });
   const targets = workspace.sessions.map((session) => sessionActionTarget(session, observation.runtimeEpoch));
   const [notifyPreset, setNotify] = usePendingSetting("notifications", targets.slice(0, 1), derived.notifyPreset);

@@ -4,7 +4,7 @@ use agent_of_empires::cli::{self, Cli, Commands};
 use agent_of_empires::logging::{self, LogConfig, ProcessContext, SubscriberTarget};
 use agent_of_empires::migrations;
 use anyhow::Result;
-use clap::{CommandFactory, FromArgMatches, Parser};
+use clap::{CommandFactory, Parser};
 use clap_complete::generate;
 use std::io::{IsTerminal, Write};
 
@@ -44,11 +44,11 @@ fn is_serve_daemon_child(cli: &Cli) -> bool {
 
 /// Reject disabled Web starts while keeping lifecycle controls available.
 fn serve_unavailable_error(cli: &Cli) -> Option<clap::Error> {
-    if !cli::graft::serve_start_blocked(cli, true) {
+    if !cli::serve::start_blocked(cli, true) {
         return None;
     }
     let config = agent_of_empires::session::Config::load_or_warn();
-    cli::graft::serve_start_blocked(cli, cli::graft::web_disabled(&config)).then(|| {
+    cli::serve::start_blocked(cli, agent_of_empires::plugin::web_disabled(&config)).then(|| {
         Cli::command().error(
             clap::error::ErrorKind::InvalidSubcommand,
             "unrecognized subcommand 'serve'",
@@ -93,17 +93,7 @@ fn main() -> Result<()> {
         }
     }
 
-    // Only a parse failure loads the plugin registry to graft plugin commands.
-    let mut cli = match Cli::try_parse() {
-        Ok(cli) => cli,
-        Err(_) => {
-            let matches = cli::graft::augmented_command().get_matches();
-            match Cli::from_arg_matches(&matches) {
-                Ok(cli) => cli,
-                Err(_) => return cli::graft::dispatch_plugin_command(&matches),
-            }
-        }
-    };
+    let mut cli = Cli::parse();
 
     if cli.command.is_none() {
         Cli::command().print_help()?;

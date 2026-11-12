@@ -5,10 +5,9 @@
 ## Where to look
 
 - `src/process/`: OS process handling plus reusable worker supervision.
-- `src/events/`: durable topic event log used by ACP and plugins.
+- `src/events/`: durable topic event log used by ACP.
 - `src/migrations/`: versioned migrations for persisted data.
 - `tests/e2e/`: full-binary tests. See [E2E tests](#e2e-tests).
-- `aoe-plugin-api/`: public plugin manifest and capability types.
 - `docs/development/`: contributor and architecture references.
 
 ## Commands

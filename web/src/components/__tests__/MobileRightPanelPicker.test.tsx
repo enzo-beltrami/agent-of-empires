@@ -4,11 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { MobileRightPanelPicker } from "../MobileRightPanelPicker";
-import { FileDiff, Puzzle } from "lucide-react";
+import { FileDiff } from "lucide-react";
 
-const PLUGIN_ID = "plugin:acme.kit:gh";
-const describePane = (id: string) =>
-  id === PLUGIN_ID ? { title: "GitHub", icon: Puzzle } : { title: id, icon: FileDiff };
+const describePane = (id: string) => ({ title: id === "diff" ? "Changes" : id, icon: FileDiff });
 
 function setup(overrides: Partial<Parameters<typeof MobileRightPanelPicker>[0]> = {}) {
   const onSelect = vi.fn();
@@ -47,13 +45,13 @@ describe("MobileRightPanelPicker", () => {
     expect(onSelect).toHaveBeenCalledWith("files");
   });
 
-  it("lists plugin panes with their descriptor title and selects them by id", () => {
-    const { onSelect } = setup({ availablePanes: ["diff", PLUGIN_ID], active: PLUGIN_ID });
-    const option = screen.getByTestId("mobile-right-panel-pick-plugin:acme.kit:gh");
-    expect(option.textContent).toContain("GitHub");
+  it("lists panes with their descriptor title and selects them by id", () => {
+    const { onSelect } = setup({ availablePanes: ["diff"], active: "diff" });
+    const option = screen.getByTestId("mobile-right-panel-pick-diff");
+    expect(option.textContent).toContain("Changes");
     expect(option.getAttribute("aria-current")).toBe("true");
     fireEvent.click(option);
-    expect(onSelect).toHaveBeenCalledWith("plugin:acme.kit:gh");
+    expect(onSelect).toHaveBeenCalledWith("diff");
   });
 
   it("closes on backdrop click and on Escape only", () => {

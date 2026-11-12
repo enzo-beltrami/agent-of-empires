@@ -261,22 +261,6 @@ fn resolve_host_creation(
             body.tool = name.to_owned();
         } else if let Some(tool) = crate::agents::resolve_tool_name(name) {
             body.tool = tool.to_owned();
-        } else if crate::plugin::agent_integration::agent_command(
-            name,
-            config
-                .session
-                .custom_agents
-                .iter()
-                .filter(|(_, command)| !command.trim().is_empty())
-                .map(|(name, _)| name.as_str()),
-        )
-        .is_some()
-        {
-            anyhow::ensure!(
-                body.command_override.is_empty(),
-                "--cmd-override cannot be used with configured custom agent --tool selections"
-            );
-            body.tool = name.to_owned();
         } else {
             anyhow::ensure!(
                 !config.session.custom_agents.contains_key(name),

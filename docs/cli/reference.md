@@ -49,14 +49,8 @@ This document contains the help content for the `aoe` command-line program.
 * [`aoe group move`↴](#aoe-group-move)
 * [`aoe plugin`↴](#aoe-plugin)
 * [`aoe plugin list`↴](#aoe-plugin-list)
-* [`aoe plugin info`↴](#aoe-plugin-info)
-* [`aoe plugin logs`↴](#aoe-plugin-logs)
 * [`aoe plugin enable`↴](#aoe-plugin-enable)
 * [`aoe plugin disable`↴](#aoe-plugin-disable)
-* [`aoe plugin install`↴](#aoe-plugin-install)
-* [`aoe plugin uninstall`↴](#aoe-plugin-uninstall)
-* [`aoe plugin hash`↴](#aoe-plugin-hash)
-* [`aoe plugin discover`↴](#aoe-plugin-discover)
 * [`aoe profile`↴](#aoe-profile)
 * [`aoe profile list`↴](#aoe-profile-list)
 * [`aoe profile create`↴](#aoe-profile-create)
@@ -159,7 +153,7 @@ Run `aoe serve` to start the daemon and web dashboard.
 * `killall` — Force-stop everything aoe is running: the serve daemon, all agent workers, and all aoe tmux sessions. Destructive and unprompted
 * `session` — Manage session lifecycle (start, stop, attach, etc.)
 * `group` — Manage groups for organizing sessions
-* `plugin` — Manage plugins (list, info, enable, disable, install, update, uninstall)
+* `plugin` — List, enable and disable the built-in plugins
 * `profile` — Manage profiles (separate workspaces)
 * `project` — Manage the project registry used by multi-repo session pickers
 * `sandbox` — Inspect and reclaim per-session sandbox agent stores
@@ -894,37 +888,31 @@ Move session to group
 
 ## `aoe plugin`
 
-Manage plugins (list, info, enable, disable, install, update, uninstall)
+List, enable and disable the built-in plugins
 
 **Usage:** `aoe plugin <COMMAND>`
 
 ###### **Subcommands:**
 
-* `list` — List every known plugin with version, validation, and state
-* `info` — Show one plugin's manifest details
-* `logs` — Print the path of a plugin worker's most recent log
-* `enable` — Enable a plugin's contributions
-* `disable` — Disable a plugin; its settings stay on disk for re-enabling
-* `install` — Install an external plugin from a `gh:owner/repo[@ref]` slug or a local directory. With no `@ref`, installs the repo's latest release; an explicit `@ref` installs unverified, un-audited code. Community plugins run at your own risk
-* `uninstall` — Uninstall an external plugin, removing its files and capability grant
-* `hash` — Print the deterministic source tree hash for a plugin directory, the value a maintainer pins in the featured index
-* `discover` — Search GitHub's `aoe-plugin` topic for installable plugins
+* `list` — List every built-in plugin with its version and state
+* `enable` — Enable a plugin
+* `disable` — Disable a plugin
 
 
 
 ## `aoe plugin list`
 
-List every known plugin with version, validation, and state
+List every built-in plugin with its version and state
 
 **Usage:** `aoe plugin list`
 
 
 
-## `aoe plugin info`
+## `aoe plugin enable`
 
-Show one plugin's manifest details
+Enable a plugin
 
-**Usage:** `aoe plugin info <ID>`
+**Usage:** `aoe plugin enable <ID>`
 
 ###### **Arguments:**
 
@@ -932,92 +920,15 @@ Show one plugin's manifest details
 
 
 
-## `aoe plugin logs`
-
-Print the path of a plugin worker's most recent log
-
-**Usage:** `aoe plugin logs <ID>`
-
-###### **Arguments:**
-
-* `<ID>` — Plugin id
-
-
-
-## `aoe plugin enable`
-
-Enable a plugin's contributions
-
-**Usage:** `aoe plugin enable <ID>`
-
-###### **Arguments:**
-
-* `<ID>` — Plugin id
-
-
-
 ## `aoe plugin disable`
 
-Disable a plugin; its settings stay on disk for re-enabling
+Disable a plugin
 
 **Usage:** `aoe plugin disable <ID>`
 
 ###### **Arguments:**
 
-* `<ID>` — Plugin id
-
-
-
-## `aoe plugin install`
-
-Install an external plugin from a `gh:owner/repo[@ref]` slug or a local directory. With no `@ref`, installs the repo's latest release; an explicit `@ref` installs unverified, un-audited code. Community plugins run at your own risk
-
-**Usage:** `aoe plugin install [OPTIONS] <SOURCE>`
-
-###### **Arguments:**
-
-* `<SOURCE>` — `gh:owner/repo` (latest release) or `gh:owner/repo@ref` (unverified) or a local directory path
-
-###### **Options:**
-
-* `--yes` — Grant all requested capabilities without prompting
-* `--dev` — Install a local directory as a dev plugin: it may claim a reserved `aoe.*` / `agent-of-empires.*` id, is never featured, and is refused under `aoe serve --remote`
-
-
-
-## `aoe plugin uninstall`
-
-Uninstall an external plugin, removing its files and capability grant
-
-**Usage:** `aoe plugin uninstall <ID>`
-
-###### **Arguments:**
-
-* `<ID>` — Plugin id
-
-
-
-## `aoe plugin hash`
-
-Print the deterministic source tree hash for a plugin directory, the value a maintainer pins in the featured index
-
-**Usage:** `aoe plugin hash <PATH>`
-
-###### **Arguments:**
-
-* `<PATH>` — Path to the plugin directory
-
-
-
-## `aoe plugin discover`
-
-Search GitHub's `aoe-plugin` topic for installable plugins
-
-**Usage:** `aoe plugin discover [QUERY]`
-
-###### **Arguments:**
-
-* `<QUERY>` — Optional free-text term to narrow the search
+* `<ID>` — Plugin id, e.g. `aoe.web`
 
 
 
@@ -1375,13 +1286,13 @@ Inspect resolved settings and their provenance
 
 ###### **Subcommands:**
 
-* `explain` — Explain where a setting's effective value comes from. KEY is a core `section.field` (e.g. `acp.default_agent`) or a plugin `plugin:<id>.<field>` (e.g. `plugin:acme.kit.retries`)
+* `explain` — Explain where a setting's effective value comes from. KEY is a `section.field` (e.g. `acp.default_agent`)
 
 
 
 ## `aoe settings explain`
 
-Explain where a setting's effective value comes from. KEY is a core `section.field` (e.g. `acp.default_agent`) or a plugin `plugin:<id>.<field>` (e.g. `plugin:acme.kit.retries`)
+Explain where a setting's effective value comes from. KEY is a `section.field` (e.g. `acp.default_agent`)
 
 **Usage:** `aoe settings explain <KEY>`
 

@@ -1,19 +1,13 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import type { PluginInstallPreviewResult, PluginJobResult, PluginListResponse, PluginView } from "../../../lib/api";
+import type { PluginListResponse, PluginView } from "../../../lib/api";
 
 const api = vi.hoisted(() => ({
   fetchPlugins: vi.fn(),
   setPluginEnabled: vi.fn(),
-  discoverPlugins: vi.fn(),
-  fetchPluginDetails: vi.fn(),
-  previewPluginInstall: vi.fn(),
-  startPluginInstall: vi.fn(),
-  startPluginUninstall: vi.fn(),
-  fetchPluginJob: vi.fn(),
 }));
 vi.mock("../../../lib/api", () => api);
 
@@ -25,125 +19,38 @@ const STATUS: PluginView = {
   version: "1.1.0",
   description: "Detects agent session status.",
   enabled: true,
-  builtin: true,
-  validation: "builtin",
-  source: null,
-  capabilities: [],
-  ui_contributions: [],
-  granted: true,
-  needs_reapproval: false,
-} as PluginView;
-const EXAMPLE: PluginView = {
+};
+const OTHER: PluginView = {
   ...STATUS,
-  id: "example.plugin",
-  name: "Example",
+  id: "aoe.other",
+  name: "Other",
   version: "0.1.0",
-  description: "A community plugin.",
+  description: "A second plugin.",
   enabled: false,
-  builtin: false,
-  validation: "community",
-  source: "gh:example/plugin",
-  capabilities: ["net"],
-  ui_contributions: [
-    { slot: "status-bar", id: "s" },
-    { slot: "row-badge", id: "b" },
-  ],
 };
 
-const list = (plugins: PluginView[] = [STATUS, EXAMPLE], load_errors: string[] = []): PluginListResponse => ({
-  plugins,
-  load_errors,
-});
-
-const jobResult = (state: "succeeded" | "failed", tail: string, error?: string): PluginJobResult =>
-  ({
-    kind: "ok",
-    job: {
-      job: {
-        id: "job1",
-        kind: "uninstall",
-        target: "example.plugin",
-        status: error ? { state, error } : { state },
-        started_at: 0,
-        finished_at: 1,
-      },
-      log: { exists: true, tail, lines_returned: 1, truncated: false },
-    },
-  }) as PluginJobResult;
-
-const manifest = (over: Record<string, unknown> = {}) => ({
-  id: "acme.widget",
-  name: "Widget",
-  version: "2.3.0",
-  description: "A widget plugin.",
-  api_version: 4,
-  capabilities: ["net"],
-  ui_contributions: [{ slot: "status-bar", id: "s" }],
-  screenshots: [],
-  ...over,
-});
-
-const details = (over: Record<string, unknown> = {}) =>
-  api.fetchPluginDetails.mockResolvedValue({
-    kind: "ok",
-    detail: { source: "gh:acme/widget", manifest: manifest(), manifest_error: null, release_tags: [], ...over },
-  });
-
-const WIDGET = {
-  slug: "gh:acme/widget",
-  html_url: "https://github.com/acme/widget",
-  description: "A widget plugin.",
-  stars: 42,
-  badge: "unvetted",
-  install_command: "aoe plugin install gh:acme/widget",
-};
+const list = (plugins: PluginView[] = [STATUS, OTHER]): PluginListResponse => ({ plugins });
 
 beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset());
   api.fetchPlugins.mockResolvedValue(list());
-  api.discoverPlugins.mockResolvedValue({ kind: "ok", results: [WIDGET] });
-  api.fetchPluginDetails.mockResolvedValue({
-    kind: "ok",
-    detail: { source: "gh:example/plugin", manifest: null, manifest_error: null, release_tags: [] },
-  });
-  api.startPluginInstall.mockResolvedValue({ kind: "ok", jobId: "job1" });
-  api.startPluginUninstall.mockResolvedValue({ kind: "ok", jobId: "job1" });
-  api.fetchPluginJob.mockResolvedValue(jobResult("succeeded", "done"));
 });
 
-const click = async (testId: string) => fireEvent.click(await screen.findByTestId(testId));
-
-function renderWith(plugins?: PluginView[], loadErrors?: string[]) {
-  if (plugins || loadErrors) api.fetchPlugins.mockResolvedValue(list(plugins, loadErrors));
+function renderWith(plugins?: PluginView[]) {
+  if (plugins) api.fetchPlugins.mockResolvedValue(list(plugins));
   return render(<PluginsSettings />);
 }
 
 describe("installed plugins", () => {
-  it("renders name, version, description, deduped UI slots, and builtin has no Uninstall", async () => {
-    renderWith();
-    for (const text of ["Agent Status Detection", "v1.1.0", "A community plugin.", "UI: status-bar, row-badge"]) {
+  it("renders name, version and description, and hides the switch when read-only", async () => {
+    const { unmount } = renderWith();
+    for (const text of ["Agent Status Detection", "v1.1.0", "A second plugin."]) {
       expect(await screen.findByText(text)).toBeTruthy();
     }
-    expect(screen.queryByTestId("plugin-uninstall-aoe.status")).toBeNull();
-  });
-
-  it("shows a needs-approval state for an ungranted plugin", async () => {
-    renderWith([{ ...EXAMPLE, capabilities: ["net", "fs.read"], granted: false, needs_reapproval: true }]);
-    await screen.findByTestId("plugin-needs-approval-example.plugin");
-    expect(screen.getByText(/net, fs\.read/)).toBeTruthy();
-    expect(screen.getByText(/not granted/)).toBeTruthy();
-  });
-
-  it("styles the dev validation badge as a warning", async () => {
-    renderWith([{ ...EXAMPLE, id: "agent-of-empires.claude", validation: "dev", source: "/src/claude" }]);
-    const badge = await screen.findByTestId("plugin-validation-agent-of-empires.claude");
-    expect(badge.textContent).toBe("dev");
-    expect(badge.className).toContain("text-status-warning");
-  });
-
-  it("renders load errors", async () => {
-    renderWith([STATUS], ["plugins/bad: manifest is invalid"]);
-    expect(await screen.findByText(/manifest is invalid/)).toBeTruthy();
+    unmount();
+    render(<PluginsSettings readOnly />);
+    await screen.findByText("Agent Status Detection");
+    expect(screen.queryByLabelText("Enable Agent Status Detection")).toBeNull();
   });
 
   it("shows an error when the list fails to load", async () => {
@@ -201,218 +108,5 @@ describe("installed plugins", () => {
     renderWith();
     fireEvent.click(await screen.findByLabelText("Enable Agent Status Detection"));
     expect(await screen.findByText("Dashboard is read-only.")).toBeTruthy();
-  });
-});
-
-describe("detail modal", () => {
-  it("opens from an installed row with fallback fields, header icon, and closes", async () => {
-    renderWith([{ ...EXAMPLE, icon: "github", icon_asset_url: "/api/plugins/x/icon" }]);
-    await click("plugin-open-example.plugin");
-    const modal = await screen.findByTestId("plugin-detail-modal");
-    expect(modal.textContent).toContain("v0.1.0");
-    expect((await screen.findByTestId("plugin-detail-icon")).getAttribute("src")).toBe("/api/plugins/x/icon");
-    await click("plugin-detail-close");
-    await waitFor(() => expect(screen.queryByTestId("plugin-detail-modal")).toBeNull());
-    await click("plugin-open-example.plugin");
-    await screen.findByTestId("plugin-detail-modal");
-    fireEvent.keyDown(window, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByTestId("plugin-detail-modal")).toBeNull());
-  });
-
-  it("shows a details fetch error instead of claiming no releases", async () => {
-    api.fetchPluginDetails.mockResolvedValue({ kind: "error", message: "Rate limited by GitHub." });
-    renderWith();
-    await click("plugin-open-example.plugin");
-    expect((await screen.findByTestId("plugin-detail-error")).textContent).toContain("Rate limited by GitHub.");
-    expect(screen.getByTestId("plugin-detail-modal").textContent).not.toContain("No published releases.");
-  });
-
-  it("opens from a discovery result with version and release tags", async () => {
-    details({ release_tags: ["v2.3.0", "v2.2.0"] });
-    renderWith();
-    await click("plugins-tab-marketplace");
-    await click("plugins-discover");
-    await click("plugins-discover-open-gh:acme/widget");
-    await waitFor(() => expect(api.fetchPluginDetails).toHaveBeenCalledWith("gh:acme/widget"));
-    const modal = await screen.findByTestId("plugin-detail-modal");
-    expect(modal.textContent).toContain("v2.3.0");
-    expect(modal.textContent).toContain("net");
-    expect((await screen.findByTestId("plugin-detail-versions")).textContent).toContain("v2.2.0");
-    expect(screen.queryByTestId("plugin-detail-screenshots")).toBeNull();
-  });
-
-  it("renders a screenshot gallery with a dismissible lightbox", async () => {
-    const a = "https://raw.githubusercontent.com/acme/widget/HEAD/a.png";
-    details({
-      manifest: manifest({
-        screenshots: [
-          { src: a, alt: "Dashboard card", caption: "Live card." },
-          { src: "https://raw.githubusercontent.com/acme/widget/HEAD/b.gif", alt: "Demo", caption: "" },
-        ],
-      }),
-    });
-    renderWith();
-    await click("plugin-open-example.plugin");
-    const gallery = await screen.findByTestId("plugin-detail-screenshots");
-    const imgs = gallery.querySelectorAll("img");
-    expect(imgs).toHaveLength(2);
-    expect([imgs[0]!.getAttribute("src"), imgs[0]!.getAttribute("alt"), imgs[0]!.getAttribute("loading")]).toEqual([
-      a,
-      "Dashboard card",
-      "lazy",
-    ]);
-    expect(gallery.textContent).toContain("Live card.");
-
-    const body = within(document.body);
-    fireEvent.click(imgs[0]!);
-    const bigImg = (await body.findByTestId("plugin-detail-lightbox")).querySelector("img")!;
-    expect(bigImg.getAttribute("src")).toBe(a);
-    fireEvent.click(bigImg);
-    expect(body.queryByTestId("plugin-detail-lightbox")).not.toBeNull();
-    fireEvent.keyDown(window, { key: "Escape" });
-    await waitFor(() => expect(body.queryByTestId("plugin-detail-lightbox")).toBeNull());
-    expect(body.queryByTestId("plugin-detail-modal")).not.toBeNull();
-    fireEvent.click(imgs[0]!);
-    fireEvent.click(await body.findByTestId("plugin-detail-lightbox"));
-    await waitFor(() => expect(body.queryByTestId("plugin-detail-lightbox")).toBeNull());
-    fireEvent.error(imgs[0]!);
-    expect(imgs[0]!.closest("figure")!.className).toContain("hidden");
-  });
-});
-
-describe("marketplace", () => {
-  const installConsent: PluginInstallPreviewResult = {
-    kind: "ok",
-    consent: {
-      id: "acme.widget",
-      version: "1.0.0",
-      source: "gh:acme/widget",
-      notice: "installing the latest release v1.0.0",
-      unverified: false,
-      validation: "community",
-      capabilities: ["net"],
-      ui: [],
-      build_steps: ["sh build.sh"],
-      agent_integrations: [{ tool: "session-agent", command: "agent --flag" }],
-      fingerprint: "treeA||community",
-    },
-  };
-
-  async function search() {
-    renderWith();
-    await click("plugins-tab-marketplace");
-    await click("plugins-discover");
-  }
-
-  it("Install previews the gh: source, discloses access, and starts the pinned job", async () => {
-    api.previewPluginInstall.mockResolvedValue(installConsent);
-    await search();
-    await click("plugins-install-gh:acme/widget");
-    await waitFor(() => expect(api.previewPluginInstall).toHaveBeenCalledWith("gh:acme/widget"));
-    expect((await screen.findByTestId("plugin-install-caps")).textContent).toContain("net");
-    expect(screen.getByTestId("plugin-install-agent-integrations").textContent).toContain(
-      "session-agent: agent --flag",
-    );
-    expect(screen.getByTestId("plugin-install-build-steps").textContent).toContain("sh build.sh");
-    await click("plugin-install-approve");
-    await waitFor(() => expect(api.startPluginInstall).toHaveBeenCalledWith("gh:acme/widget", "treeA||community"));
-    await waitFor(() => expect(screen.queryByTestId("plugin-install-consent-modal")).toBeNull());
-    await screen.findByTestId("plugin-job-modal");
-  });
-  it("discloses plugin agent commands when they are the only install access", async () => {
-    if (installConsent.kind !== "ok") throw new Error("expected an install consent fixture");
-    api.previewPluginInstall.mockResolvedValue({
-      kind: "ok",
-      consent: {
-        ...installConsent.consent,
-        capabilities: [],
-        ui: [],
-        build_steps: [],
-        agent_integrations: [{ tool: "session-agent", command: "TOKEN=local agent --flag" }],
-      },
-    });
-    await search();
-    await click("plugins-install-gh:acme/widget");
-    expect((await screen.findByTestId("plugin-install-agent-integrations")).textContent).toContain(
-      "session-agent: TOKEN=local agent --flag",
-    );
-  });
-  it("shows a fallback when an install agent integration declares no command, and approves", async () => {
-    if (installConsent.kind !== "ok") throw new Error("expected an install consent fixture");
-    api.previewPluginInstall.mockResolvedValue({
-      kind: "ok",
-      consent: {
-        ...installConsent.consent,
-        capabilities: [],
-        ui: [],
-        build_steps: [],
-        agent_integrations: [{ tool: "session-agent" }],
-      },
-    });
-    await search();
-    await click("plugins-install-gh:acme/widget");
-    expect((await screen.findByTestId("plugin-install-agent-integrations")).textContent).toContain(
-      "session-agent: No launch command declared",
-    );
-    await click("plugin-install-approve");
-    await waitFor(() => expect(api.startPluginInstall).toHaveBeenCalledWith("gh:acme/widget", "treeA||community"));
-  });
-
-  it("surfaces a preview error without opening the consent modal", async () => {
-    api.previewPluginInstall.mockResolvedValue({ kind: "error", message: "no published release" });
-    await search();
-    await click("plugins-install-gh:acme/widget");
-    expect((await screen.findByTestId("plugins-discover-error")).textContent).toContain("no published release");
-    expect(screen.queryByTestId("plugin-install-consent-modal")).toBeNull();
-  });
-
-  it("surfaces a rejected install start in the consent modal", async () => {
-    api.previewPluginInstall.mockResolvedValue(installConsent);
-    api.startPluginInstall.mockResolvedValue({ kind: "error", message: "Another plugin operation is already running" });
-    await search();
-    await click("plugins-install-gh:acme/widget");
-    await click("plugin-install-approve");
-    expect((await screen.findByTestId("plugin-install-consent-error")).textContent).toContain("already running");
-  });
-});
-
-describe("uninstall and job progress", () => {
-  async function uninstall() {
-    renderWith();
-    await click("plugin-uninstall-example.plugin");
-    await screen.findByTestId("plugin-uninstall-confirm");
-  }
-
-  it("cancelling starts no job; confirming follows the job log and closes to a refreshed list", async () => {
-    api.fetchPluginJob.mockResolvedValue(jobResult("succeeded", "uninstalled example.plugin"));
-    await uninstall();
-    await click("plugin-uninstall-cancel");
-    await waitFor(() => expect(screen.queryByTestId("plugin-uninstall-confirm")).toBeNull());
-    expect(api.startPluginUninstall).not.toHaveBeenCalled();
-    await click("plugin-uninstall-example.plugin");
-    await click("plugin-uninstall-confirm-button");
-    await waitFor(() => expect(api.startPluginUninstall).toHaveBeenCalledWith("example.plugin"));
-    const log = await screen.findByTestId("plugin-job-log");
-    await waitFor(() => expect(log.textContent).toContain("uninstalled example.plugin"));
-    const before = api.fetchPlugins.mock.calls.length;
-    await click("plugin-job-close");
-    await waitFor(() => expect(screen.queryByTestId("plugin-job-modal")).toBeNull());
-    await waitFor(() => expect(api.fetchPlugins.mock.calls.length).toBeGreaterThan(before));
-  });
-
-  it("shows a failed job's error", async () => {
-    api.fetchPluginJob.mockResolvedValue(jobResult("failed", "uninstalling", "removing tree failed"));
-    await uninstall();
-    await click("plugin-uninstall-confirm-button");
-    expect((await screen.findByTestId("plugin-job-error")).textContent).toContain("removing tree failed");
-  });
-
-  it("treats a vanished job (404) as terminal", async () => {
-    api.fetchPluginJob.mockResolvedValue({ kind: "error", status: 404, message: "No plugin job job1" });
-    await uninstall();
-    await click("plugin-uninstall-confirm-button");
-    const status = await screen.findByTestId("plugin-job-status");
-    await waitFor(() => expect(status.textContent).toContain("no longer available"));
-    expect(((await screen.findByTestId("plugin-job-close")) as HTMLButtonElement).disabled).toBe(false);
   });
 });

@@ -38,18 +38,6 @@ fn build_schema() -> Vec<FieldDescriptor> {
     out
 }
 
-/// The core [`schema`] plus a virtual `plugin:<id>` section per active plugin.
-pub fn runtime_schema() -> Vec<FieldDescriptor> {
-    let mut out = schema();
-    for p in crate::plugin::registry().active() {
-        out.extend(super::plugin::plugin_field_descriptors(
-            p.id(),
-            &p.manifest.settings,
-        ));
-    }
-    out
-}
-
 pub fn descriptor(section: &str, field: &str) -> Option<&'static FieldDescriptor> {
     schema_ref()
         .iter()

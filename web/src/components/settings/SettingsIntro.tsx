@@ -10,14 +10,8 @@ const INTROS: Record<SettingsIntroId, { summary: ReactNode; details: string }> =
       "One git worktree per session. The path template expands {repo-name}, {branch} and {session-id}. The bare-repo template is under Advanced.",
   },
   plugins: {
-    summary: (
-      <>
-        Plugins add features to AoE. Browse them under Marketplace: <strong>Featured</strong> ones are reviewed by the
-        maintainers, unvetted ones aren't.
-      </>
-    ),
-    details:
-      "Marketplace lists GitHub repositories tagged aoe-plugin. Install shows the capabilities a plugin asks for before anything runs. Featured means reviewed and pinned to a release.",
+    summary: "Plugins are features compiled into AoE that you can turn off.",
+    details: "Turning off the Web dashboard stops aoe serve from starting after the next Daemon restart.",
   },
   "structured-view": {
     summary: "Choose the model, mode and thinking level each agent starts with, so you don't set them every time.",

@@ -16,7 +16,6 @@ import {
   seedLayout,
   setActive,
   setDockCollapsed,
-  syncPluginTabs,
   usePaneLayout,
   type DockLayout,
   type PlaceTarget,
@@ -26,7 +25,7 @@ beforeEach(() => localStorage.clear());
 afterEach(() => localStorage.clear());
 
 function emptyLayout(): DockLayout {
-  return { right: [], bottom: [], nextTerminalIndex: 1, closedPlugins: [], collapsed: { right: false, bottom: false } };
+  return { right: [], bottom: [], nextTerminalIndex: 1, collapsed: { right: false, bottom: false } };
 }
 
 /** Right-dock tabs `right`, bottom-dock tabs `bottom`, each dock's first tab active. */
@@ -90,12 +89,6 @@ describe("pane layout pure ops", () => {
     expect([l.bottom[0]!.tabs, l.bottom[0]!.active]).toEqual([["x", "a", "y"], "a"]);
   });
 
-  it("placeTab never marks a moved plugin tab as closed", () => {
-    const l = placeTab(layout(["plugin:p:a"]), "plugin:p:a", { dock: "bottom", group: 0, newGroup: true });
-    expect(dockOf(l, "plugin:p:a")).toBe("bottom");
-    expect(l.closedPlugins).toEqual([]);
-  });
-
   it("split groups keep independent active tabs and prune only when emptied", () => {
     const l = split();
     expect(groups(l)).toEqual([
@@ -114,24 +107,13 @@ describe("pane layout pure ops", () => {
     expect([dockTabs(l, "right"), dockTabs(l, "bottom")]).toEqual([["diff"], []]);
   });
 
-  it("a closed plugin is not re-added by syncPluginTabs; a new one is", () => {
-    let l = removeTab(layout(["plugin:p:a"]), "plugin:p:a");
-    expect(l.closedPlugins).toContain("plugin:p:a");
-    l = syncPluginTabs(l, [
-      { id: "plugin:p:a", defaultDock: "right" },
-      { id: "plugin:p:b", defaultDock: "bottom" },
-    ]);
-    expect([dockOf(l, "plugin:p:a"), dockOf(l, "plugin:p:b")]).toEqual([null, "bottom"]);
-  });
-
-  it("setDockCollapsed preserves tabs, the active tab, and close intent", () => {
-    const open = setActive(layout(["diff", "plugin:p:a"]), "right", "plugin:p:a");
+  it("setDockCollapsed preserves tabs and the active tab", () => {
+    const open = setActive(layout(["diff", "files"]), "right", "files");
     const collapsed = setDockCollapsed(open, "right", true);
     expect(isDockCollapsed(collapsed, "right")).toBe(true);
-    expect(collapsed.closedPlugins).toEqual([]);
     const reopened = setDockCollapsed(collapsed, "right", false);
     expect(isDockCollapsed(reopened, "right")).toBe(false);
-    for (const l of [collapsed, reopened]) expect(groups(l)).toEqual([[["diff", "plugin:p:a"], "plugin:p:a"]]);
+    for (const l of [collapsed, reopened]) expect(groups(l)).toEqual([[["diff", "files"], "files"]]);
   });
 });
 
@@ -142,8 +124,8 @@ describe("usePaneLayout migration + persistence", () => {
       "aoe-pane-layout-v2",
       JSON.stringify({
         version: 2,
-        template: { right: [], bottom: [], nextTerminalIndex: 1, closedPlugins: [] },
-        sessions: { s1: { right, bottom, nextTerminalIndex: 1, closedPlugins: [] } },
+        template: { right: [], bottom: [], nextTerminalIndex: 1 },
+        sessions: { s1: { right, bottom, nextTerminalIndex: 1 } },
       }),
     );
 
@@ -175,25 +157,12 @@ describe("usePaneLayout migration + persistence", () => {
     ]);
   });
 
-  it("syncPlugins adds a tab without revealing a collapsed dock", () => {
+  it("openTab reveals a collapsed dock", () => {
     const result = hook();
     act(() => result.current.setDockCollapsed("right", true));
-    act(() => result.current.syncPlugins([{ id: "plugin:p:a", defaultDock: "right" }]));
-    expect(dockOf(result.current.layout, "plugin:p:a")).toBe("right");
-    expect(isDockCollapsed(result.current.layout, "right")).toBe(true);
-  });
-
-  it.each([
-    ["openTab reveals a collapsed dock", "diff", false],
-    ["togglePlugin reveals an open plugin instead of closing it", "plugin:p:a", true],
-  ])("%s", (_name, tab, preopen) => {
-    const result = hook();
-    if (preopen) act(() => result.current.openTab(tab, "right"));
-    act(() => result.current.setDockCollapsed("right", true));
-    act(() => (preopen ? result.current.togglePlugin(tab, "right") : result.current.openTab(tab, "right")));
-    expect(dockOf(result.current.layout, tab)).toBe("right");
+    act(() => result.current.openTab("diff", "right"));
+    expect(dockOf(result.current.layout, "diff")).toBe("right");
     expect(isDockCollapsed(result.current.layout, "right")).toBe(false);
-    expect(result.current.layout.closedPlugins).toEqual([]);
   });
 
   it.each([
@@ -275,10 +244,10 @@ describe("usePaneLayout outside a repository (#4574)", () => {
   };
 
   it.each([
-    [false, ["diff", "terminal:0", "plugin:p:a"]],
-    [true, ["terminal:0", "plugin:p:a"]],
+    [false, ["diff", "terminal:0", "files"]],
+    [true, ["terminal:0", "files"]],
   ])("keeps a mutation made while status is unknown, adding Diff only for git (outside=%s)", (known, expected) => {
-    const result = unknownThenKnown(known, (api) => api.openTab("plugin:p:a", "right"));
+    const result = unknownThenKnown(known, (api) => api.openTab("files", "right"));
     expect(dockTabs(result.current.layout, "right")).toEqual(expected);
   });
 
@@ -315,10 +284,10 @@ describe("usePaneLayout outside a repository (#4574)", () => {
     seededTemplate();
     localStorage.setItem("aoe-web-settings", JSON.stringify({ autoOpenDiffPane: true, autoOpenTerminalPane: true }));
     const first = renderHook(() => usePaneLayout("s1", null));
-    act(() => first.result.current.openTab("plugin:p:a", "right"));
+    act(() => first.result.current.openTab("files", "right"));
     first.unmount();
     const reloaded = renderHook(() => usePaneLayout("s1", false));
-    expect(dockTabs(reloaded.result.current.layout, "right")).toEqual(["diff", "terminal:0", "plugin:p:a"]);
+    expect(dockTabs(reloaded.result.current.layout, "right")).toEqual(["diff", "terminal:0", "files"]);
   });
 
   it("leaves a stored layout alone when status becomes known", () => {
@@ -333,10 +302,10 @@ describe("usePaneLayout outside a repository (#4574)", () => {
     const { result, rerender } = renderHook(({ outside }) => usePaneLayout("s1", outside), {
       initialProps: { outside: null as boolean | null },
     });
-    act(() => result.current.openTab("plugin:p:a", "right"));
-    expect(dockTabs(result.current.layout, "right")).toEqual(["plugin:p:a"]);
+    act(() => result.current.openTab("files", "right"));
+    expect(dockTabs(result.current.layout, "right")).toEqual(["files"]);
     rerender({ outside: false });
-    expect(dockTabs(result.current.layout, "right")).toEqual(["plugin:p:a"]);
+    expect(dockTabs(result.current.layout, "right")).toEqual(["files"]);
   });
 
   it("applies a flag that arrives after seeding, but never closes a Diff the user opened", () => {
@@ -364,7 +333,6 @@ describe("seedLayout (auto-open pane prefs, #3035)", () => {
   ])("diff=%s terminal=%s keeps %o", (diff, terminal, expected) => {
     const seeded = seedLayout(layout(["diff", "terminal:0", "terminal:1"]), { diff, terminal });
     expect(dockTabs(seeded, "right")).toEqual(expected);
-    expect(seeded.closedPlugins).toEqual([]);
   });
 
   it("is a no-op on an empty template", () => {

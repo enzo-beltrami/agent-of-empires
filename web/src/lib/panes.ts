@@ -1,4 +1,4 @@
-// Built-in dockable panes; plugin panes come from the `pane` UI slot.
+// Built-in dockable panes.
 
 import { Bot, FileDiff, FolderTree, SquareTerminal, type LucideIcon } from "lucide-react";
 

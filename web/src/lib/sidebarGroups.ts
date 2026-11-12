@@ -2,9 +2,7 @@ import type { RepoColor } from "./repoAppearance";
 import type { ProjectInfo, RepoGroup, SessionResponse, SessionStatus, Workspace, WorkspaceStatus } from "./types";
 import { isSessionActive } from "./session";
 import {
-  compareWorkspacesByPluginSort,
   compareWorkspacesForComputedSortMode,
-  type PluginSortContext,
   type SidebarSortMode,
   statusAttentionRank,
   workspaceIsSunk,
@@ -101,16 +99,6 @@ function groupDisplayName(path: string): string {
   return path.split("/").join(" / ");
 }
 
-function workspaceComparator(opts: {
-  sortMode: SidebarSortMode;
-  pluginSort?: PluginSortContext;
-  pluginAttention?: ReadonlySet<string>;
-}): (a: Workspace, b: Workspace) => number {
-  return opts.pluginSort
-    ? compareWorkspacesByPluginSort(opts.pluginSort)
-    : compareWorkspacesForComputedSortMode(opts.sortMode, opts.pluginAttention);
-}
-
 // Split workspaces by per-session `group_path`; a workspace spanning groups appears once per group.
 export function buildSessionGroups(
   workspaces: Workspace[],
@@ -118,13 +106,11 @@ export function buildSessionGroups(
     idleDecayWindowMs: number;
     // `manual` falls back to last activity on this axis.
     sortMode: SidebarSortMode;
-    pluginSort?: PluginSortContext;
-    pluginAttention?: ReadonlySet<string>;
     // `groupPath` is "" for Ungrouped, letting nested callers avoid the sentinel id.
     isCollapsed: (groupId: string, groupPath: string) => boolean;
   },
 ): SidebarGroup[] {
-  const compareWorkspace = workspaceComparator(opts);
+  const compareWorkspace = compareWorkspacesForComputedSortMode(opts.sortMode);
   const byGroup = new Map<string, SidebarWorkspaceView[]>();
   const order: string[] = [];
 
@@ -199,12 +185,10 @@ export function buildStatusGroups(
   opts: {
     idleDecayWindowMs: number;
     sortMode: SidebarSortMode;
-    pluginSort?: PluginSortContext;
-    pluginAttention?: ReadonlySet<string>;
     isCollapsed: (groupId: string) => boolean;
   },
 ): SidebarGroup[] {
-  const compareWorkspace = workspaceComparator(opts);
+  const compareWorkspace = compareWorkspacesForComputedSortMode(opts.sortMode);
   const byStatus = new Map<SessionStatus, SidebarWorkspaceView[]>();
 
   for (const ws of workspaces) {
@@ -287,8 +271,6 @@ export function buildNestedSidebarGroups(
   opts: {
     idleDecayWindowMs: number;
     sortMode: SidebarSortMode;
-    pluginSort?: PluginSortContext;
-    pluginAttention?: ReadonlySet<string>;
     isSubgroupCollapsed: (repoId: string, groupPath: string) => boolean;
   },
 ): NestedSidebarGroup[] {
@@ -297,8 +279,6 @@ export function buildNestedSidebarGroups(
     const subgroups = buildSessionGroups(repoGroup.workspaces, {
       idleDecayWindowMs: opts.idleDecayWindowMs,
       sortMode: opts.sortMode,
-      pluginSort: opts.pluginSort,
-      pluginAttention: opts.pluginAttention,
       isCollapsed: (_groupId, groupPath) => opts.isSubgroupCollapsed(repo.id, groupPath),
     });
     return {

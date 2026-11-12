@@ -10,7 +10,6 @@ import {
   ToggleField,
 } from "./FormFields";
 import { CUSTOM_SETTINGS_WIDGETS } from "./customWidgetRegistry";
-import { CronField, DynamicSelectField, ObjectListField } from "./StructuredWidgets";
 
 interface Props {
   section: string;
@@ -126,35 +125,6 @@ function renderField(
           items={Array.isArray(raw) ? (raw as string[]) : []}
           onChange={save}
           validate={listValidator(d.validation)}
-        />
-      );
-    case "dynamic_select":
-      return (
-        <DynamicSelectField
-          key={d.field}
-          {...common}
-          section={d.section}
-          source={widget.source}
-          dependsOn={widget.depends_on ?? []}
-          sectionValues={values}
-          value={str}
-          onChange={save}
-        />
-      );
-    case "cron":
-      return <CronField key={d.field} {...common} value={str} onChange={save} />;
-    case "object_list":
-      return (
-        <ObjectListField
-          key={d.field}
-          {...common}
-          section={d.section}
-          idField={widget.id_field}
-          fields={widget.fields}
-          minItems={widget.min_items}
-          maxItems={widget.max_items}
-          items={Array.isArray(raw) ? (raw as Record<string, unknown>[]) : []}
-          onChange={save}
         />
       );
     case "custom": {

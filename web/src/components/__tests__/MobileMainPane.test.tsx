@@ -68,7 +68,6 @@ function setup(overrides: Partial<Parameters<typeof MobileMainPane>[0]> = {}) {
   const props: Parameters<typeof MobileMainPane>[0] = {
     view: "agent",
     readOnly: false,
-    pluginPanes: [],
     onBackToAgent,
     onOpenAgentsPane: vi.fn(),
     pairedMounted: false,
@@ -150,26 +149,6 @@ describe("MobileMainPane", () => {
     setup({ view: "diff", selectedFilePath: "src/foo.ts" });
     expect(screen.getByTestId("diff-viewer")).toBeDefined();
     expect(screen.queryByTestId("diff-list")).toBeNull();
-  });
-
-  it("renders the plugin pane body and its title for a plugin view", () => {
-    const pane = {
-      id: "plugin:acme.kit:gh" as const,
-      title: "GitHub",
-      defaultDock: "right" as const,
-      icon: undefined,
-      entry: {
-        plugin_id: "acme.kit",
-        slot: "pane" as const,
-        id: "gh",
-        session_id: "s1",
-        payload: { title: "GitHub", body: "PR #1 open" },
-      },
-    };
-    setup({ view: pane.id, pluginPanes: [pane] });
-    expect(screen.getByTestId("plugin-pane-body")).toBeDefined();
-    expect(screen.getByText("PR #1 open")).toBeDefined();
-    expect(screen.getByTestId("mobile-back-to-agent")).toBeDefined();
   });
 
   it("shows the comments banner when there are comments", () => {

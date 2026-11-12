@@ -57,8 +57,6 @@ Existing examples: `theme-name` (dynamic select plus repaint), `sound-volume` (a
 - **`Config.environment`** is a root-level `Vec<String>` with no section, so it is `config.toml` only. Surfacing it would need a config-layout migration.
 - **`app_state`** is global-only runtime bookkeeping persisted to `state.toml` (see the [configuration reference](../guides/configuration.md#file-locations)). Read and write it through `update_app_state` / `AppStateConfig::load`, never `update_config`, which writes `config.toml` and strips `app_state` on save. Before adding a field shaped like this, reconsider whether it is a setting at all.
 
-A plugin declares its own settings in its `aoe-plugin.toml` instead, and the host turns each into a virtual `plugin:<id>` schema section that renders and validates through the same path.
-
 Renaming or relocating a stored field is a breaking change to `config.toml`, so route it through a migration in `src/migrations/` rather than an inline fallback.
 
 ## Tests

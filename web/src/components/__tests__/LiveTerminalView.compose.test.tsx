@@ -52,7 +52,7 @@ afterEach(() => {
 async function openCompose(sessionId: string, delivered: boolean) {
   live.sendPaste.mockReset().mockReturnValue(delivered);
   const error = vi.fn();
-  toastBus.handler = { push: vi.fn(), error, info: vi.fn(), openLink: vi.fn() };
+  toastBus.handler = { push: vi.fn(), error, info: vi.fn() };
   render(<LiveTerminalView readOnly={false} session={makeSession({ id: sessionId })} />);
   fireEvent.click(await screen.findByRole("button", { name: "Compose" }));
   const text = screen.getByLabelText<HTMLTextAreaElement>("Message");

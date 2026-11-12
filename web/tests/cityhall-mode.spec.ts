@@ -96,25 +96,7 @@ async function installCityHallMocks(page: Page) {
     (r) =>
       r.fulfill({
         json: {
-          plugins: [
-            {
-              id: "acme",
-              name: "Acme",
-              version: "1.0.0",
-              description: "test plugin",
-              icon: null,
-              icon_asset_url: null,
-              enabled: true,
-              builtin: false,
-              validation: "community",
-              source: "gh:acme/acme",
-              capabilities: [],
-              ui_contributions: [],
-              granted: true,
-              needs_reapproval: false,
-            },
-          ],
-          load_errors: [],
+          plugins: [{ id: "acme", name: "Acme", version: "1.0.0", description: "test plugin", enabled: true }],
         },
       }),
   );
@@ -189,9 +171,7 @@ test("Settings, its tabs, and settings search are curated to the CityHall subset
 
   await page.goto("/settings/plugins");
   await expect(page.getByText("Acme").first()).toBeVisible();
-  await expect(page.getByTestId("plugins-tab-marketplace")).toHaveCount(0);
   await expect(page.getByRole("switch", { name: /Enable Acme/ })).toHaveCount(0);
-  await expect(page.getByTestId("plugin-uninstall-acme")).toHaveCount(0);
 });
 
 test("new-session wizard is name-only in CityHall mode", async ({ page }) => {

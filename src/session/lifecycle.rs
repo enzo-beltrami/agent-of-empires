@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, Utc};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use super::Instance;
 
@@ -25,7 +25,7 @@ pub struct LifecycleRow {
     /// Sorted paths of every checkout the session works in. Branches are left out: a worker
     /// reads them live, and a branch switch is not a different checkout.
     pub checkouts: Vec<String>,
-    /// The `sessions.list` entry for this session, from the shared `session_summary`.
+    /// The summary reported with each change, from `session_summary`.
     pub summary: Value,
 }
 
@@ -43,9 +43,43 @@ impl LifecycleRow {
             archived: inst.is_archived(),
             trashed: inst.is_trashed(),
             checkouts,
-            summary: crate::plugin::host_api::session_summary(inst),
+            summary: session_summary(inst),
         }
     }
+}
+
+/// The per-session summary a lifecycle change carries.
+pub(crate) fn session_summary(i: &Instance) -> Value {
+    let mut row = json!({
+        "id": i.id,
+        "title": i.title,
+        "project_path": i.project_path,
+        "tool": i.tool,
+        "status": format!("{:?}", i.status),
+        "archived": i.is_archived(),
+        "snoozed": i.is_snoozed(),
+        "trashed": i.is_trashed(),
+        "unread": i.is_unread() && super::unread_enabled(),
+        "workspace_repos": i
+            .all_repos()
+            .iter()
+            .map(|r| {
+                json!({
+                    "source_path": r.source_path,
+                    "branch": r.branch,
+                    "worktree_path": r.worktree_path,
+                })
+            })
+            .collect::<Vec<_>>(),
+    });
+    if let Some(w) = &i.worktree_info {
+        row["worktree"] = json!({
+            "branch": w.branch,
+            "main_repo_path": w.main_repo_path,
+            "managed_by_aoe": w.managed_by_aoe,
+        });
+    }
+    row
 }
 
 pub fn rows_of(instances: &[Instance], profile: &str) -> Vec<LifecycleRow> {
@@ -103,7 +137,7 @@ fn change(row: &LifecycleRow, kind: LifecycleKind) -> LifecycleChange {
 }
 
 /// A session as one profile lists it. A session in two profiles at once, which a profile move
-/// briefly writes, is two entries: each profile's plugins see their own list.
+/// briefly writes, is two entries: each profile's subscribers see their own list.
 type Key = (String, String);
 
 fn key(row: &LifecycleRow) -> Key {
@@ -507,7 +541,7 @@ mod tests {
         (kind, profile.to_string())
     }
 
-    /// Delivery is per profile, so a plugin in the old profile sees the session leave and one
+    /// Delivery is per profile, so a subscriber in the old profile sees the session leave and one
     /// in the new profile sees it arrive, however the move is written or observed.
     #[test]
     fn a_profile_move_leaves_the_old_profile_and_arrives_in_the_new_one() {
@@ -680,7 +714,7 @@ mod tests {
         });
         let row = LifecycleRow::of(&inst, "p");
         assert_eq!(row.checkouts, ["/work/a", "/work/main"]);
-        assert_eq!(row.summary, crate::plugin::host_api::session_summary(&inst));
+        assert_eq!(row.summary, session_summary(&inst));
         assert_eq!(row.summary["worktree"]["branch"], json!("feature/x"));
     }
 

@@ -1,5 +1,5 @@
 // Mobile single-pane layout: the right-panel picker that promotes a view into
-// the full viewport, plugin panes, the live renderer, fullscreen-agent
+// the full viewport, the live renderer, fullscreen-agent
 // alignment, the settings header, and the desktop-only toolbar gate.
 
 import { test, expect } from "./helpers/mockedTest";

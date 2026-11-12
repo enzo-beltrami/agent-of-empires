@@ -43,7 +43,7 @@ type RequestCase = [string, () => Promise<unknown>, { body?: unknown; respond?: 
 
 const session = { id: "s1" };
 const sessions = { sessions: [session], workspace_ordering: ["/repo::main"] };
-const plugins = { plugins: [], load_errors: [] };
+const plugins = { plugins: [] };
 const hit = { session_id: "s1", seq: 3, kind: "agent", snippet: "hit", match_count: 2 };
 const switched = { session_id: "s-1", agent: "codex", before_seq: 41, switch_seq: 42, status: "ok" };
 const skill = {
@@ -553,75 +553,10 @@ const requestCases: RequestCase[] = [
     { body: { roots: ["r"], replace: ["x"], directories: ["d"] } },
   ],
   ["GET /api/plugins", () => api.fetchPlugins(), { respond: json(plugins), result: plugins }],
-  ["GET /api/plugins/commands", () => api.fetchPluginCommands()],
-  ["GET /api/plugins/ui-state", () => api.fetchPluginUiState()],
-  [
-    "POST /api/plugins/commands/plugin.a.b/invoke",
-    () => api.invokePluginCommand("plugin.a.b", "s1"),
-    { body: { session_id: "s1" }, respond: empty(202), result: true },
-  ],
-  [
-    "POST /api/plugins/p/action",
-    () => api.invokePluginAction("p", "m", "s1"),
-    {
-      body: { method: "m", params: {}, session_id: "s1" },
-      respond: json({ baseline_revision: 3 }),
-      result: { baselineRevision: 3 },
-    },
-  ],
-  [
-    "POST /api/plugins/p/action",
-    () => api.invokePluginAction("p", "m"),
-    { body: { method: "m", params: {}, session_id: null }, respond: json({}), result: { baselineRevision: null } },
-  ],
-  [
-    "POST /api/plugins/acme.cron/settings/options/resolve",
-    () => api.resolvePluginOptions("acme.cron", "acp_agents", ["x"]),
-    {
-      body: { source: "acp_agents", depends: ["x"] },
-      respond: json({ options: [{ value: "v", label: "l" }] }),
-      result: [{ value: "v", label: "l" }],
-    },
-  ],
   [
     "POST /api/plugins/acme%2Fweird%20id/enabled",
     () => api.setPluginEnabled("acme/weird id", false),
     { body: { enabled: false }, respond: json(plugins), result: { kind: "ok", data: plugins } },
-  ],
-  [
-    "GET /api/plugins/discover?q=foo",
-    () => api.discoverPlugins(" foo "),
-    { respond: json({ results: [] }), result: { kind: "ok", results: [] } },
-  ],
-  ["GET /api/plugins/discover", () => api.discoverPlugins("  ")],
-  [
-    "GET /api/plugins/details?source=gh%3Aa%2Fb",
-    () => api.fetchPluginDetails("gh:a/b"),
-    { respond: json({ source: "gh:a/b" }), result: { kind: "ok", detail: { source: "gh:a/b" } } },
-  ],
-  [
-    "POST /api/plugins/install/preview",
-    () => api.previewPluginInstall("gh:a/b"),
-    {
-      body: { source: "gh:a/b" },
-      respond: json({ fingerprint: "f" }),
-      result: { kind: "ok", consent: { fingerprint: "f" } },
-    },
-  ],
-  [
-    "POST /api/plugins/install",
-    () => api.startPluginInstall("gh:a/b", "fp"),
-    {
-      body: { source: "gh:a/b", expected_fingerprint: "fp" },
-      respond: json({ job_id: "j" }),
-      result: { kind: "ok", jobId: "j" },
-    },
-  ],
-  ["POST /api/plugins/p/uninstall", () => api.startPluginUninstall("p"), { body: {}, respond: json({ job_id: "j" }) }],
-  [
-    "GET /api/plugins/jobs/j%2F1?tail=200",
-    () => api.fetchPluginJob("j/1"),
-    { respond: json({ job: { id: "j" } }), result: { kind: "ok", job: { job: { id: "j" } } } },
   ],
   ["POST /api/sandbox/image-pull", () => api.pullSandboxImage(), { result: { ok: true } }],
   // A refusal carries the Daemon's reason for the banner to show.
@@ -740,8 +675,6 @@ const failureCases: [string, () => Promise<unknown>, unknown][] = [
   ["smartRenameSession", () => api.smartRenameSession("s1"), { ok: false }],
   ["attachSessionProject", () => api.attachSessionProject("s1", "p", { epoch: "boot" }), { ok: false }],
   ["resolveMcpConflict", () => api.resolveMcpConflict("n", "a", "aoe", "fp"), "error"],
-  ["invokePluginAction", () => api.invokePluginAction("p", "m"), null],
-  ["resolvePluginOptions", () => api.resolvePluginOptions("p", "s", []), []],
   ["fetchSoundBlob", () => api.fetchSoundBlob("x.wav"), null],
   ["fetchProfileAgents", () => api.fetchProfileAgents("work"), null],
   ["pullSandboxImage", () => api.pullSandboxImage(), { ok: false }],
@@ -1393,39 +1326,15 @@ it("skill mutations keep the status and message", async () => {
   expect(await api.syncSkills()).toEqual({ ok: false, outcomes: [], error: "Network error: offline" });
 });
 
-describe("plugin results", () => {
-  const cases: [string, () => Promise<unknown>, string, unknown][] = [
-    ["discoverPlugins", () => api.discoverPlugins("q"), "Discovery failed (HTTP 500).", {}],
-    ["fetchPluginDetails", () => api.fetchPluginDetails("s"), "Details failed (HTTP 500).", {}],
-    ["previewPluginInstall", () => api.previewPluginInstall("s"), "Install preview failed (HTTP 500).", {}],
-    ["setPluginEnabled", () => api.setPluginEnabled("p", true), "Failed to enable plugin (500).", { nope: true }],
-  ];
-
-  it.each(cases)("%s maps failures to an error message", async (_name, call, statusMessage, malformed) => {
-    fetchSpy.mockResolvedValueOnce(json({ message: "boom" }, 400));
-    expect(await call()).toEqual({ kind: "error", message: "boom" });
-    fetchSpy.mockResolvedValueOnce(new Response("not json", { status: 500 }));
-    expect(await call()).toEqual({ kind: "error", message: statusMessage });
-    offline();
-    expect(await call()).toEqual({ kind: "error", message: "Network error." });
-    if (malformed !== undefined) {
-      fetchSpy.mockResolvedValueOnce(json(malformed));
-      expect(await call()).toMatchObject({ kind: "error" });
-    }
-  });
-
-  it("fetchPluginJob keeps the HTTP status on failure", async () => {
-    fetchSpy.mockResolvedValueOnce(json({ message: "gone" }, 404));
-    expect(await api.fetchPluginJob("j")).toEqual({ kind: "error", status: 404, message: "gone" });
-    fetchSpy.mockResolvedValueOnce(json({}, 200));
-    expect(await api.fetchPluginJob("j")).toEqual({
-      kind: "error",
-      status: 200,
-      message: "Job status failed (HTTP 200).",
-    });
-    offline();
-    expect(await api.fetchPluginJob("j")).toEqual({ kind: "error", status: 0, message: "Network error." });
-  });
+it("setPluginEnabled maps failures to an error message", async () => {
+  fetchSpy.mockResolvedValueOnce(json({ message: "boom" }, 400));
+  expect(await api.setPluginEnabled("p", true)).toEqual({ kind: "error", message: "boom" });
+  fetchSpy.mockResolvedValueOnce(new Response("not json", { status: 500 }));
+  expect(await api.setPluginEnabled("p", true)).toEqual({ kind: "error", message: "Failed to enable plugin (500)." });
+  offline();
+  expect(await api.setPluginEnabled("p", true)).toEqual({ kind: "error", message: "Network error." });
+  fetchSpy.mockResolvedValueOnce(json({ nope: true }));
+  expect(await api.setPluginEnabled("p", true)).toMatchObject({ kind: "error" });
 });
 
 it.each([
@@ -1590,7 +1499,6 @@ describe("header-complete operations", () => {
     ["terminal", () => api.ensureTerminal("s1"), { ok: true }],
     ["summary", () => api.summarizeSession("s1"), { ok: true }],
     ["smart rename", () => api.smartRenameSession("s1"), { ok: true }],
-    ["refused plugin action", () => api.invokePluginAction("p.action", "s1"), null, 403],
   ] as const)("settles %s without waiting for an open response body", async (_name, call, expected, status = 200) => {
     let controller!: ReadableStreamDefaultController<Uint8Array>;
     const stream = new ReadableStream<Uint8Array>({

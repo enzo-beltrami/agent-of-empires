@@ -19,8 +19,8 @@ use crate::server::auth::AuthenticatedTokenHash;
 use crate::server::auth::{handler_elevated, AuthenticatedSession};
 use crate::server::principal::{authorize, Capability, Principal};
 use crate::session::config::settings_schema::{
-    clear_path, rewrite_plugin_sections, runtime_schema, strip_local_only, validate_patch,
-    validate_patch_with, PatchRejection, Scope,
+    clear_path, schema_ref, strip_local_only, validate_patch, validate_patch_with, PatchRejection,
+    Scope,
 };
 
 /// Foreground state reported by one browser dashboard. This is intentionally
@@ -308,46 +308,6 @@ pub async fn list_agents(
                 }
             })
             .collect::<Vec<_>>();
-        let registry = crate::plugin::registry();
-        let plugin_agents = crate::plugin::agent_integration::catalog(
-            &registry,
-            crate::agents::AGENTS.iter().map(|agent| agent.name),
-            custom_agents
-                .iter()
-                .filter(|(_, command)| !command.trim().is_empty())
-                .map(|(name, _)| name.as_str()),
-        );
-        for integration in plugin_agents {
-            agents.push(AgentInfo {
-                kind: "plugin".to_string(),
-                name: integration.tool.to_string(),
-                display_name: integration.tool.to_string(),
-                binary: integration.tool.to_string(),
-                host_only: false,
-                always_yolo: crate::acp::runs_always_yolo(
-                    integration.tool,
-                    crate::session::View::Terminal,
-                    agent_acp_cmd,
-                    agent_detect_as,
-                ),
-                acp_always_yolo: crate::acp::runs_always_yolo(
-                    integration.tool,
-                    crate::session::View::Structured,
-                    agent_acp_cmd,
-                    agent_detect_as,
-                ),
-                installed: available.iter().any(|name| name == integration.tool),
-                install_hint: format!("Provided by AoE plugin {}", integration.plugin),
-                oneshot_capable: false,
-                acp_capable: false,
-                acp_installed: false,
-                acp_create_ready: false,
-                acp_allowed: policy.allows(integration.tool),
-                acp_command: None,
-                acp_args: Vec::new(),
-                lifecycle: crate::agents::AgentLifecycle::Active,
-            });
-        }
         agents.extend(build_custom_agent_infos(
             custom_agents,
             agent_acp_cmd,
@@ -502,8 +462,8 @@ pub async fn get_settings(
 
 /// Route every leaf of a settings patch to the layer `GET /api/settings` reads
 /// it from: the profile override where the field may be overridden, the
-/// machine-wide store otherwise. Unknown fields and `plugin:<id>` leaves are
-/// machine-wide, so the global-scope validation is the one that rejects them.
+/// machine-wide store otherwise. Unknown fields are machine-wide, so the
+/// global-scope validation is the one that rejects them.
 fn split_patch_by_layer(
     descriptors: &[crate::session::config::settings_schema::FieldDescriptor],
     body: &serde_json::Value,
@@ -686,7 +646,7 @@ pub async fn update_settings(
     // addressed at a profile splits, and each leaf lands where a plain read of
     // the same layer would find it.
     let (machine, profile_patch) = match target {
-        SettingsLayer::Profile(_) => split_patch_by_layer(&runtime_schema(), &body),
+        SettingsLayer::Profile(_) => split_patch_by_layer(schema_ref(), &body),
         SettingsLayer::Machine => (body, serde_json::json!({})),
     };
     let profile = match target {
@@ -738,10 +698,9 @@ async fn save_settings_patch(
     strip_local_only(&mut machine);
     strip_local_only(&mut profile_patch);
     let write_profile = profile.is_some() && !is_empty_patch(&profile_patch);
-    // Every remaining leaf is checked against the runtime schema (core plus
-    // active-plugin `plugin:<id>` sections) in the scope of the layer it lands
-    // in: unknown section/field -> 400, bad value -> 400.
-    if let Err(rej) = validate_patch_with(&runtime_schema(), &machine, Scope::Global, elevated) {
+    // Every remaining leaf is checked against the schema in the scope of the
+    // layer it lands in: unknown section/field -> 400, bad value -> 400.
+    if let Err(rej) = validate_patch_with(schema_ref(), &machine, Scope::Global, elevated) {
         return reject_response(rej);
     }
     if write_profile {
@@ -787,28 +746,7 @@ async fn save_settings_patch(
     let mut machine_config = None;
     let mut logging_changed = false;
     if !is_empty_patch(&machine) {
-        // Capture which plugins this patch touches (top-level `plugin:<id>`
-        // sections and their changed field keys) BEFORE the rewrite folds them
-        // into `plugins.<id>.settings.*`, so we can emit
-        // `plugin.settings.changed` after a successful write (#2897).
-        let plugin_changes: Vec<(String, Vec<String>)> = machine
-            .as_object()
-            .map(|obj| {
-                obj.iter()
-                    .filter_map(|(section, value)| {
-                        let id =
-                            crate::session::config::settings_schema::section_plugin_id(section)?;
-                        let keys: Vec<String> = value
-                            .as_object()
-                            .map(|m| m.keys().cloned().collect())
-                            .unwrap_or_default();
-                        Some((id.to_string(), keys))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut written = machine.clone();
-        rewrite_plugin_sections(&mut written);
+        let written = machine.clone();
         match tokio::task::spawn_blocking(move || apply_machine_patch(&written)).await {
             Ok(Ok((config, changed))) => {
                 logging_changed = changed;
@@ -820,13 +758,6 @@ async fn save_settings_patch(
                             &config.logging.targets,
                             &app_dir,
                         );
-                    }
-                }
-                // Tell each touched plugin's worker its settings changed (#2897),
-                // after the durable write. Best-effort; config.get is the fallback.
-                if !plugin_changes.is_empty() {
-                    if let Some(host) = &state.plugin_host {
-                        host.emit_settings_changed(&plugin_changes, None).await;
                     }
                 }
                 machine_config = Some(config);
@@ -1118,12 +1049,11 @@ pub async fn get_cityhall_bundle(
 /// policy), so this needs no elevation, only normal authentication.
 pub async fn get_settings_schema(
 ) -> Json<Vec<crate::session::config::settings_schema::FieldDescriptor>> {
-    Json(runtime_schema())
+    Json(schema_ref().to_vec())
 }
 
 /// `GET /api/settings/resolved` returns every setting's effective value plus
-/// its provenance chain (user value > highest-priority plugin default > schema
-/// default for core; stored value > manifest default for plugin settings). The
+/// its provenance chain (user value > schema default). The
 /// dashboard uses it to show where a value comes from. Pure metadata derived
 /// from the same schema the surfaces render, so only normal authentication.
 pub async fn get_settings_resolved(
@@ -2577,13 +2507,6 @@ pub async fn get_profile_settings(
             obj.insert(
                 "logging".to_string(),
                 serde_json::to_value(&global.logging)?,
-            );
-            // Plugin settings are global-only at Tier 0, so splice them in or
-            // the dashboard reverts to manifest defaults on every profile-view
-            // load (#2094).
-            obj.insert(
-                "plugins".to_string(),
-                serde_json::to_value(&global.plugins)?,
             );
         }
         Ok::<_, anyhow::Error>(val)

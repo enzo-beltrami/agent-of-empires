@@ -131,11 +131,10 @@ _Avoid_: ACP server, agent (for the adapter process)
 
 **Agent capability**:
 A feature an Agent advertises over ACP: models, modes, thinking levels.
-_Avoid_: capability (unqualified; that is the plugin permission)
 
 **Yolo mode**:
 Launching an Agent with its permission prompts auto-approved.
-_Avoid_: auto-approve, unattended (that is a plugin approval class)
+_Avoid_: auto-approve
 
 **Agent hook**:
 A command AoE installs into an Agent's own hook settings so the Agent reports its Status to AoE.
@@ -197,7 +196,7 @@ Entering a Session's tmux pane. Unrelated to attaching a Worktree to an existing
 ### Processes
 
 **Daemon**:
-The `aoe serve` process. Hosts the API, optional Web serving, the Supervisor, the Reconciler, Plugin workers and push notifications. Target (#2734): always-on, required, owns all Session runtime state. Today the CLI still has direct Session-store and tmux operations.
+The `aoe serve` process. Hosts the API, optional Web serving, the Supervisor, the Reconciler and push notifications. Target (#2734): always-on, required, owns all Session runtime state. Today the CLI still has direct Session-store and tmux operations.
 _Avoid_: server, agent daemon
 
 **Client**:
@@ -248,55 +247,22 @@ _Avoid_: device
 ### Plugins and events
 
 **Plugin**:
-An extension described by a Manifest. May run a Plugin worker and contributes commands, keybinds, settings, UI slots, statuses or themes.
-_Avoid_: extension, bundled plugin (that is a Trust level)
-
-**Plugin ID**:
-A dotted identifier such as `someuser.review-helper` that namespaces a Plugin's settings, storage and actions.
-
-**Manifest**:
-A Plugin's declarative descriptor, versioned by API version.
-
-**Contribution**:
-One typed thing a Manifest adds to AoE: command, keybind, setting, UI slot, status, theme.
-
-**Capability**:
-A named permission a Plugin requests in its Manifest and is granted at install.
-_Avoid_: agent capability (different concept), permission
-
-**Trust level**:
-How a Plugin was admitted: builtin or community.
-
-**Validation**:
-Where a Plugin came from: builtin, featured, community or local. Labelled "validation" in the CLI and web.
-_Avoid_: trust level (different concept)
-
-**Plugin worker**:
-A Plugin's child process, supervised by the Daemon. Always qualified, to separate it from Worker.
-
-**UI slot**:
-A named mount point in the UI where a Plugin pushes state.
-
-**Automation policy**:
-Rate limits and approval classes (interactive, guarded, unattended) the Daemon applies to plugin-driven Sessions.
+A built-in feature compiled into the binary that the user can turn off, such as the Web dashboard (`aoe.web`).
+_Avoid_: extension
 
 **Plugin-originated prompt**:
-A Prompt a Plugin injected into a Session, as opposed to one the user typed.
+A Prompt stamped with a sender id, as opposed to one the user typed. The Coordinator stamps its messages `aoe.coordinator`.
 
 **Event**:
 One ACP state change of a Session, persisted in the Event log and replayable.
 _Avoid_: key event, session update
 
 **Event log**:
-The durable, append-only, per-Topic store of Events and plugin messages.
+The durable, append-only, per-Topic store of Events.
 _Avoid_: event store, ledger
 
 **Topic**:
-The partition key of the Event log. For Session Events it is the Session id; for Plugins it is any string they choose.
-
-**Notification**:
-A fire-and-forget message from the Daemon to a Plugin worker, such as a Status change. Never stored in the Event log.
-_Avoid_: event (for this)
+The partition key of the Event log. For Session Events it is the Session id.
 
 ### Settings
 

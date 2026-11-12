@@ -29,7 +29,7 @@ describe("Recreate container", () => {
     const fetchSpy = vi.fn<typeof fetch>(async () => response);
     vi.stubGlobal("fetch", fetchSpy);
     const info = vi.fn();
-    toastBus.handler = { error: vi.fn(), info, push: vi.fn(), openLink: vi.fn() };
+    toastBus.handler = { error: vi.fn(), info, push: vi.fn() };
     openRowMenu(makeWorkspace("w", [makeSession({ id: "s1", title: "boxed", is_sandboxed: true })]));
     fireEvent.click(screen.getByTestId("sidebar-context-menu-recreate-container"));
 

@@ -8,22 +8,14 @@ import {
   type ThreadMessageLike,
 } from "@assistant-ui/react";
 
-import type { PluginUiEntry } from "../../lib/api";
 import type { PromptAttachmentInput, QueuedPrompt } from "../../lib/acpTypes";
 import { buildSkillIndex, type SkillIndex } from "../../lib/skillProvenance";
 import { Composer } from "./Composer";
 
-const { skillIndexRef, entriesRef } = vi.hoisted(() => ({
+const { skillIndexRef } = vi.hoisted(() => ({
   skillIndexRef: { current: { labelsByKey: new Map<string, Set<string>>() } as SkillIndex },
-  entriesRef: { current: [] as PluginUiEntry[] },
 }));
 vi.mock("../../hooks/useSkillIndex", () => ({ useSkillIndex: () => skillIndexRef.current }));
-vi.mock("../../lib/pluginUiContext", () => ({
-  usePluginUiEntries: () => entriesRef.current,
-  usePluginUiPoke: () => vi.fn(),
-  usePluginUiRefreshing: () => false,
-  usePluginUiRevision: () => 0,
-}));
 
 type ComposerProps = React.ComponentProps<typeof Composer>;
 
@@ -74,7 +66,6 @@ function mount(props: Parameters<typeof Harness>[0] = {}) {
 
 beforeEach(() => {
   window.localStorage.clear();
-  entriesRef.current = [];
   skillIndexRef.current = { labelsByKey: new Map() };
   // jsdom has no matchMedia; never matching selects the desktop path.
   vi.stubGlobal(
@@ -163,24 +154,6 @@ describe("toolbar and send", () => {
       prev: PromptAttachmentInput[],
     ) => PromptAttachmentInput[];
     expect(update([])).toEqual([{ kind: "image", mimeType: "image/png", name: "shot.png", dataB64: "AQID" }]);
-  });
-
-  it("applies each plugin draft operation id once", async () => {
-    const entry = (op: Record<string, unknown>): PluginUiEntry => ({
-      plugin_id: "acme.voice",
-      slot: "composer-action",
-      id: "dictate",
-      session_id: "sess",
-      payload: { label: "Voice", method: "voice.start", draft_operation: op },
-    });
-    entriesRef.current = [entry({ kind: "insert-text", id: "op-1", text: "hello" })];
-    const { textarea, rerender } = mount();
-    await waitFor(() => expect(textarea().value).toBe("hello"));
-    rerender(<Harness />);
-    await waitFor(() => expect(textarea().value).toBe("hello"));
-    entriesRef.current = [entry({ kind: "insert-text", id: "op-2", text: " world" })];
-    rerender(<Harness />);
-    await waitFor(() => expect(textarea().value).toBe("hello world"));
   });
 });
 

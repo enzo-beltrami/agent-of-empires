@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "aoe-settings-derive", "aoe-plugin-api"]
+members = [".", "xtask", "aoe-settings-derive"]
 
 [package]
 name = "agent-of-empires"
@@ -28,9 +28,6 @@ tokio = { version = "1.52", features = ["full"] }
 
 # Settings single-source-of-truth derive (#1692)
 aoe-settings-derive = { path = "aoe-settings-derive" }
-
-# Plugin manifest and capability types (#268)
-aoe-plugin-api = { path = "aoe-plugin-api" }
 
 # Serialization
 serde = { version = "1.0", features = ["derive", "rc"] }
@@ -86,7 +83,6 @@ percent-encoding = "2"
 tokio-util = { version = "0.7", features = ["codec", "compat", "io-util"] }
 
 # Unicode width + normalization (NFKD used to fold accents in title-derived branch names)
-unicode-general-category = "1"
 unicode-normalization = "0.1"
 unicode-segmentation = "1"
 unicode-width = "0.2"

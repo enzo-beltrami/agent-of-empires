@@ -1,16 +1,13 @@
-// Custom events for navigation requested from outside the router's render
-// tree (toasts, plugin links). App listens on both and calls its router's
-// `navigate`.
+// Session navigation requested from outside the router's render tree (toasts,
+// row menus). App listens and calls its router's `navigate`.
 
 import { focusSessionOfUrl } from "./focusMode";
 
 export const OPEN_SESSION_EVENT = "aoe-open-session";
 
-/** `path`, when given, overrides the default `/session/<id>` route (e.g. a
- *  plugin link's own query string or hash), but must still resolve to `sessionId`'s route. */
-export function requestOpenSession(sessionId: string, path?: string): void {
+export function requestOpenSession(sessionId: string): void {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { sessionId, path } }));
+  window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { sessionId } }));
 }
 
 /** The URL of a focus-mode window. `public/sw.js` parses the same shape from client URLs. */
@@ -49,12 +46,4 @@ export function loadedFocusSessionId(): string | null {
   if (typeof window === "undefined") return null;
   const [navigation] = performance.getEntriesByType?.("navigation") ?? [];
   return focusSessionOfUrl(navigation?.name || window.location.href);
-}
-
-export const NAVIGATE_EVENT = "aoe-navigate";
-
-/** `path` must already be same-origin relative (see `isInternalHref`/`toInternalPath`). */
-export function requestNavigate(path: string): void {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(NAVIGATE_EVENT, { detail: { path } }));
 }

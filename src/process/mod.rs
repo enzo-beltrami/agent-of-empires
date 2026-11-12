@@ -292,15 +292,13 @@ pub(crate) mod metrics;
 
 pub mod systemd;
 
-/// Protocol-agnostic plumbing for supervised worker subprocesses, lifted
-/// out of `src/acp/` so the future plugin host can reuse it.
+/// Protocol-agnostic plumbing for supervised worker subprocesses.
 pub mod worker;
 
 /// On-disk registry of detached ACP worker subprocesses (pid, socket path,
 /// build version, `stored_acp_session_id`). Colocated here with the
-/// protocol-agnostic `worker` substrate it builds on, so the plugin host can
-/// reuse that substrate directly. Dependency direction is one-way: consumers
-/// point down to `process`, never to each other.
+/// protocol-agnostic `worker` substrate it builds on. Dependency direction is
+/// one-way: consumers point down to `process`, never to each other.
 pub mod worker_registry;
 
 pub mod prime;

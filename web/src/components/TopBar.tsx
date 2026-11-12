@@ -4,8 +4,6 @@ import type { SessionResponse, Workspace } from "../lib/types";
 import { PaletteTriggerPill } from "./PaletteTriggerPill";
 import { OverflowMenu, type OverflowItem } from "./OverflowMenu";
 import { TOUR_ANCHORS, tourAnchor } from "../lib/tourSteps";
-import { PluginHeaderStartSegments, PluginStatusBarSegments } from "./plugin/PluginSlots";
-import { PluginPageButtons } from "./plugin/PluginPageButtons";
 import { ActivityBar } from "./ActivityBar";
 import type { PaneDisplay } from "./Dock";
 import { useWebSettings } from "../hooks/useWebSettings";
@@ -21,7 +19,7 @@ interface Props {
   /** Mobile (below md): opens the view picker. The desktop activity bar uses
    *  `onTogglePane` instead. */
   onToggleDiff: () => void;
-  /** All dockable pane ids (built-in + plugin) for the active session. */
+  /** All dockable pane ids for the active session. */
   paneIds: string[];
   paneDescriptor: (id: string) => PaneDisplay;
   isPaneOpen: (id: string) => boolean;
@@ -194,18 +192,9 @@ export function TopBar({
             <span className={`font-mono text-xs leading-none truncate ${hideWordmark ? "md:hidden" : ""}`}>aoe</span>
           </button>
         )}
-        {/* The left zone is content-sized unless the sidebar column is showing, so the chips are capped and hidden
-           below md instead of pushing the core controls off-screen. Also hidden with the wordmark: the compact rail
-           leaves no room beside the logo. */}
-        <div
-          data-testid="topbar-header-start"
-          className={`hidden ${hideWordmark ? "md:hidden" : "md:flex"} items-center gap-1.5 min-w-0 max-w-48 overflow-hidden`}
-        >
-          <PluginHeaderStartSegments />
-        </div>
       </div>
 
-      {/* Center zone: palette trigger and plugin page buttons; carries the bottom border across the
+      {/* Center zone: palette trigger and coordinator; carries the bottom border across the
           middle, between the two column-aligned zones. */}
       <div className="flex-1 flex items-center px-3 min-w-0 border-b border-surface-700/60">
         <div className="flex-1 flex justify-center items-center gap-1 px-2">
@@ -227,7 +216,6 @@ export function TopBar({
               <span className="hidden sm:inline">Coordinator</span>
             </button>
           )}
-          <PluginPageButtons />
         </div>
       </div>
 
@@ -238,7 +226,6 @@ export function TopBar({
           rightColumnVisible ? "md:w-[var(--aoe-right-panel-width)] md:border-b-0 md:border-l" : ""
         }`}
       >
-        <PluginStatusBarSegments />
         {isDevBuild && (
           <span
             className="font-mono text-[11px] px-1.5 py-0.5 rounded-full bg-status-waiting/15 text-status-waiting ring-1 ring-status-waiting/30"

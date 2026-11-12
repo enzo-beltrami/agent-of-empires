@@ -97,7 +97,7 @@ pub fn setup_temp_home() -> TestHome {
     #[cfg(not(target_os = "macos"))]
     let temp = TempDir::new().unwrap();
     let env = set_temp_home(temp.path());
-    TestHome { env, temp }
+    TestHome { _env: env, temp }
 }
 
 /// Restore environment before the caller drops its temporary directory.
@@ -175,7 +175,7 @@ impl Drop for EnvGuard {
 
 #[must_use]
 pub struct TestHome {
-    pub env: EnvGuard,
+    _env: EnvGuard,
     temp: TempDir,
 }
 

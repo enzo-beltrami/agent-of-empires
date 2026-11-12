@@ -6301,16 +6301,14 @@ async fn worker_stopping_handlers_wait_for_an_in_flight_submission() {
     }
 }
 
-/// What an opted-in plugin worker receives: the real forwarder runs over `status_tx`, so a test
-/// sees exactly what a plugin would, including transitions no producer published. Subscribe
-/// before calling the handler under test.
-struct PluginStatusFeed {
-    rx: tokio::sync::mpsc::Receiver<String>,
-    _host: std::sync::Arc<crate::plugin::host::PluginHost>,
-    _dir: tempfile::TempDir,
+/// The status transitions `status_tx` carries for one profile, as push and other consumers see
+/// them. Subscribe before calling the handler under test.
+struct StatusFeed {
+    rx: tokio::sync::broadcast::Receiver<crate::server::push::StatusChange>,
+    profile: String,
 }
 
-impl PluginStatusFeed {
+impl StatusFeed {
     async fn attach(state: &std::sync::Arc<crate::server::AppState>, profile: &str) -> Self {
         crate::session::purge_owners::initialize(&crate::session::get_app_dir().unwrap()).unwrap();
         crate::tmux::tool_retirement::initialize(&crate::session::get_app_dir().unwrap()).unwrap();
@@ -6331,45 +6329,30 @@ impl PluginStatusFeed {
             crate::server::reload::load_all_profiles(&state.file_watch)
                 .unwrap()
                 .metadata;
-        let dir = tempfile::tempdir().unwrap();
-        let host = crate::plugin::host::PluginHost::new(
-            dir.path(),
-            profile,
-            None,
-            state.runtime.work.clone(),
-        )
-        .unwrap();
-        let rx = host.register_test_worker("acme.watcher", Some(16)).await;
-        state.runtime.work.spawn(
-            "plugin status test forwarder",
-            crate::server::plugin_status::run_forwarder(
-                state.status_tx.subscribe(),
-                host.clone(),
-                state.shutdown.clone(),
-            ),
-        );
         Self {
-            rx,
-            _host: host,
-            _dir: dir,
+            rx: state.status_tx.subscribe(),
+            profile: profile.to_string(),
         }
     }
 
-    /// The next `(session, from, to)` the worker was notified of.
+    /// The next `(session, from, to)` published for this profile.
     async fn next_of_session(&mut self) -> (String, String, String) {
-        let line = tokio::time::timeout(std::time::Duration::from_secs(10), self.rx.recv())
-            .await
-            .expect("the plugin was never notified of the transition")
-            .expect("worker queue closed");
-        let msg: serde_json::Value = serde_json::from_str(line.trim_end()).unwrap();
-        (
-            msg["params"]["session_id"].as_str().unwrap().to_string(),
-            msg["params"]["from"].as_str().unwrap().to_string(),
-            msg["params"]["to"].as_str().unwrap().to_string(),
-        )
+        loop {
+            let change = tokio::time::timeout(std::time::Duration::from_secs(10), self.rx.recv())
+                .await
+                .expect("the transition was never published")
+                .expect("status channel closed");
+            if change.effective_profile == self.profile {
+                return (
+                    change.instance_id,
+                    format!("{:?}", change.old),
+                    format!("{:?}", change.new),
+                );
+            }
+        }
     }
 
-    /// The next `(from, to)` the worker was notified of.
+    /// The next `(from, to)` published for this profile.
     async fn next(&mut self) -> (String, String) {
         let (_, from, to) = self.next_of_session().await;
         (from, to)
@@ -6378,9 +6361,9 @@ impl PluginStatusFeed {
 
 /// `Instance::archive` settles a Running, Waiting or Starting row to Idle on the live row. With
 /// `kill_pane = false` no worker or pane teardown reports it, and the next poll tick snapshots the
-/// row already Idle, so unless the handler publishes the move no plugin ever hears of it.
+/// row already Idle, so unless the handler publishes the move no subscriber ever hears of it.
 #[tokio::test]
-async fn archive_session_notifies_plugins_of_the_idle_it_settles_to() {
+async fn archive_session_publishes_the_idle_it_settles_to() {
     let _home = crate::session::test_support::isolate_app_dir();
     let mut running = make_test_instance();
     running.source_profile = "default".to_string();
@@ -6389,7 +6372,7 @@ async fn archive_session_notifies_plugins_of_the_idle_it_settles_to() {
     idle.status = Status::Idle;
     let (running_id, idle_id) = (running.id.clone(), idle.id.clone());
     let state = crate::server::test_support::build_test_app_state(vec![idle, running]);
-    let mut feed = PluginStatusFeed::attach(&state, "default").await;
+    let mut feed = StatusFeed::attach(&state, "default").await;
     let archive = |id: String| {
         let state = std::sync::Arc::clone(&state);
         async move {
@@ -6418,16 +6401,16 @@ async fn archive_session_notifies_plugins_of_the_idle_it_settles_to() {
 
 /// `stop_session` writes `Stopped` straight onto the live row. The next poll tick snapshots
 /// the row already stopped and trailing ACP events are ignored for a stopped row, so unless
-/// the handler publishes the move itself no plugin ever hears of it.
+/// the handler publishes the move itself no subscriber ever hears of it.
 #[tokio::test]
-async fn stop_session_notifies_plugins() {
+async fn stop_session_publishes_the_stop() {
     let _home = crate::session::test_support::isolate_app_dir();
     let mut inst = make_test_instance();
     inst.view = crate::session::View::Structured;
     inst.source_profile = "default".to_string();
     let id = inst.id.clone();
     let state = crate::server::test_support::build_test_app_state(vec![inst]);
-    let mut feed = PluginStatusFeed::attach(&state, "default").await;
+    let mut feed = StatusFeed::attach(&state, "default").await;
 
     stop_session(State(std::sync::Arc::clone(&state)), Path(id)).await;
 
@@ -6436,7 +6419,7 @@ async fn stop_session_notifies_plugins() {
 
 /// The same gap for the explicit structured start, which flips the live row to `Idle`.
 #[tokio::test]
-async fn start_session_notifies_plugins() {
+async fn start_session_publishes_the_start() {
     let _home = crate::session::test_support::isolate_app_dir();
     let mut inst = Instance::new("start-notify", "/tmp/aoe-start-notify");
     inst.view = crate::session::View::Structured;
@@ -6451,7 +6434,7 @@ async fn start_session_notifies_plugins() {
         })
         .unwrap();
     let state = crate::server::test_support::build_test_app_state(vec![inst]);
-    let mut feed = PluginStatusFeed::attach(&state, "default").await;
+    let mut feed = StatusFeed::attach(&state, "default").await;
 
     start_session(State(std::sync::Arc::clone(&state)), Path(id), Ok(None)).await;
 
@@ -6460,11 +6443,10 @@ async fn start_session_notifies_plugins() {
 
 /// A canonical purge reservation publishes its transition before removal.
 #[tokio::test]
-async fn delete_session_notifies_plugins_that_the_session_is_deleting() {
+async fn delete_session_publishes_that_the_session_is_deleting() {
     let _home = crate::session::test_support::isolate_app_dir();
     let state = delete_race_state("sess-delete-notify");
-    let mut feed =
-        PluginStatusFeed::attach(&state, &crate::session::config::effective_profile("")).await;
+    let mut feed = StatusFeed::attach(&state, &crate::session::config::effective_profile("")).await;
     let mut status_rx = state.status_tx.subscribe();
 
     let response = delete_session(
@@ -6490,12 +6472,11 @@ async fn delete_session_notifies_plugins_that_the_session_is_deleting() {
 
 /// Failed purge bookkeeping publishes only its committed error transition.
 #[tokio::test]
-async fn failed_delete_notifies_plugins_of_the_error() {
+async fn failed_delete_publishes_the_error() {
     let _home = crate::session::test_support::isolate_app_dir();
     let state = delete_race_state("sess-delete-error");
     state.instances.write().await[0].status = Status::Deleting;
-    let mut feed =
-        PluginStatusFeed::attach(&state, &crate::session::config::effective_profile("")).await;
+    let mut feed = StatusFeed::attach(&state, &crate::session::config::effective_profile("")).await;
     let mut status_rx = state.status_tx.subscribe();
 
     let worker_state = state.clone();

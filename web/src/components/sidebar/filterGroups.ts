@@ -18,11 +18,10 @@ function workspaceMatchesQuery(ws: Workspace, q: string): boolean {
   );
 }
 
-/** A row survives when it or any enclosing header name matches `q`, and it passes the facet filter. */
-export function makeRowFilter(q: string, matchesFacets: (ws: Workspace) => boolean) {
+/** A row survives when it or any enclosing header name matches `q`. */
+export function makeRowFilter(q: string) {
   return (v: SidebarWorkspaceView, ...groupNames: string[]) =>
-    (!q || workspaceMatchesQuery(v.workspace, q) || groupNames.some((n) => n.toLowerCase().includes(q))) &&
-    matchesFacets(v.workspace);
+    !q || workspaceMatchesQuery(v.workspace, q) || groupNames.some((n) => n.toLowerCase().includes(q));
 }
 
 type RowFilter = ReturnType<typeof makeRowFilter>;

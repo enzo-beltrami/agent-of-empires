@@ -10,9 +10,7 @@ import { DiffFileList } from "./diff/DiffFileList";
 import { DiffFileViewer } from "./diff/DiffFileViewer";
 import { CommentsBanner } from "./diff/comments/CommentsBanner";
 import { SendCommentsDialog } from "./diff/comments/SendCommentsDialog";
-import { PluginPaneBody } from "./plugin/PluginPane";
 import type { RightPanelView } from "../lib/rightPanelView";
-import { isPluginPaneId, type PluginPane } from "../lib/pluginPanes";
 import type { RepoBase, RichDiffFile, SessionResponse } from "../lib/types";
 import type { useDiffComments } from "../hooks/useDiffComments";
 import type { WebSettings } from "../hooks/useWebSettings";
@@ -27,7 +25,6 @@ interface Props {
   onStartSession?: (sessionId: string) => void;
   readOnly: boolean;
   view: RightPanelView;
-  pluginPanes: PluginPane[];
   onBackToAgent: () => void;
   onOpenAgentsPane: () => void;
   /** Opens the switch-view confirmation for that Session; omitted where it can't switch. */
@@ -83,7 +80,6 @@ export function MobileMainPane({
   onStartSession,
   readOnly,
   view,
-  pluginPanes,
   onBackToAgent,
   onOpenAgentsPane,
   onSwitchToTerminal,
@@ -119,17 +115,8 @@ export function MobileMainPane({
   onClearSelectedFile,
   serverAbout,
 }: Props) {
-  const activePluginPane = isPluginPaneId(view) ? (pluginPanes.find((p) => p.id === view) ?? null) : null;
   const viewLabel =
-    view === "diff"
-      ? "Diff"
-      : view === "files"
-        ? "Files"
-        : view === "paired"
-          ? "Paired terminal"
-          : view === "agents"
-            ? "Sub agents"
-            : (activePluginPane?.title ?? "Plugin");
+    view === "diff" ? "Diff" : view === "files" ? "Files" : view === "paired" ? "Paired terminal" : "Sub agents";
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -279,18 +266,6 @@ export function MobileMainPane({
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
             <FilesPane key={activeSessionId ?? "none"} sessionId={activeSessionId} />
-          </div>
-        )}
-
-        {activePluginPane && (
-          // Reserve the bottom home-indicator inset here too (see the diff and paired wrappers); the App root no
-          // longer does.
-          <div
-            className="absolute inset-0 z-10 flex flex-col min-h-0 overflow-hidden bg-surface-900"
-            data-testid="mobile-plugin-layer"
-            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-          >
-            <PluginPaneBody entry={activePluginPane.entry} />
           </div>
         )}
       </div>

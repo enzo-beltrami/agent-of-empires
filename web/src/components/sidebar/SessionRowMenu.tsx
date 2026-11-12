@@ -177,15 +177,12 @@ export function SingleRowMenuItems({
   colorsEnabled,
   unreadEnabled,
   actions: a,
-  extraItems,
 }: {
   model: RowModel;
   readOnly?: boolean;
   colorsEnabled: boolean;
   unreadEnabled: boolean;
   actions: SingleRowActions;
-  /** Plugin-contributed items, placed above Move to Trash…. */
-  extraItems?: React.ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreId = useId();
@@ -394,7 +391,6 @@ export function SingleRowMenuItems({
             </MenuChoiceRow>
           ),
         ],
-        [extraItems && <Fragment key="plugin">{extraItems}</Fragment>],
         [
           write && (
             <MenuItem

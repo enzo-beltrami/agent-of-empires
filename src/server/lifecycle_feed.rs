@@ -17,9 +17,6 @@ use crate::session::lifecycle::{
 /// Room for a burst of lifecycle changes, such as a bulk delete, before a slow subscriber lags.
 const LIFECYCLE_CHANNEL_CAPACITY: usize = 256;
 
-/// Reads of the baseline before giving up on a quiet moment between commits.
-const BASELINE_ATTEMPTS: usize = 5;
-
 /// Wait before looking again at a missing session or an overtaken snapshot.
 const AGAIN_DELAY: Duration = Duration::from_millis(250);
 
@@ -155,53 +152,11 @@ impl LifecycleFeed {
         self.apply(|tracker| (tracker.commit(before, after), ()));
     }
 
-    /// Record what is on disk before any worker can list sessions, so every later change is
-    /// reported against it. A commit that lands while loading makes the snapshot stale, and a
-    /// failed profile listing is no snapshot, so both read again; the commit observer must
-    /// already be installed to count commits. Returns whether a baseline was established.
-    pub(super) async fn establish_baseline(
-        self: &Arc<Self>,
-        load: impl FnMut() -> LoadedInstances + Send + 'static,
-    ) -> bool {
-        let _reading = self.lock_reads().await;
-        let feed = Arc::clone(self);
-        tokio::task::spawn_blocking(move || feed.baseline_with(load))
-            .await
-            .unwrap_or(false)
-    }
-
     /// Take the turn to read the store and apply what was read, held from before the read to
     /// after the apply. Without it a reader that is mid-read could apply an older snapshot
     /// over a newer one that another reader applied meanwhile.
     pub(super) async fn lock_reads(&self) -> tokio::sync::MutexGuard<'_, ()> {
         self.read_gate.lock().await
-    }
-
-    fn baseline_with(&self, load: impl FnMut() -> LoadedInstances) -> bool {
-        let established = self.read_baseline(load);
-        if !established {
-            // Workers start anyway. Until a read is accepted, each profile starts from its
-            // first commit's before rows instead of dropping the commit.
-            self.apply(|tracker| {
-                tracker.baseline_unavailable();
-                (Vec::new(), ())
-            });
-        }
-        established
-    }
-
-    fn read_baseline(&self, mut load: impl FnMut() -> LoadedInstances) -> bool {
-        for _ in 0..BASELINE_ATTEMPTS {
-            let since = self.commit_generation();
-            let loaded = load();
-            if loaded.cache.health.enumeration_failed {
-                continue;
-            }
-            if !matches!(self.observe_disk(since, &loaded), Observed::Again { .. }) {
-                return true;
-            }
-        }
-        false
     }
 
     /// Report every `Storage::update` commit of this process, until the guard drops. The
@@ -231,7 +186,7 @@ impl LifecycleFeed {
                     hook(&change);
                 }
             }
-            // No subscriber (no plugin host) is fine.
+            // No subscriber is fine.
             let _ = self.tx.send(change);
         }
         result
@@ -294,7 +249,7 @@ mod tests {
         assert_eq!(change.effective_profile, "p");
         assert_eq!(
             change.summary,
-            Some(crate::plugin::host_api::session_summary(&b))
+            Some(crate::session::lifecycle::session_summary(&b))
         );
     }
 
@@ -383,7 +338,7 @@ mod tests {
 
     /// Both producers publish before the tracker is released, so a second producer cannot
     /// apply and publish its change between the first one's apply and its publication: the
-    /// last notification a plugin gets is always the tracker's current state.
+    /// last notification a subscriber gets is always the tracker's current state.
     #[test]
     fn every_publication_happens_under_the_tracker_lock() {
         let feed = LifecycleFeed::new();
@@ -413,147 +368,6 @@ mod tests {
             [true, true],
             "the disk producer and the commit producer each published under the lock"
         );
-    }
-
-    /// A failed profile listing says nothing about the sessions on disk, so it is not a
-    /// baseline: read again, and report plainly when none could be established.
-    #[test]
-    fn a_failed_profile_listing_is_not_a_baseline() {
-        let feed = LifecycleFeed::new();
-        let mut reads = 0;
-        let established = feed.baseline_with(|| {
-            reads += 1;
-            if reads == 1 {
-                listing_failed()
-            } else {
-                complete(vec![instance("a", "p")])
-            }
-        });
-        assert!(established, "the second read listed the profiles");
-        assert_eq!(reads, 2);
-
-        let feed = LifecycleFeed::new();
-        assert!(!feed.baseline_with(listing_failed));
-    }
-
-    /// With no baseline at all, a commit still reports against its own before rows, so a
-    /// worker that listed the profile is not left behind until the next reload.
-    #[test]
-    fn a_commit_after_a_failed_baseline_is_reported_against_its_before_rows() {
-        let feed = LifecycleFeed::new();
-        let mut rx = feed.subscribe();
-        assert!(!feed.baseline_with(listing_failed));
-
-        let before = instance("a", "p");
-        let mut after = before.clone();
-        after.archive();
-        feed.on_commit(&[row_of(&before)], &[row_of(&after)]);
-        assert_eq!(rx.try_recv().unwrap().kind, LifecycleKind::Archived);
-
-        // The listing recovers and agrees: nothing is announced again.
-        assert!(!observe(&feed, vec![after]));
-        assert!(rx.try_recv().is_err());
-    }
-
-    /// The baseline and the disk consumer both read the store, so they take turns: a reader
-    /// that is mid-read would otherwise apply an older snapshot over the baseline.
-    #[tokio::test]
-    async fn the_baseline_waits_for_a_reader_that_is_mid_read() {
-        use std::sync::atomic::{AtomicU8, Ordering};
-        // 0: not read yet, 1: read with the turn held, 2: read without it.
-        let read = Arc::new(AtomicU8::new(0));
-        let feed = LifecycleFeed::new();
-
-        let consumer = feed.lock_reads().await;
-        let baseline = feed.establish_baseline({
-            let (read, feed) = (Arc::clone(&read), Arc::clone(&feed));
-            move || {
-                let held = feed.read_gate.try_lock().is_err();
-                read.store(if held { 1 } else { 2 }, Ordering::SeqCst);
-                complete(Vec::new())
-            }
-        });
-        tokio::pin!(baseline);
-        assert!(futures_util::poll!(&mut baseline).is_pending());
-        assert_ne!(
-            read.load(Ordering::SeqCst),
-            2,
-            "the baseline must hold the turn while it reads"
-        );
-
-        drop(consumer);
-        assert!(baseline.await);
-        assert_eq!(
-            read.load(Ordering::SeqCst),
-            1,
-            "it read only once it had the turn, and held it throughout"
-        );
-    }
-
-    /// If commits overtake every baseline read, the tracker is still uninitialised when
-    /// workers start. A change after their list must be reported against its own before
-    /// rows, not dropped and then absorbed by the next accepted read.
-    #[test]
-    fn a_baseline_overtaken_on_every_read_still_reports_later_commits() {
-        let feed = LifecycleFeed::new();
-        let mut rx = feed.subscribe();
-        let a = instance("a", "p");
-        let mut archived = a.clone();
-        archived.archive();
-
-        let mut reads = 0;
-        let established = feed.baseline_with(|| {
-            reads += 1;
-            // Any commit advances the counter, even one that changes no session.
-            feed.on_commit(&[], &[]);
-            complete(vec![a.clone()])
-        });
-        assert!(!established);
-        assert_eq!(reads, BASELINE_ATTEMPTS);
-        assert!(rx.try_recv().is_err());
-
-        feed.on_commit(&[row_of(&a)], &[row_of(&archived)]);
-        assert_eq!(rx.try_recv().unwrap().kind, LifecycleKind::Archived);
-
-        // The next accepted read agrees and announces nothing.
-        assert!(!observe(&feed, vec![archived]));
-        assert!(rx.try_recv().is_err());
-    }
-
-    /// A commit that lands while the baseline is read makes that read stale, and the baseline
-    /// must not adopt it: the sessions would then silently miss the change.
-    #[test]
-    fn the_baseline_rereads_when_a_commit_lands_during_the_read() {
-        let feed = LifecycleFeed::new();
-        let mut rx = feed.subscribe();
-        let before = instance("a", "p");
-        let mut after = before.clone();
-        after.title = "renamed".to_string();
-
-        let mut reads = 0;
-        feed.baseline_with(|| {
-            reads += 1;
-            if reads == 1 {
-                // The disk still holds the old title when it is read ...
-                let loaded = complete(vec![before.clone()]);
-                // ... and the rename commits before the read reaches the tracker.
-                feed.on_commit(&[row_of(&before)], &[row_of(&after)]);
-                loaded
-            } else {
-                complete(vec![after.clone()])
-            }
-        });
-        assert_eq!(reads, 2, "the stale read was discarded and read again");
-        assert!(rx.try_recv().is_err(), "the baseline itself is silent");
-
-        // The baseline holds the renamed session, so nothing is reported for it now ...
-        assert!(!observe(&feed, vec![after.clone()]));
-        assert!(rx.try_recv().is_err());
-        // ... and the next change is reported against it.
-        let mut archived = after.clone();
-        archived.archive();
-        feed.on_commit(&[row_of(&after)], &[row_of(&archived)]);
-        assert_eq!(rx.try_recv().unwrap().kind, LifecycleKind::Archived);
     }
 
     /// A missing session of a profile that then turns unreadable cannot be confirmed or

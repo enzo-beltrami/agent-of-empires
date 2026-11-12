@@ -300,50 +300,10 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/app-state/tip-seen", post(api::mark_tip_seen))
         // Plugin management.
         .route("/api/plugins", get(api::list_plugins))
-        .route("/api/plugins/{id}/icon", get(api::serve_plugin_icon))
-        .route(
-            "/api/plugins/{id}/pages/{page_id}",
-            get(api::serve_plugin_page),
-        )
-        .route(
-            "/api/plugins/{id}/pages/{page_id}/ticket",
-            post(api::mint_plugin_page_ticket),
-        )
-        .route("/api/plugins/commands", get(api::plugin_commands))
-        .route(
-            "/api/plugins/commands/{fqid}/invoke",
-            post(api::invoke_plugin_command).layer(read_only.clone()),
-        )
-        .route("/api/plugins/ui-state", get(api::plugin_ui_state))
-        .route("/api/plugins/discover", get(api::plugin_discover))
-        .route("/api/plugins/details", get(api::plugin_details))
         .route(
             "/api/plugins/{id}/enabled",
             post(api::set_plugin_enabled).layer(read_only.clone()),
         )
-        .route(
-            "/api/plugins/{id}/worker/restart",
-            post(api::restart_plugin_worker).layer(read_only.clone()),
-        )
-        .route("/api/plugins/{id}/action", post(api::invoke_plugin_action))
-        .route("/api/plugins/{id}/sessions", get(api::plugin_sessions))
-        .route(
-            "/api/plugins/{id}/settings/options/resolve",
-            post(api::resolve_options),
-        )
-        .route(
-            "/api/plugins/install/preview",
-            post(api::preview_plugin_install).layer(read_only.clone()),
-        )
-        .route(
-            "/api/plugins/install",
-            post(api::start_plugin_install).layer(read_only.clone()),
-        )
-        .route(
-            "/api/plugins/{id}/uninstall",
-            post(api::start_plugin_uninstall).layer(read_only.clone()),
-        )
-        .route("/api/plugins/jobs/{job_id}", get(api::plugin_job_status))
         .route(
             "/api/app-state/web-tour-seen",
             post(api::mark_web_tour_seen),

@@ -1,6 +1,5 @@
 import { DiffFileList } from "./diff/DiffFileList";
 import { CommentsBanner } from "./diff/comments/CommentsBanner";
-import { PluginDetailBadges } from "./plugin/PluginSlots";
 import type { RepoBase, RichDiffFile, SessionResponse } from "../lib/types";
 
 interface Props {
@@ -22,7 +21,7 @@ interface Props {
   onDiscardAllComments: () => void;
 }
 
-/** Body of the "diff" pane: comments banner, per-session plugin detail badges/panels, and the changed-file list.
+/** Body of the "diff" pane: comments banner and the changed-file list.
  *  */
 export function DiffPane({
   session,
@@ -52,11 +51,6 @@ export function DiffPane({
           onSend={onOpenSendDialog}
           onDiscardAll={onDiscardAllComments}
         />
-      )}
-      {sessionId && (
-        <div className="shrink-0 flex flex-col gap-2 p-2 empty:hidden">
-          <PluginDetailBadges sessionId={sessionId} />
-        </div>
       )}
       <DiffFileList
         files={files}

@@ -772,7 +772,7 @@ async fn terminal_refusal(id: &str, error: SendKeysError) -> CallToolResult {
         SendKeysError::Transient(status) => {
             tool_error("busy", format!("The session is {status:?}; try again"))
         }
-        SendKeysError::Preparation { response, .. } => {
+        SendKeysError::Preparation { response } => {
             let status = response.status();
             match axum::body::to_bytes(response.into_body(), usize::MAX).await {
                 Ok(bytes) => refusal(status, &bytes),
@@ -938,7 +938,6 @@ mod tests {
             *response.status_mut() = status;
             SendKeysError::Preparation {
                 response: Box::new(response),
-                detail: json!({}),
             }
         };
         let hooks = axum::Json(json!({

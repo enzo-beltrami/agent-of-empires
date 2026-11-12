@@ -418,9 +418,6 @@ pub(super) const CITYHALL_MUTATION_ALLOW: &[(&str, &str)] = &[
     // Curated settings surfaces (the handlers field-filter / strip color-mode).
     ("PATCH", "/api/profiles/{name}/settings"),
     ("PATCH", "/api/theme"),
-    ("POST", "/api/plugins/{id}/settings/options/resolve"),
-    // Lets a page frame load authenticate; grants nothing beyond rendering it.
-    ("POST", "/api/plugins/{id}/pages/{page_id}/ticket"),
     // Ephemeral foreground-presence heartbeat. Does not mutate user data.
     ("POST", "/api/presence"),
     // Per-device UI preferences / client log.
@@ -499,13 +496,7 @@ pub(super) const CITYHALL_MUTATION_DENY: &[(&str, &str)] = &[
     ("DELETE", "/api/skills/{directory}"),
     ("POST", "/api/skills/{source}/{directory}/adopt"),
     // Plugin lifecycle.
-    ("POST", "/api/plugins/install"),
-    ("POST", "/api/plugins/install/preview"),
-    ("POST", "/api/plugins/{id}/action"),
     ("POST", "/api/plugins/{id}/enabled"),
-    ("POST", "/api/plugins/{id}/worker/restart"),
-    ("POST", "/api/plugins/{id}/uninstall"),
-    ("POST", "/api/plugins/commands/{fqid}/invoke"),
     // ACP agent / worker lifecycle + config.
     ("DELETE", "/api/sessions/{id}/acp"),
     ("POST", "/api/sessions/{id}/acp/config-option"),
@@ -865,12 +856,10 @@ pub(super) async fn cityhall_gate(
 ///   runtime (terminal font-size updates) and Tailwind v4 emits inline
 ///   `<style>` blocks in dev. Blocking inline styles breaks xterm.js's
 ///   rendered viewport.
-/// - `img-src 'self' data: https://github.com https://avatars.githubusercontent.com https://raw.githubusercontent.com`:
+/// - `img-src 'self' data: https://github.com https://avatars.githubusercontent.com`:
 ///   repo-owner avatars are loaded from `github.com/{user}.png` which 302s
 ///   to `avatars.githubusercontent.com`; CSP checks both URLs across the
 ///   redirect, so both hosts must be allowed. `data:` covers inline icons.
-///   `raw.githubusercontent.com` serves plugin screenshots resolved by the
-///   plugin detail endpoint (#2484).
 /// - `font-src 'self'`: Geist fonts are bundled under /fonts/.
 /// - `connect-src 'self' ws: wss:`: REST + PTY WebSocket to same origin.
 /// - `frame-ancestors 'none'`: CSP-native equivalent of X-Frame-Options.
@@ -879,7 +868,7 @@ pub(super) async fn cityhall_gate(
 pub(super) const CSP: &str = "default-src 'self'; \
     script-src 'self' 'wasm-unsafe-eval'; \
     style-src 'self' 'unsafe-inline'; \
-    img-src 'self' data: blob: https://github.com https://avatars.githubusercontent.com https://raw.githubusercontent.com; \
+    img-src 'self' data: blob: https://github.com https://avatars.githubusercontent.com; \
     font-src 'self'; \
     connect-src 'self' ws: wss:; \
     frame-ancestors 'none'; \
@@ -894,15 +883,10 @@ pub(super) async fn security_headers(
 ) -> axum::response::Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
-    // The plugin page route sets its own frame and content policy.
-    headers
-        .entry("x-frame-options")
-        .or_insert("DENY".parse().unwrap());
+    headers.insert("x-frame-options", "DENY".parse().unwrap());
     headers.insert("x-content-type-options", "nosniff".parse().unwrap());
     headers.insert("referrer-policy", "no-referrer".parse().unwrap());
-    headers
-        .entry("content-security-policy")
-        .or_insert(CSP.parse().unwrap());
+    headers.insert("content-security-policy", CSP.parse().unwrap());
     response
 }
 
@@ -1942,7 +1926,7 @@ mod tests {
         for needle in [
             "default-src 'self'",
             "script-src 'self' 'wasm-unsafe-eval'",
-            "img-src 'self' data: blob: https://github.com https://avatars.githubusercontent.com https://raw.githubusercontent.com",
+            "img-src 'self' data: blob: https://github.com https://avatars.githubusercontent.com",
             "connect-src 'self' ws: wss:",
             "frame-ancestors 'none'",
         ] {

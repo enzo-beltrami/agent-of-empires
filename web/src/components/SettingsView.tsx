@@ -38,7 +38,6 @@ import {
   onSettingsIntrosReset,
   type SettingsIntroId,
 } from "../lib/settingsIntros";
-import { PluginSettingsSections } from "./settings/PluginSettingsSections";
 import { LogsSettings } from "./settings/LogsSettings";
 import { SettingsHeader } from "./settings/SettingsHeader";
 import { StructuredViewDisplaySettings } from "./settings/StructuredViewDisplaySettings";
@@ -697,13 +696,7 @@ export function SettingsView({
         return <LogsSettings />;
 
       case "plugins":
-        return (
-          <div className="space-y-6">
-            <PluginsSettings readOnly={cityhall} />
-            {!cityhall &&
-              (schemaGuard() ?? <PluginSettingsSections schema={schema} settings={settings} onSaveField={sendSave} />)}
-          </div>
-        );
+        return <PluginsSettings readOnly={cityhall} />;
 
       case "notifications":
         return (

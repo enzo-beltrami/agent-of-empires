@@ -19,31 +19,9 @@ use crate::acp::protocol::{
     SwitchAgentRequest, SwitchAgentResponse, SwitchProviderRequest, SwitchProviderResponse,
 };
 use crate::daemon::DaemonEndpoint;
-use crate::plugin::ui_state::UiSnapshot;
 
 /// The daemon revives, waits for readiness and delivers before it answers a terminal send.
 const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
-
-/// One active plugin command as the daemon reports it (`GET
-/// /api/plugins/commands`), the source of truth the structured view resolves
-/// keybinds against: for a session on a remote daemon the plugin may not be
-/// installed on the TUI's own machine, so its local registry cannot resolve or
-/// execute it. Mirrors the server's `PluginCommandView`; only the execution
-/// fields are kept.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct PluginCommandView {
-    pub fqid: String,
-    pub plugin_id: String,
-    #[serde(default)]
-    pub keybinds: Vec<String>,
-    #[serde(default)]
-    pub action: Option<aoe_plugin_api::ClientAction>,
-}
-
-#[derive(serde::Deserialize)]
-struct PluginCommandsEnvelope {
-    commands: Vec<PluginCommandView>,
-}
 
 /// Wire mirror of the daemon's `/acp/prompt` disposition.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
@@ -282,57 +260,7 @@ impl HttpClient {
         Ok(())
     }
 
-    /// `GET /api/plugins/ui-state`. The daemon-wide plugin UI snapshot
-    /// (host-rendered slots + notifications) the web dashboard polls; the
-    /// native structured view renders the TUI-applicable subset (#2402).
-    /// Global, not session-scoped, so a miss must not be classified as a
-    /// session-not-found.
-    pub async fn plugin_ui_state(&self) -> Result<UiSnapshot, HttpError> {
-        let url = format!("{}/api/plugins/ui-state", self.endpoint.base_url);
-        let res = self.execute(self.http.get(&url)).await?;
-        let res = check_global_status(res)?;
-        Ok(crate::daemon::decode_json::<UiSnapshot>(res).await?)
-    }
-
-    /// `GET /api/plugins/commands`. The daemon's active plugin commands with
-    /// their keybinds and client actions. The structured view resolves plugin
-    /// chords against this rather than the TUI's local registry, so a session on
-    /// a remote daemon can drive plugins installed only there. Global, like
-    /// `plugin_ui_state`.
-    pub async fn plugin_commands(&self) -> Result<Vec<PluginCommandView>, HttpError> {
-        let url = format!("{}/api/plugins/commands", self.endpoint.base_url);
-        let res = self.execute(self.http.get(&url)).await?;
-        let res = check_global_status(res)?;
-        Ok(crate::daemon::decode_json::<PluginCommandsEnvelope>(res)
-            .await?
-            .commands)
-    }
-
-    /// `POST /api/plugins/commands/{fqid}/invoke`. Dispatch an action-less
-    /// plugin command to its worker as a fire-and-forget notification (the TUI
-    /// twin of the web palette's invoke). Global, like `plugin_ui_state`; the
-    /// daemon validates the command and session. `fqid` has no slashes, so it
-    /// is a single path segment.
-    pub async fn invoke_plugin_command(
-        &self,
-        fqid: &str,
-        session_id: &str,
-    ) -> Result<(), HttpError> {
-        let url = format!(
-            "{}/api/plugins/commands/{}/invoke",
-            self.endpoint.base_url,
-            path_segment(fqid)?
-        );
-        let body = serde_json::json!({ "session_id": session_id });
-        let res = self.execute(self.http.post(&url).json(&body)).await?;
-        check_global_status(res)?;
-        Ok(())
-    }
-
-    /// `POST /api/plugins/{id}/enabled`. Toggling through the daemon (rather
-    /// than writing config locally) lets its plugin host reconcile workers
-    /// live: enabling launches the worker, disabling tears it down. Global,
-    /// like `plugin_ui_state`.
+    /// `POST /api/plugins/{id}/enabled`. Global, not session-scoped.
     pub async fn set_plugin_enabled(
         &self,
         plugin_id: &str,
@@ -342,18 +270,6 @@ impl HttpClient {
         let body = serde_json::json!({ "enabled": enabled });
         self.mutate(reqwest::Method::POST, &path, Some(body))
             .await?;
-        Ok(())
-    }
-
-    /// `POST /api/plugins/{id}/worker/restart`: the daemon reloads plugins from
-    /// disk and replaces this plugin's worker after its tree changed.
-    pub async fn restart_plugin_worker(&self, plugin_id: &str) -> Result<(), HttpError> {
-        let url = format!(
-            "{}/api/plugins/{}/worker/restart",
-            self.endpoint.base_url, plugin_id
-        );
-        let res = self.execute_elevated(|| self.http.post(&url)).await?;
-        check_global_status(res)?;
         Ok(())
     }
 

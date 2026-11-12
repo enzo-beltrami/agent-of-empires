@@ -27,33 +27,13 @@ interface Unconfirmed {
 const MAX_ATTEMPTS = 3;
 const CONFIRM_ERROR = "Could not confirm";
 const UNCERTAIN_ERROR = `${CONFIRM_ERROR} the save, please check the value`;
-const PLUGIN_PREFIX = "plugin:";
 
-/** Plugin settings live under `plugins.<id>.settings` rather than a section of their own. */
 function readField(settings: Settings, section: string, field: string): unknown {
-  if (!section.startsWith(PLUGIN_PREFIX)) return (settings[section] as Settings | undefined)?.[field];
-  const plugins = settings.plugins as Record<string, { settings?: Settings }> | undefined;
-  return plugins?.[section.slice(PLUGIN_PREFIX.length)]?.settings?.[field];
+  return (settings[section] as Settings | undefined)?.[field];
 }
 
 function writeField(settings: Settings, section: string, field: string, value: unknown): Settings {
-  if (!section.startsWith(PLUGIN_PREFIX)) {
-    return { ...settings, [section]: { ...(settings[section] as Settings | undefined), [field]: value } };
-  }
-  const id = section.slice(PLUGIN_PREFIX.length);
-  const plugins = (settings.plugins ?? {}) as Record<string, { settings?: Settings }>;
-  const plugin = plugins[id] ?? {};
-  return {
-    ...settings,
-    plugins: { ...plugins, [id]: { ...plugin, settings: { ...plugin.settings, [field]: value } } },
-  };
-}
-
-interface Mirror {
-  section: string;
-  field: string;
-  value: unknown;
-  token: object;
+  return { ...settings, [section]: { ...(settings[section] as Settings | undefined), [field]: value } };
 }
 
 interface Entry {
@@ -69,11 +49,7 @@ interface Entry {
    * value that differs from the intent never replaces it; only a matching one settles it.
    */
   unconfirmed: Map<string, Unconfirmed>;
-  /** Global edits made under another profile that its save has not settled; laid over every GET. */
-  mirrors: Map<string, Mirror>;
   fieldGen: Map<string, number>;
-  /** Bumped when another profile's global edit of the field is mirrored in; a send queued before it is stale. */
-  mirrorGen: Map<string, number>;
   loading: Promise<boolean>;
   afterDrain: (() => void)[];
   loadSeq: number;
@@ -92,9 +68,7 @@ function entry(profile: string): Entry {
       tail: Promise.resolve(),
       needsReconcile: false,
       unconfirmed: new Map(),
-      mirrors: new Map(),
       fieldGen: new Map(),
-      mirrorGen: new Map(),
       loading: Promise.resolve(false),
       afterDrain: [],
       loadSeq: 0,
@@ -117,42 +91,6 @@ export function useProfileSettings(profile: string): SettingsView {
     },
     () => entry(profile).view,
   );
-}
-
-/**
- * Plugin values are global, so an edit made under one profile is written into the other cached
- * profiles too. Bumping their `gen` makes a GET already in flight, even a first one with no
- * snapshot to mirror into, retry instead of landing a value that predates the edit, and the
- * edit is laid over any GET that still lands while the save is out. The returned function runs
- * once the save has an outcome: it releases only this edit's mirror and refetches, so a profile
- * returns to the server's value plus whatever other mirrors are still pending.
- */
-function mirrorPluginField(origin: Entry, section: string, field: string, value: unknown): () => void {
-  const key = `${section}\0${field}`;
-  const global = section.startsWith(PLUGIN_PREFIX);
-  const token = {};
-  if (global) {
-    for (const other of entries.values()) {
-      if (other === origin) continue;
-      other.gen++;
-      // A newer global edit supersedes this profile's older intent for the field, even one still in flight.
-      other.unconfirmed.delete(key);
-      other.fieldGen.set(key, (other.fieldGen.get(key) ?? 0) + 1);
-      other.mirrorGen.set(key, (other.mirrorGen.get(key) ?? 0) + 1);
-      other.mirrors.set(key, { section, field, value, token });
-      if (other.view.settings) publish(other, { settings: writeField(other.view.settings, section, field, value) });
-    }
-  }
-  return () => {
-    if (!global) return;
-    for (const [profile, other] of entries) {
-      if (other === origin) continue;
-      if (other.mirrors.get(key)?.token === token) other.mirrors.delete(key);
-      other.gen++;
-      other.needsReconcile = true;
-      if (other.loadSeq > 0 && other.pending === 0) void loadSettings(profile);
-    }
-  };
 }
 
 const REFRESH_ERROR = "Could not refresh settings, please reload";
@@ -205,10 +143,7 @@ export function loadSettings(profile: string): Promise<boolean> {
         publish(e, { error: REFRESH_ERROR });
         return false;
       }
-      const settled = settle(e, s);
-      const { resend, unresolved } = settled;
-      let settings = settled.settings;
-      for (const m of e.mirrors.values()) settings = writeField(settings, m.section, m.field, m.value);
+      const { settings, resend, unresolved } = settle(e, s);
       const error =
         unresolved.length > 0
           ? `${CONFIRM_ERROR} ${unresolved.join(", ")}; showing your value. Reload to discard it`
@@ -247,7 +182,6 @@ export async function saveField(
   const fieldGen = (e.fieldGen.get(key) ?? 0) + 1;
   e.fieldGen.set(key, fieldGen);
   e.unconfirmed.delete(key);
-  e.mirrors.delete(key);
   e.gen++;
   e.pending++;
   publish(e, {
@@ -255,18 +189,12 @@ export async function saveField(
     error: e.unconfirmed.size > 0 ? e.view.error : null,
     settings: base && writeField(base, section, field, value),
   });
-  const settleMirror = mirrorPluginField(e, section, field, value);
-  const mirrorGen = e.mirrorGen.get(key);
-  // A newer global edit mirrored in while this send waited its turn owns the field now.
-  const request = e.tail.then((): Promise<SaveOutcome> | SaveOutcome =>
-    e.mirrorGen.get(key) === mirrorGen ? send() : "committed",
-  );
+  const request = e.tail.then(send);
   e.tail = request.catch(() => undefined);
   const outcome = await request.catch((): SaveOutcome => "uncertain");
   e.gen++;
   e.pending--;
   if (outcome !== "committed") e.needsReconcile = true;
-  settleMirror();
   // A newer edit of the same field supersedes this one, so only the latest keeps its intent.
   if (outcome === "uncertain" && e.fieldGen.get(key) === fieldGen) {
     e.unconfirmed.set(key, { section, field, value, send, attempts: attempts + 1, onConfirmed });

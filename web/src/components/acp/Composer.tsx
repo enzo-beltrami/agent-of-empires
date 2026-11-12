@@ -12,16 +12,12 @@ import { useSkillIndex } from "../../hooks/useSkillIndex";
 import { clearDraft } from "../../lib/acpDrafts";
 import type { AcpState, PromptAttachmentInput, PromptCapabilities, QueuedPrompt } from "../../lib/acpTypes";
 import { isIOS, isStandalone } from "../../lib/platform";
-import { sessionEntries } from "../../lib/pluginUi";
-import { usePluginUiEntries } from "../../lib/pluginUiContext";
 import {
   clearPendingSwitchAgent,
   getPendingSwitchAgent,
   subscribePendingSwitchAgent,
 } from "../../lib/switchAgentTrigger";
 import { TOUR_ANCHORS, tourAnchor } from "../../lib/tourSteps";
-import { PluginComposerActions } from "../plugin/PluginSlots";
-import { composerDraftOperation, type ComposerDraftOperation } from "../plugin/composerDraftOperation";
 import {
   AttachmentChips,
   ModePicker,
@@ -43,7 +39,6 @@ import {
   fitTextarea,
   insertAtCaret,
   insertNewlineAtCaret,
-  insertRawTextAtCaret,
   insertSlashCommand,
   IOS_ACCESSORY_BAR_PX,
 } from "./composerInput";
@@ -140,7 +135,6 @@ export function Composer(props: Props) {
     );
   }, [client, props, sessionId, attachments.supported, queuedPrompts, recall]);
 
-  usePluginDraftOperations(sessionId, client, taRef);
   usePrimerPrefill(props.primerPrefill, loadText);
   useDraftPersistence(sessionId, client, composerText, draftTextRef, taRef);
   useInitialFocus(isMobile, taRef);
@@ -365,7 +359,6 @@ export function Composer(props: Props) {
               </div>
 
               <div data-testid="composer-actions" className="flex shrink-0 items-center gap-2">
-                <PluginComposerActions sessionId={sessionId} getSnapshot={() => pluginSnapshot(client, taRef)} />
                 {turnActive ? (
                   <>
                     <StopButton />
@@ -402,61 +395,6 @@ export function Composer(props: Props) {
       />
     </div>
   );
-}
-
-function pluginSnapshot(client: ComposerClient, taRef: React.RefObject<HTMLTextAreaElement | null>) {
-  const ta = taRef.current;
-  const text = client.getState().text;
-  return {
-    text,
-    selectionStart: ta?.selectionStart ?? text.length,
-    selectionEnd: ta?.selectionEnd ?? ta?.selectionStart ?? text.length,
-  };
-}
-
-/** Apply each plugin draft operation once, keyed by plugin, entry, and operation id. */
-function usePluginDraftOperations(
-  sessionId: string,
-  client: ComposerClient,
-  taRef: React.RefObject<HTMLTextAreaElement | null>,
-) {
-  const apply = useCallback(
-    (operation: ComposerDraftOperation) => {
-      const ta = taRef.current;
-      if (operation.kind === "set-text") {
-        client.setText(operation.text);
-        if (!ta) return;
-        requestAnimationFrame(() => {
-          const el = taRef.current;
-          if (!el) return;
-          el.focus();
-          el.setSelectionRange(operation.text.length, operation.text.length);
-          fitTextarea(el);
-        });
-      } else if (!ta) {
-        client.setText(`${client.getState().text}${operation.text}`);
-      } else {
-        insertRawTextAtCaret(ta, operation.text, operation.kind === "replace-selection");
-      }
-    },
-    [client, taRef],
-  );
-  const pluginUiEntries = usePluginUiEntries();
-  const entries = useMemo(
-    () => sessionEntries(pluginUiEntries, "composer-action", sessionId),
-    [pluginUiEntries, sessionId],
-  );
-  const seenRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    for (const entry of entries) {
-      const draft = composerDraftOperation(entry);
-      if (!draft) continue;
-      const key = `${entry.plugin_id}:${entry.id}:${draft.id}`;
-      if (seenRef.current.has(key)) continue;
-      seenRef.current.add(key);
-      apply(draft.operation);
-    }
-  }, [apply, entries]);
 }
 
 /** Load the primer text whenever a new prefill id arrives. */

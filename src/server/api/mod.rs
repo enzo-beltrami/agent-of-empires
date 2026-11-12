@@ -14,8 +14,7 @@ mod log_level;
 mod logs;
 mod mcp;
 mod mutation_guard;
-pub(crate) mod plugin_settings;
-pub mod plugins;
+mod plugins;
 mod projects;
 mod queue;
 mod sandbox_image;
@@ -53,13 +52,7 @@ pub use mcp::{
     create_mcp_server, delete_mcp_server, drop_mcp_server, edit_mcp_server, get_mcp_servers,
     keep_mcp_server, resolve_mcp_conflict,
 };
-pub use plugin_settings::resolve_options;
-pub use plugins::{
-    invoke_plugin_action, invoke_plugin_command, list_plugins, mint_plugin_page_ticket,
-    plugin_commands, plugin_details, plugin_discover, plugin_job_status, plugin_sessions,
-    plugin_ui_state, preview_plugin_install, restart_plugin_worker, serve_plugin_icon,
-    serve_plugin_page, set_plugin_enabled, start_plugin_install, start_plugin_uninstall,
-};
+pub use plugins::{list_plugins, set_plugin_enabled};
 pub use projects::{create_project, delete_project, list_projects, update_project};
 pub use sandbox_image::{sandbox_image_dismiss, sandbox_image_pull, sandbox_image_status};
 pub use sessions::{
@@ -580,15 +573,7 @@ mod tests {
         (
             "plugins.rs",
             include_str!("plugins.rs"),
-            &[
-                "invoke_plugin_action",
-                "invoke_plugin_command",
-                "preview_plugin_install",
-                "restart_plugin_worker",
-                "set_plugin_enabled",
-                "start_plugin_install",
-                "start_plugin_uninstall",
-            ],
+            &["set_plugin_enabled"],
         ),
         (
             "skills.rs",
@@ -648,21 +633,9 @@ mod tests {
         ),
         (
             "POST",
-            "/api/plugins/{id}/pages/{page_id}/ticket",
-            "api::mint_plugin_page_ticket",
-            "Scoped authentication ticket for displaying a plugin page.",
-        ),
-        (
-            "POST",
             "/api/client-log",
             "api::post_client_log",
             "Bounded browser diagnostic relay.",
-        ),
-        (
-            "POST",
-            "/api/plugins/{id}/settings/options/resolve",
-            "api::resolve_options",
-            "UI option discovery may run capability probes and populate the shared catalog.",
         ),
         (
             "POST",
@@ -1708,7 +1681,6 @@ mod tests {
     #[serial_test::serial]
     async fn native_mutation_admission_preserves_body_and_elevation_precedence() {
         use axum::http::{Method, Request};
-        use base64::Engine;
         use tower::ServiceExt;
 
         let home = tempfile::tempdir().unwrap();
@@ -1735,7 +1707,6 @@ mod tests {
             (Method::PATCH, "/api/sessions/missing"),
             (Method::DELETE, "/api/sessions/missing"),
             (Method::POST, "/api/sessions/missing/trash"),
-            (Method::POST, "/api/plugins/commands/missing/invoke"),
             (Method::POST, "/api/sessions/empty-trash"),
             (Method::POST, "/api/groups"),
             (Method::PATCH, "/api/groups"),
@@ -1744,10 +1715,6 @@ mod tests {
             (Method::POST, "/api/reorder"),
             (Method::DELETE, "/api/workspaces"),
             (Method::POST, "/api/plugins/missing/enabled"),
-            (Method::POST, "/api/plugins/missing/worker/restart"),
-            (Method::POST, "/api/plugins/missing/uninstall"),
-            (Method::POST, "/api/plugins/install/preview"),
-            (Method::POST, "/api/plugins/install"),
             (Method::PATCH, "/api/theme"),
             (Method::POST, "/api/sandbox/image-pull"),
             (Method::POST, "/api/sandbox/image-dismiss"),
@@ -1776,66 +1743,6 @@ mod tests {
                 .unwrap();
             let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(body["error"], "read_only", "{method} {path}");
-        }
-
-        let login_manager =
-            std::sync::Arc::new(crate::server::login::LoginManager::new(Some("test")));
-        let binding = [0x42; 32];
-        let session = login_manager
-            .create_session(&binding, "127.0.0.1", "plugin-pane-policy")
-            .await;
-        assert!(!login_manager.is_elevated(&session).await);
-        let binding_header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(binding);
-        for (read_only, authenticated, status, code) in [
-            (false, false, StatusCode::UNAUTHORIZED, "login_required"),
-            (false, true, StatusCode::SERVICE_UNAVAILABLE, "no_host"),
-            (true, true, StatusCode::FORBIDDEN, "read_only"),
-        ] {
-            let state = crate::server::test_support::build_test_app_state_with_policy_configured(
-                Vec::new(),
-                vec!["localhost".into()],
-                vec!["http://localhost:8080".into()],
-                None,
-                |state| {
-                    state.read_only = read_only;
-                    state.login_manager = login_manager.clone();
-                    state.plugin_host = None;
-                },
-            );
-            let app = crate::server::test_support::build_router_for_test(state);
-            let mut request = Request::builder()
-                .method(Method::POST)
-                .uri("/api/plugins/missing/action")
-                .header("host", "localhost")
-                .header("origin", "http://localhost:8080")
-                .header("content-type", "application/json");
-            if authenticated {
-                request = request
-                    .header("cookie", format!("aoe_session={session}"))
-                    .header("x-aoe-device-binding", &binding_header);
-            }
-            let mut request = request
-                .body(axum::body::Body::from(
-                    r#"{"method":"github.refresh","params":{}}"#,
-                ))
-                .unwrap();
-            request.extensions_mut().insert(axum::extract::ConnectInfo(
-                crate::server::peer::ConnectionPeer::Tcp(([127, 0, 0, 1], 12345).into()),
-            ));
-            let response = app.oneshot(request).await.unwrap();
-            assert_eq!(
-                response.status(),
-                status,
-                "read_only={read_only}, auth={authenticated}"
-            );
-            let bytes = axum::body::to_bytes(response.into_body(), 1024)
-                .await
-                .unwrap();
-            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-            assert_eq!(
-                body["error"], code,
-                "read_only={read_only}, auth={authenticated}"
-            );
         }
     }
 

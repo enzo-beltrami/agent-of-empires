@@ -94,22 +94,9 @@ async function popupPath(page: Page, trigger: () => Promise<void>): Promise<stri
   return url.pathname + url.search;
 }
 
-test("a focus window opens other sessions, plugin pages and settings beside it and keeps its own URL", async ({
-  page,
-}) => {
+test("a focus window opens settings beside it and keeps its own URL", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await installSidebarMocks(page, { sessions: SESSIONS });
-  const board = { plugin_id: "acme.kit", id: "board", title: "Board", icon: "kanban", capabilities: [] };
-  // A header badge linking to another session, which a plugin may show in any window.
-  const link = {
-    plugin_id: "acme.kit",
-    slot: "header-start",
-    id: "goths",
-    payload: { text: "acme: goths", href: "/session/s-2" },
-  };
-  await page.route("**/api/plugins/ui-state", (r) =>
-    r.fulfill({ json: { entries: [link], notifications: [], pages: [board] } }),
-  );
   // A setting the palette opens in its tab rather than toggling inline.
   const setting = {
     section: "sandbox",
@@ -127,12 +114,6 @@ test("a focus window opens other sessions, plugin pages and settings beside it a
   await page.goto("/session/s-1?focus=1");
   await expect(page.getByRole("button", { name: /^All Sessions/ })).toBeVisible();
 
-  expect(await popupPath(page, () => page.getByRole("link", { name: "acme: goths", exact: true }).click())).toBe(
-    "/session/s-2",
-  );
-  expect(await popupPath(page, () => page.getByRole("button", { name: "Board", exact: true }).click())).toBe(
-    "/plugins/acme.kit/board",
-  );
   expect(await popupPath(page, () => page.keyboard.press("s"))).toBe("/settings");
   expect(
     await popupPath(page, async () => {
@@ -151,55 +132,6 @@ function countLoads(page: Page): () => number {
   page.on("load", () => loads++);
   return () => loads;
 }
-
-// With a hash, replacing the document with the URL the router already set would only scroll to it.
-for (const href of ["/session/s-1?focus=1", "/Session/s-1?focus=1", "/session/s-1?focus=1#turn-3"]) {
-  test(`a link to ${href} from a regular window reloads it once, so the service worker sees the change`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await installSidebarMocks(page, { sessions: SESSIONS });
-    const link = { plugin_id: "acme.kit", slot: "header-start", id: "focus", payload: { text: "acme: focus", href } };
-    await page.route("**/api/plugins/ui-state", (r) => r.fulfill({ json: { entries: [link], notifications: [] } }));
-    const loads = countLoads(page);
-    await page.goto("/session/s-1");
-    await expect.poll(() => workerFocusSessions(page)).toEqual([null]);
-
-    await page.getByRole("link", { name: "acme: focus", exact: true }).click();
-    await expect(page).toHaveURL(href);
-    await expect(page.getByRole("button", { name: /^All Sessions/ })).toBeVisible();
-    await expect.poll(() => workerFocusSessions(page)).toEqual(["s-1"]);
-    // The router reads the path case-insensitively; the document must agree, or it reloads forever. The new
-    // document's `load` can fire after the checks above, so wait for it before watching for more.
-    await expect.poll(loads).toBe(2);
-    await page.waitForTimeout(500);
-    expect(loads()).toBe(2);
-  });
-}
-
-test("a link into the focused session follows it in place and stays in focus mode", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await installSidebarMocks(page, { sessions: SESSIONS });
-  const link = {
-    plugin_id: "acme.kit",
-    slot: "header-start",
-    id: "turn",
-    payload: { text: "acme: turn", href: "/session/s-1#turn-3" },
-  };
-  await page.route("**/api/plugins/ui-state", (r) => r.fulfill({ json: { entries: [link], notifications: [] } }));
-  const popups: Page[] = [];
-  page.on("popup", (p) => popups.push(p));
-  const loads = countLoads(page);
-  await page.goto("/session/s-1?focus=1");
-  await expect.poll(loads).toBe(1);
-
-  await page.getByRole("link", { name: "acme: turn", exact: true }).click();
-  await expect(page).toHaveURL("/session/s-1?focus=1#turn-3");
-  await expect(page.getByRole("button", { name: /^All Sessions/ })).toBeVisible();
-  await page.waitForTimeout(500);
-  expect(loads()).toBe(1);
-  expect(popups).toHaveLength(0);
-});
 
 test("a focus window loaded at a mixed-case path stays put", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });

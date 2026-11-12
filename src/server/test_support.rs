@@ -310,8 +310,6 @@ pub(crate) fn build_test_app_state_impl_with_event_store(
         acp_event_store: event_store,
         acp_control_cache,
         acp_supervisor: supervisor,
-        plugin_host: None,
-        plugin_jobs: Arc::new(api::plugins::PluginJobRegistry::new()),
         push: None,
         push_enabled: false,
         web_config: crate::session::config::WebConfig::default(),

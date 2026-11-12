@@ -11,9 +11,6 @@ import { PaneIcon } from "./PaneIcon";
 export interface PaneDisplay {
   title: string;
   icon: LucideIcon;
-  /** A plugin's manifest `icon_asset`, resolved to a fetchable URL. See
-   *  `PaneIcon` for the precedence over `icon`. */
-  iconAssetUrl?: string;
 }
 
 interface Props {
@@ -25,7 +22,7 @@ interface Props {
   tabs: string[];
   /** Active tab id; falls back to the first tab if stale/missing. */
   active: string | null;
-  /** Title + icon for a tab id (built-in from the registry, or a plugin pane). */
+  /** Title + icon for a tab id. */
   descriptorFor: (id: string) => PaneDisplay;
   renderBody: (id: string) => ReactNode;
   onActivate: (id: string) => void;
@@ -85,7 +82,7 @@ function SortableTab({ id, location, groupIndex, isActive, desc, onActivate, onC
         {...listeners}
         className="flex items-center gap-1 pl-2 pr-1 cursor-pointer min-w-0 touch-none"
       >
-        <PaneIcon icon={desc.icon} iconAssetUrl={desc.iconAssetUrl} className="size-3.5 shrink-0" />
+        <PaneIcon icon={desc.icon} className="size-3.5 shrink-0" />
         <span className="text-[11px] font-medium truncate max-w-[10rem]">{desc.title}</span>
       </button>
       <button

@@ -53,11 +53,7 @@ function Row({
           active ? "text-text-primary" : "text-text-secondary"
         } ${sessionRowChromeClass(active, false)}`}
       >
-        <PaneIcon
-          icon={display.icon}
-          iconAssetUrl={display.iconAssetUrl}
-          className={`h-4 w-4 shrink-0 ${active ? "text-brand-500" : "text-text-dim"}`}
-        />
+        <PaneIcon icon={display.icon} className={`h-4 w-4 shrink-0 ${active ? "text-brand-500" : "text-text-dim"}`} />
         <span className="truncate">{display.title}</span>
       </button>
     </li>

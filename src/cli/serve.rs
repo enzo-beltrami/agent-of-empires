@@ -222,7 +222,7 @@ impl ServeArgs {
             Some(mode) => mode,
             None => {
                 let config = crate::session::config::Config::load()?;
-                if config.web.mcp_enabled && !crate::cli::graft::web_disabled(&config) {
+                if config.web.mcp_enabled && !crate::plugin::web_disabled(&config) {
                     LaunchMode::Tcp
                 } else {
                     LaunchMode::CoreOnly
@@ -1279,7 +1279,7 @@ fn pin_protocol_skew(error: crate::daemon::LocalRuntimeError, pid: Option<u32>) 
 async fn validate_launch_args(profile: &str, args: &ServeArgs) -> Result<AuthMode> {
     crate::session::require_known_profile(profile)?;
     if !args.core_only
-        && crate::cli::graft::web_disabled(&crate::session::config::Config::load_or_warn())
+        && crate::plugin::web_disabled(&crate::session::config::Config::load_or_warn())
     {
         bail!(
             "Web serving is disabled; run `aoe plugin enable aoe.web` before starting a TCP daemon"
@@ -1307,17 +1307,6 @@ async fn validate_launch_args(profile: &str, args: &ServeArgs) -> Result<AuthMod
     if args.remote {
         if args.passphrase.is_none() {
             bail!("Remote exposure requires --passphrase or AOE_SERVE_PASSPHRASE");
-        }
-        let dev_plugins: Vec<String> = crate::plugin::registry()
-            .active()
-            .filter(|p| p.validation == crate::plugin::registry::ValidationState::Dev)
-            .map(|p| p.id().to_string())
-            .collect();
-        if !dev_plugins.is_empty() {
-            bail!(
-                "Remote exposure is refused while dev plugins are active: {}. Disable or uninstall them first.",
-                dev_plugins.join(", ")
-            );
         }
         // The same decision `start_server` makes, so a wedged Tailscale fails here with the
         // probe's `--no-tailscale` advice rather than the cloudflared install error below.
@@ -1366,9 +1355,6 @@ pub async fn run(profile: &str, mut args: ServeArgs, startup: Option<ServeStartu
     } = startup;
 
     let auth_mode = validate_launch_args(profile, &args).await?;
-    if args.remote {
-        crate::plugin::set_remote_exposure();
-    }
     let is_localhost = host_is_localhost(&args.host);
 
     if args.behind_proxy && args.remote {
@@ -2255,6 +2241,17 @@ pub fn cached_serve_mode_label() -> Option<&'static str> {
     }
 }
 
+/// Reject fresh web starts when `aoe.web` is disabled, not core recovery.
+pub fn start_blocked(cli: &super::Cli, web_disabled: bool) -> bool {
+    let Some(super::Commands::Serve(args)) = &cli.command else {
+        return false;
+    };
+    if args.core_only || args.stop || args.status || args.restart || args.rollback {
+        return false;
+    }
+    web_disabled
+}
+
 #[cfg(test)]
 mod tests {
     #[tokio::test(start_paused = true)]
@@ -2309,6 +2306,25 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn start_blocked_only_when_web_off_and_not_lifecycle() {
+        use clap::Parser;
+        let parse = |args: &[&str]| crate::cli::Cli::try_parse_from(args).expect("args parse");
+        let start = parse(&["aoe", "serve"]);
+        assert!(start_blocked(&start, true));
+        assert!(!start_blocked(&start, false));
+        for verb in [
+            "--core-only",
+            "--stop",
+            "--status",
+            "--restart",
+            "--rollback",
+        ] {
+            let c = parse(&["aoe", "serve", verb]);
+            assert!(!start_blocked(&c, true), "{verb} must bypass the gate");
+        }
+        assert!(!start_blocked(&parse(&["aoe", "agents"]), true));
+    }
     #[tokio::test]
     async fn an_already_exited_daemon_is_not_signalled() {
         let mut child = std::process::Command::new("true").spawn().unwrap();
@@ -3131,72 +3147,6 @@ mod tests {
                 "serve.launch",
             ] {
                 assert!(!dir.join(name).exists(), "{name} should be removed");
-            }
-        }
-    }
-    mod dev_plugin_refusal {
-        use super::super::validate_launch_args;
-        use crate::cli::{Cli, Commands};
-        use crate::session::{update_config, CapabilityGrant, PluginConfig};
-        use clap::Parser;
-        use serial_test::serial;
-
-        fn serve_args(argv: &[&str]) -> super::super::ServeArgs {
-            match Cli::try_parse_from(argv).expect("argv parses").command {
-                Some(Commands::Serve(args)) => args,
-                _ => panic!("expected a serve invocation"),
-            }
-        }
-
-        fn install_dev_plugin(id: &str, enabled: bool) {
-            let manifest =
-                format!("id = \"{id}\"\nname = \"Dev\"\nversion = \"1.0.0\"\napi_version = 2\n");
-            let dir = crate::plugin::plugins_dir().unwrap().join(id);
-            std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("aoe-plugin.toml"), &manifest).unwrap();
-            update_config(|config| {
-                config.plugins.insert(
-                    id.to_string(),
-                    PluginConfig {
-                        enabled,
-                        source: Some("/src/dev".to_string()),
-                        dev: true,
-                        grant: Some(CapabilityGrant {
-                            manifest_hash: aoe_plugin_api::PluginManifest::hash_bytes(
-                                manifest.as_bytes(),
-                            ),
-                            capabilities: vec![],
-                            granted_at: chrono::Utc::now(),
-                        }),
-                        ..PluginConfig::default()
-                    },
-                );
-            })
-            .unwrap();
-            crate::plugin::reload_registry();
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn remote_exposure_is_refused_only_while_a_dev_plugin_is_active() {
-            let _guard = crate::session::test_support::isolate_app_dir();
-            let _reload = crate::plugin::ReloadRegistryOnDrop;
-            let remote = serve_args(&["aoe", "serve", "--remote", "--passphrase", "pw"]);
-            let local = serve_args(&["aoe", "serve"]);
-
-            install_dev_plugin("acme.dev", true);
-            let err = validate_launch_args("default", &remote)
-                .await
-                .expect_err("remote with an active dev plugin must be refused");
-            assert!(
-                err.to_string().contains("dev plugins are active: acme.dev"),
-                "{err}"
-            );
-            validate_launch_args("default", &local).await.unwrap();
-
-            install_dev_plugin("acme.dev", false);
-            if let Err(err) = validate_launch_args("default", &remote).await {
-                assert!(!err.to_string().contains("dev plugins"), "{err}");
             }
         }
     }

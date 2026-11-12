@@ -78,20 +78,20 @@ function commitText(input: HTMLInputElement, value: string) {
 }
 
 it("LoggingTargetsWidget clears one area without losing unrelated overrides", () => {
-  const initial = { "runtime.ws": "warn", "plugin:external": "error" };
+  const initial = { "runtime.ws": "warn", "external.crate": "error" };
   const { save, rerender } = mount(LoggingTargetsWidget, "Targets", initial);
-  fireEvent.change(control("server.lifecycle", "select"), { target: { value: "debug" } });
-  expect(save).toHaveBeenLastCalledWith({ ...initial, "server.lifecycle": "debug" });
-  rerender({ ...initial, "server.lifecycle": "debug" });
+  fireEvent.change(control("server.status", "select"), { target: { value: "debug" } });
+  expect(save).toHaveBeenLastCalledWith({ ...initial, "server.status": "debug" });
+  rerender({ ...initial, "server.status": "debug" });
   fireEvent.change(control("migrations.v043", "select"), { target: { value: "info" } });
-  expect(save).toHaveBeenLastCalledWith({ ...initial, "server.lifecycle": "debug", "migrations.v043": "info" });
-  rerender({ ...initial, "server.lifecycle": "debug", "migrations.v043": "info" });
+  expect(save).toHaveBeenLastCalledWith({ ...initial, "server.status": "debug", "migrations.v043": "info" });
+  rerender({ ...initial, "server.status": "debug", "migrations.v043": "info" });
   fireEvent.change(control("migrations.v043", "select"), { target: { value: "" } });
-  expect(save).toHaveBeenLastCalledWith({ ...initial, "server.lifecycle": "debug" });
+  expect(save).toHaveBeenLastCalledWith({ ...initial, "server.status": "debug" });
 });
 
 it("LoggingTargetsWidget exposes the session lifecycle area and saves only that override", () => {
-  const initial = { "plugin.host": "warn" };
+  const initial = { "runtime.ws": "warn" };
   const { save } = mount(LoggingTargetsWidget, "Targets", initial);
   fireEvent.change(control("session.status_change", "select"), { target: { value: "info" } });
   expect(save).toHaveBeenLastCalledWith({ ...initial, "session.status_change": "info" });

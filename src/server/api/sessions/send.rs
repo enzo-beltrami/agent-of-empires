@@ -18,7 +18,7 @@ fn default_revive() -> bool {
     true
 }
 
-/// Terminal delivery failures shared by HTTP and plugin callers.
+/// Terminal delivery failures.
 pub(crate) enum SendKeysError {
     NotFound,
     NotRunning,
@@ -29,7 +29,6 @@ pub(crate) enum SendKeysError {
     Tmux(anyhow::Error),
     Preparation {
         response: Box<axum::response::Response>,
-        detail: serde_json::Value,
     },
     Internal,
 }
@@ -66,13 +65,11 @@ async fn send_terminal_message_inner(
     if state.read_only {
         return Err(SendKeysError::Preparation {
             response: Box::new(crate::server::api::read_only_response()),
-            detail: serde_json::json!({"error": "read_only"}),
         });
     }
     if let Some(response) = crate::server::api::cityhall_block(&state) {
         return Err(SendKeysError::Preparation {
             response: Box::new(response),
-            detail: serde_json::json!({"error": "cityhall_mode"}),
         });
     }
     let before = service
@@ -104,13 +101,11 @@ async fn send_terminal_message_inner(
             let bytes = axum::body::to_bytes(body, 64 * 1024)
                 .await
                 .map_err(|_| SendKeysError::Internal)?;
-            let detail = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
             return Err(SendKeysError::Preparation {
                 response: Box::new(axum::response::Response::from_parts(
                     parts,
                     axum::body::Body::from(bytes),
                 )),
-                detail,
             });
         }
         if service
@@ -216,7 +211,6 @@ async fn send_terminal_message_inner(
         } else if let Some(response) = super::lifecycle::lifecycle_rejection(&state, &error) {
             SendKeysError::Preparation {
                 response: Box::new(response),
-                detail: serde_json::json!({"error": "lifecycle_busy"}),
             }
         } else {
             SendKeysError::Tmux(error)
@@ -236,7 +230,7 @@ impl IntoResponse for TerminalSendError {
                 crate::daemon::ApiErrorCode::SessionNotRunning,
                 "Terminal session is not running",
             ),
-            SendKeysError::Preparation { response, .. } => *response,
+            SendKeysError::Preparation { response } => *response,
             SendKeysError::Transient(status) => (
                 StatusCode::CONFLICT,
                 Json(serde_json::json!({
@@ -742,7 +736,6 @@ mod send_output_tests {
                     Json(serde_json::json!({"error": "resume_failed", "resume_session_id": "sid"})),
                 )
                     .into_response()),
-                detail: serde_json::json!({"error": "resume_failed"}),
             },
             committed_cursor: None,
         }

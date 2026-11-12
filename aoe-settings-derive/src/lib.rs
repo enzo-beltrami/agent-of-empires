@@ -82,8 +82,6 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 profile_overridable: #overridable,
                 validation: #validation,
                 advanced: #advanced,
-                default: ::core::option::Option::None,
-                per_project: false,
             }
         });
     }
