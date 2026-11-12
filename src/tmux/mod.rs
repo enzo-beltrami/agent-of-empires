@@ -628,7 +628,7 @@ fn session_scan_command() -> Command {
 ///
 /// `-w` and `-p` reach the format too but are per-window and per-pane, so a
 /// single subtracted value cannot cover them. Setting `@aoe_kind` yourself
-/// stays unsupported (`docs/guides/tmux-status-bar.md`).
+/// stays unsupported.
 const INHERITABLE_KIND_SCOPES: [&str; 3] = ["-gqv", "-sqv", "-gwqv"];
 
 const SESSION_SCAN_FORMAT: &str = "#{session_name}|#{session_activity}|#{@aoe_kind}";

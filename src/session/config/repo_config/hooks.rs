@@ -367,8 +367,7 @@ fn build_hook_command(
     command
 }
 
-/// Session env for lifecycle hooks; the key set is documented in
-/// docs/guides/repo-config.md. `AOE_SESSION_BRANCH` needs a worktree and
+/// Session env for lifecycle hooks. `AOE_SESSION_BRANCH` needs a worktree and
 /// `AOE_REPO_SLUG` a parseable `origin` remote.
 pub(crate) fn lifecycle_env_vars(
     instance: &crate::session::Instance,

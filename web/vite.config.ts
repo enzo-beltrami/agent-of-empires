@@ -2,16 +2,13 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { codecovVitePlugin } from "@codecov/vite-plugin";
 
 export const SESSION_WS_PROXY = "^/sessions/.+/(?:ws|live-ws)(?:\\?.*)?$";
 
-export default defineConfig(({ mode, command }) => {
+export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   const collectCoverage = env.AOE_COVERAGE === "1";
-
-  const enableBundleAnalysis = command === "build" && !collectCoverage && !!env.CODECOV_TOKEN;
 
   // VITE_PROXY points `npm run dev` at a running `aoe serve`; read here only so it isn't bundled.
   const httpTarget = (() => {
@@ -37,12 +34,6 @@ export default defineConfig(({ mode, command }) => {
       react(),
       tailwindcss(),
       // Must come last so it sees the final bundle.
-      codecovVitePlugin({
-        enableBundleAnalysis,
-        bundleName: "agent-of-empires-web",
-        uploadToken: env.CODECOV_TOKEN,
-        gitService: "github",
-      }),
     ],
     build: {
       outDir: "dist",

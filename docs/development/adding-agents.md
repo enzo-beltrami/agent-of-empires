@@ -14,7 +14,7 @@
 | `src/acp/agent_profiles.rs`, `web/src/lib/agentProfiles.ts` | Structured view profile |
 | `src/acp/install_hints.rs` | Install hint for `aoe acp doctor` and handshake failures |
 | `docker/Dockerfile` | Install the agent in the sandbox image |
-| `docs/structured-view.md`, `docs/index.md`, `README.md` | Supported-agent lists |
+| `docs/structured-view.md`, `README.md` | Supported-agent lists |
 
 ## Levels of support
 

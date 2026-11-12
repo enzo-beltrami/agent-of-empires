@@ -399,81 +399,12 @@ jobs:
       - name: aoe-agent adapter tests
         working-directory: acp-worker/aoe-agent
         run: npm test
-      # Vitest's v8 coverage reporter emits LCOV paths relative to the
-      # vitest cwd (web/), so SF: lines read "SF:src/...". Codecov
-      # matches file paths against the PR diff, which uses repo-root
-      # paths ("web/src/..."), so without this fixup new component
-      # files report 0% coverage even when vitest hit 85%. The
-      # Playwright coverage merge script already emits "web/src/..."
-      # paths, so only the vitest LCOV needs the prefix.
-      - name: Rewrite LCOV paths for codecov
-        if: ${{ !cancelled() }}
-        run: sed -i 's|^SF:src/|SF:web/src/|' web/coverage/vitest/lcov.info
-      - name: Upload to Codecov (vitest flag)
-        if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          # The codecov-action's `files` input is additive, not restrictive:
-          # with `disable_search: false` (the default), the CLI also walks
-          # the workspace and uploads anything that looks like a coverage
-          # report. That picks up web/tests/coverage-matrix.json and
-          # coverage-matrix.exempt.json (our test-mapping metadata, not
-          # coverage data) and ships them to Codecov on every run.
-          # `disable_search: true` restricts the upload to the explicit
-          # `files:` list.
-          disable_search: true
-          files: web/coverage/vitest/lcov.info
-          flags: vitest
-          name: vitest
-          fail_ci_if_error: false
-      - name: Upload test results to Codecov (vitest)
-        if: ${{ !cancelled() }}
-        # Test-analytics upload only; a Codecov network blip must not fail the job.
-        continue-on-error: true
-        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          disable_search: true
-          files: web/test-report.junit.xml
-          flags: vitest
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: vitest-coverage
           path: web/coverage/vitest/
           retention-days: 14
-
-  bundle-analysis:
-    name: Bundle Analysis
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # These jobs run repository-controlled build/test code after checkout
-          # and never push, so the job token must not linger in .git/config
-          # (zizmor artipacked). Matches the hardened convention in ci.yml and
-          # release.yml.
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: Install dependencies
-        working-directory: web
-        run: npm ci
-      # Clean production build, intentionally WITHOUT AOE_COVERAGE: the inline
-      # sourcemaps the coverage build emits inflate chunk sizes and would
-      # report bogus bundle stats. The @codecov/vite-plugin uploads bundle
-      # stats to Codecov
-      # when CODECOV_TOKEN is present (gated in web/vite.config.ts); without
-      # the token the plugin is a no-op, so forks still build cleanly.
-      - name: Build web bundle and upload stats to Codecov
-        working-directory: web
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: npm run build
 
   playwright:
     name: Playwright (mocked)
@@ -530,30 +461,6 @@ jobs:
         working-directory: web
         if: ${{ !cancelled() }}
         run: npm run coverage:merge
-      - name: Upload to Codecov (playwright-mocked flag)
-        if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          # See the matching comment in the vitest upload step: without
-          # disable_search the action also picks up the coverage-matrix
-          # JSON files under web/tests/ and ships them as if they were
-          # coverage reports.
-          disable_search: true
-          files: web/coverage/merged/lcov.info
-          flags: playwright-mocked
-          name: playwright-mocked
-          fail_ci_if_error: false
-      - name: Upload test results to Codecov (playwright-mocked)
-        if: ${{ !cancelled() }}
-        # Test-analytics upload only; a Codecov network blip must not fail the job.
-        continue-on-error: true
-        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          disable_search: true
-          files: web/test-report.junit.xml
-          flags: playwright-mocked
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
@@ -640,30 +547,6 @@ jobs:
         working-directory: web
         if: ${{ !cancelled() }}
         run: npm run coverage:merge
-      - name: Upload to Codecov (playwright-live flag)
-        if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          # See the matching comment in the vitest upload step: without
-          # disable_search the action also picks up the coverage-matrix
-          # JSON files under web/tests/ and ships them as if they were
-          # coverage reports.
-          disable_search: true
-          files: web/coverage/merged/lcov.info
-          flags: playwright-live
-          name: playwright-live
-          fail_ci_if_error: false
-      - name: Upload test results to Codecov (playwright-live)
-        if: ${{ !cancelled() }}
-        # Test-analytics upload only; a Codecov network blip must not fail the job.
-        continue-on-error: true
-        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          disable_search: true
-          files: web/test-report.junit.xml
-          flags: playwright-live
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:

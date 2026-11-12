@@ -3,7 +3,7 @@ import { defineConfig } from "@playwright/test";
 const previewPort = Number(process.env.PLAYWRIGHT_PORT ?? "4173");
 export default defineConfig({
   testDir: "./tests",
-  testIgnore: ["**/live/**", "**/capture/**"],
+  testIgnore: ["**/live/**"],
   // `.test.ts` files under tests/ are Vitest.
   testMatch: "**/*.spec.ts",
   timeout: 30000,

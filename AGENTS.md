@@ -100,25 +100,15 @@ tmux sockets, and session names. Tests auto-skip unavailable external tools.
 Use `RECORD_E2E=1` to record local review artifacts. See `tests/e2e/harness.rs`
 for the harness API.
 
-## Pull requests
+## Before committing
 
-Follow [CONTRIBUTING.md](CONTRIBUTING.md) for branches, titles and the PR
-template, and [MAINTAINERS.md](MAINTAINERS.md) for review and merge rules.
+This is a personal fork; there is no upstream review process.
 
-- Before review, run `cargo fmt`, `cargo clippy`, and `cargo test`, adding
-  `--features web` when relevant.
+- Run `cargo fmt`, `cargo clippy`, and `cargo test`, adding `--features web`
+  when relevant.
 - For `web/` changes also run its format, lint, type, and applicable test checks
   from `web/AGENTS.md`, including the coverage matrix requirement.
-- Do not request reviewers; CODEOWNERS routes each PR.
-- Keep a PR within one owner area where possible; split changes that cross
-  areas.
-- When reviewing, tag each requested change P1, P2 or P3 per the
-  [rubric](CONTRIBUTING.md#review-rubric), say what would satisfy it, and file
-  P3s as issues.
-
-Codecov gates web changes at 75% patch coverage and prevents a project drop
-beyond its threshold. Do not add tautological tests merely to move coverage.
-Rust-only changes carry the web flag forward.
+- Do not add tautological tests merely to move coverage.
 
 Do not change git configuration without explicit approval. Adding a contributor
 fork remote for review is the only exception.
@@ -129,13 +119,7 @@ Persisted schema or path changes require a migration in `src/migrations/`; see
 `docs/development/adding-a-migration.md`. Do not add inline compatibility paths.
 
 `docs/cli/reference.md` is generated from clap help via `cargo xtask gen-docs`.
-Edit the CLI source and regenerate it. Documentation content lives in `docs/`;
-the website publishes only the pages listed in `website/scripts/sync-docs.mjs`.
-Follow `docs/development/adding-a-website-page.md` for new pages.
-
-Every non-Rust, non-TOML asset embedded with `include_*` must be added to
-`commonArgs.src` in `flake.nix`; CI checks this with
-`scripts/check-nix-embedded-assets.py`.
+Edit the CLI source and regenerate it.
 
 Runtime state belongs in the platform app directory, never in commits. Use
 ignored paths for experiments.
@@ -143,14 +127,6 @@ ignored paths for experiments.
 Read `DESIGN.md` before visual changes.
 
 ## Agent skills
-
-### Issue tracker
-
-Issues live in GitHub Issues for `agent-of-empires/agent-of-empires`, via `gh`. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Only `needs-triage` and `ready-for-agent` exist. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 

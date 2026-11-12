@@ -2849,7 +2849,7 @@ pub struct WorktreeConfig {
     pub enabled: bool,
 
     /// Template for worktree paths ({repo-name}, {branch}). A leading `~` and
-    /// `$VAR` / `${VAR}` are expanded; see `docs/guides/worktrees.md`.
+    /// `$VAR` / `${VAR}` are expanded.
     #[serde(default = "default_worktree_template")]
     #[setting(
         label = "Where worktrees go",

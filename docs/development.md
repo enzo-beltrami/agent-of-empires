@@ -100,6 +100,3 @@ profile = "aoe-kache"
 
 Maintainer keys can only read and write `maint/`, so CI never consumes artifacts built on a laptop.
 
-## Demo recordings
-
-`web/scripts/record-tui-demo.mjs` produces `docs/assets/demo.gif`, and `web/scripts/record-web-demo.mjs` the desktop and mobile dashboard GIFs. Each documents its dependencies and setup in its file header.
