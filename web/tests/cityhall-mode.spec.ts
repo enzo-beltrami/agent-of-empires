@@ -127,7 +127,7 @@ test("Settings, its tabs, and settings search are curated to the CityHall subset
   await page.goto("/settings");
 
   // Scope to the visible tab strip; desktop and mobile both render one.
-  for (const label of ["Theme", "Sessions", "MCP servers", "Telemetry", "Plugins"]) {
+  for (const label of ["Theme", "Sessions", "MCP servers", "Plugins"]) {
     await expect(page.locator("button:visible", { hasText: label }).first()).toBeVisible();
   }
   await expect(page.getByText("Sandbox")).toHaveCount(0);

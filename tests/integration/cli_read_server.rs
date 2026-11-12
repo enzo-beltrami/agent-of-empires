@@ -282,7 +282,6 @@ fn run_cli(
         .env("XDG_DATA_HOME", home.join(".local/share"))
         .env("AOE_DAEMON_TOKEN", TOKEN)
         .env_remove("AOE_DAEMON_URL")
-        .env_remove("DO_NOT_TRACK")
         .env_remove("AGENT_OF_EMPIRES_PROFILE")
         .arg(format!("--daemon-url=http://{address}"))
         .args(args)

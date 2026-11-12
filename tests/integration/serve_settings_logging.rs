@@ -219,7 +219,6 @@ async fn profile_settings_reject_global_only_fields_without_writing() {
         ("logging", "targets", json!({})),
         ("acp", "allow_agent_install", json!(true)),
         ("tmux", "socket_name", json!("custom")),
-        ("telemetry", "enabled", json!(true)),
         ("session", "show_session_colors", Value::Null),
     ] {
         let response = patch(

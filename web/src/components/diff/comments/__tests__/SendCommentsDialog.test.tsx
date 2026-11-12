@@ -10,11 +10,6 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { SendCommentsDialog } from "../SendCommentsDialog";
 import type { DiffComment } from "../types";
 
-const reportTelemetrySeen = vi.fn();
-vi.mock("../../../../lib/api", () => ({
-  reportTelemetrySeen: (...args: unknown[]) => reportTelemetrySeen(...args),
-}));
-
 const fetchMock = vi.fn();
 
 function comment(overrides?: Partial<DiffComment>): DiffComment {
@@ -74,7 +69,6 @@ function sendButton(container: HTMLElement): HTMLButtonElement {
 }
 
 beforeEach(() => {
-  reportTelemetrySeen.mockClear();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -138,7 +132,6 @@ describe("SendCommentsDialog", () => {
     expect(body.comments).toHaveLength(1);
     expect(body.assembledMarkdown).toContain("hello");
     expect(body.assembledMarkdown).toContain("fix me");
-    expect(reportTelemetrySeen).toHaveBeenCalledWith("diff_comments");
   });
   it("sends the assembled markdown to the terminal agent pane and retains comments on failure", async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 503, text: () => Promise.resolve("pane unavailable") });
@@ -186,14 +179,13 @@ describe("SendCommentsDialog", () => {
       ["Failed to send (500)", "boom"],
     ],
     ["a network rejection", () => fetchMock.mockRejectedValue(new Error("offline")), ["Failed to send: offline"]],
-  ])("shows an error for %s without onSent or telemetry", async (_, seed, texts) => {
+  ])("shows an error for %s without onSent", async (_, seed, texts) => {
     seed();
     const { container, onSent } = setup();
     fireEvent.click(sendButton(container));
     await waitFor(() => expect(container.textContent).toContain(texts[0]));
     for (const t of texts) expect(container.textContent).toContain(t);
     expect(onSent).not.toHaveBeenCalled();
-    expect(reportTelemetrySeen).not.toHaveBeenCalled();
   });
 
   it("while sending, shows Sending..., ignores a second click and Escape", async () => {

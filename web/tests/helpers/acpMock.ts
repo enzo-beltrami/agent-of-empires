@@ -44,7 +44,6 @@ export interface AcpSessionMock {
   title: string;
   promptBodies: AcpPromptBody[];
   configOptionBodies: Array<{ config_id: string; value: string }>;
-  telemetryPings: Array<{ surface?: string }>;
   /** Deliver events as frames, buffered until the WS connects. */
   pushEvents: (events: unknown[]) => void;
 }
@@ -152,7 +151,6 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
     title,
     promptBodies: [],
     configOptionBodies: [],
-    telemetryPings: [],
     pushEvents,
   };
 
@@ -193,17 +191,6 @@ export async function mockAcpSession(page: Page, opts: AcpSessionMockOptions = {
       }),
   );
   await page.route("**/api/about", (r) => r.fulfill({ json: opts.about ?? {} }));
-  await page.route("**/api/telemetry/seen", (r) => {
-    const body = r.request().postData();
-    if (body) {
-      try {
-        handle.telemetryPings.push(JSON.parse(body));
-      } catch {
-        // Only well-formed pings are recorded.
-      }
-    }
-    return r.fulfill({ status: 204 });
-  });
   await page.route(/\/api\/sessions(\?.*)?$/, (r) => {
     if (r.request().method() === "POST") return r.fulfill({ status: 400 });
     return r.fulfill({

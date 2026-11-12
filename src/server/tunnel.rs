@@ -1988,9 +1988,8 @@ esac
         }
     }
 
-    // The telemetry `serve_mode` signal reads `mode_label()`, so a named
-    // Cloudflare tunnel must bucket to "tunnel" rather than leak the configured
-    // tunnel name (#1885).
+    // `serve.mode` is written from `mode_label()`, so a named tunnel must not
+    // leak its configured name.
     #[test]
     fn mode_label_is_closed_and_never_leaks_tunnel_name() {
         assert_eq!(TunnelKind::Quick.mode_label(), "tunnel");

@@ -26,7 +26,6 @@ import { SchemaSection } from "./settings/SchemaSection";
 import { SelectField } from "./settings/FormFields";
 import { DiffSettings } from "./settings/DiffSettings";
 import { PanelsSettings } from "./settings/PanelsSettings";
-import { TelemetrySettings } from "./settings/TelemetrySettings";
 import { CityHallSettings } from "./settings/CityHallSettings";
 import { PluginsSettings } from "./settings/PluginsSettings";
 import { SettingsIntro, SettingsIntroReopen } from "./settings/SettingsIntro";
@@ -59,7 +58,6 @@ export type TabId =
   | "tmux"
   | "systemd"
   | "updates"
-  | "telemetry"
   | "notifications"
   | "panels"
   | "terminal"
@@ -124,7 +122,6 @@ export function buildSidebar(readOnly = false): SidebarItem[] {
     { kind: "tab", id: "sound", label: "Sound" },
     { kind: "divider", label: "System" },
     { kind: "tab", id: "updates", label: "Updates" },
-    { kind: "tab", id: "telemetry", label: "Telemetry" },
     { kind: "tab", id: "logging", label: "Logging" },
     ...(readOnly ? [] : [{ kind: "tab" as const, id: "logs" as const, label: "Logs" }]),
     { kind: "tab", id: "plugins", label: "Plugins" },
@@ -135,16 +132,15 @@ export function buildSidebar(readOnly = false): SidebarItem[] {
 
 // CityHall client mode (#7): a curated, end-user-safe subset of Settings.
 // Theme (trimmed of idle-decay below), a Sessions tab reduced to
-// the trash toggle, plus the display-only / consent tabs (MCP servers,
-// Telemetry, Plugins). No Profiles, no advanced config.
+// the trash toggle, plus the display-only tabs (MCP servers, Plugins). No
+// Profiles, no advanced config.
 const CITYHALL_SIDEBAR: SidebarItem[] = [
   { kind: "tab", id: "theme", label: "Theme" },
   { kind: "tab", id: "session", label: "Sessions" },
   { kind: "tab", id: "mcp", label: "MCP servers" },
-  { kind: "tab", id: "telemetry", label: "Telemetry" },
   { kind: "tab", id: "plugins", label: "Plugins" },
 ];
-const CITYHALL_TAB_IDS = new Set<TabId>(["theme", "session", "mcp", "telemetry", "plugins"]);
+const CITYHALL_TAB_IDS = new Set<TabId>(["theme", "session", "mcp", "plugins"]);
 // The only `session` fields the curated Sessions tab renders, and the `theme`
 // fields it drops. Shared with `curateCityhallSchema` below so the search index
 // and the rendered tabs cannot drift apart.
@@ -185,7 +181,7 @@ interface Props {
   /** Read-only server: the Profiles tab hides its create/edit controls. */
   readOnly?: boolean;
   /** CityHall client mode: curate Settings to the end-user-safe tabs (Theme,
-   *  a trimmed Sessions tab, MCP servers, Telemetry, Plugins), drop the
+   *  a trimmed Sessions tab, MCP servers, Plugins), drop the
    *  profile switcher, and hide the idle-decay theme knob. The
    *  advanced settings PATCH is closed server-side in this mode; theme and the
    *  surfaced fields write through their own endpoints. See #7. */
@@ -205,7 +201,6 @@ const ALL_TAB_IDS = new Set<TabId>([
   "tmux",
   "systemd",
   "updates",
-  "telemetry",
   "notifications",
   "panels",
   "terminal",
@@ -227,8 +222,8 @@ function isTabId(value: unknown): value is TabId {
 // Tabs whose body is rendered (wholly or partly) by the schema-driven
 // SchemaSection. They share one loading/error guard so a slow or failed
 // `GET /api/settings/schema` shows a single spinner/retry instead of each
-// section rendering empty. Tabs absent here are fully hand-written (diff,
-// telemetry) or have no config body (terminal, security, devices).
+// section rendering empty. Tabs absent here are fully hand-written (diff)
+// or have no config body (terminal, security, devices).
 const SCHEMA_BACKED_TABS = new Set<TabId>([
   "session",
   "sandbox",
@@ -528,7 +523,6 @@ export function SettingsView({
       activeTab !== "mcp" &&
       activeTab !== "skills" &&
       activeTab !== "plugins" &&
-      activeTab !== "telemetry" &&
       activeTab !== "cityhall" &&
       activeTab !== "logs" &&
       activeTab !== "panels"
@@ -700,8 +694,6 @@ export function SettingsView({
             onSaveField={sendSave}
           />
         );
-      case "telemetry":
-        return <TelemetrySettings />;
       case "cityhall":
         return <CityHallSettings />;
       case "logging":

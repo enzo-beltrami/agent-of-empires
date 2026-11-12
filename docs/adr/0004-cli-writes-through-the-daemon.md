@@ -11,7 +11,7 @@ Today almost every mutating CLI command writes `sessions.json`, tmux, worktrees 
 - **Opt-out:** a global `--no-autostart` flag, also read from `AOE_NO_AUTOSTART=1`, honored by the CLI and the TUI. With it, a missing Daemon is a hard fail.
 - **Auto-start is announced** with one line on stderr (`Started aoe daemon (pid N)`), also under `--json`, so stdout stays parseable.
 - **Session state goes only through the Daemon:** `add`, `remove`, `send`, every `session` subcommand, `group`, `worktree cleanup`, and `acp stop|kill|restart`. Commands without an endpoint get one; `session empty-trash` gets a bulk purge endpoint rather than a Client-side loop, which would reopen #2541. A migrated command has no local path.
-- **Config the Daemon reads goes only through the Daemon:** `profile`, `project`, `skill`, `plugin` (its local fallback in `plugin enable|disable` is removed), `telemetry` and `cityhall apply`. The Daemon is the single writer of what it consumes, so no config watcher is needed and remote Clients work.
+- **Config the Daemon reads goes only through the Daemon:** `profile`, `project`, `skill`, `plugin` (its local fallback in `plugin enable|disable` is removed) and `cityhall apply`. The Daemon is the single writer of what it consumes, so no config watcher is needed and remote Clients work.
 - **Stays local, never auto-starts:**
   - Client assets: `theme export`, `sounds install`.
   - Files on the Daemon host: `init`, `hooks approve`. They only make sense when the Client runs on that host.

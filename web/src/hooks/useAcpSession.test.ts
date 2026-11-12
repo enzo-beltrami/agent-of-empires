@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { emptyAcpState } from "../lib/acpTypes";
 import { STATE_TTL_MS, STORAGE_KEY_PREFIX } from "../lib/acpStateStorage";
-import { reportAcpInteraction, type ServerQueuedPrompt } from "../lib/api";
+import type { ServerQueuedPrompt } from "../lib/api";
 import { ACP_DIAL_TIMEOUT_MS, ACP_MAX_RETRIES, ACP_WS_STALE_MS, acpRetryDelayMs } from "./acpSession/useAcpConnection";
 import {
   FakeWebSocket,
@@ -19,11 +19,6 @@ import {
   type Route,
 } from "./__tests__/acpHarness";
 import { clearAcpCache, useAcpSession } from "./useAcpSession";
-
-vi.mock("../lib/api", async (importActual) => ({
-  ...(await importActual<typeof import("../lib/api")>()),
-  reportAcpInteraction: vi.fn(),
-}));
 
 type HookArgs = Parameters<typeof useAcpSession>;
 
@@ -743,7 +738,6 @@ describe("server queue", () => {
     serverQueue = new Map();
     serverBusy = false;
     workerDown = false;
-    vi.mocked(reportAcpInteraction).mockClear();
     calls = installAcpFakes(({ url, method, body }) => {
       if (url.includes("/queue")) {
         const item = url.match(/\/queue\/([^/?]+)/)?.[1];
@@ -791,7 +785,6 @@ describe("server queue", () => {
     expect(posts("/acp/prompt").map((c) => JSON.parse(c.body!).text)).toEqual(["follow-up"]);
     expect(posts("/queue")).toHaveLength(0);
     expect(result.current.state.queuedPrompts).toMatchObject([{ text: "follow-up", pending: false }]);
-    expect(reportAcpInteraction).toHaveBeenCalledWith("prompt_queued");
   });
 
   it("POSTs directly when the session is idle", async () => {

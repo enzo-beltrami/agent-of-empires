@@ -86,9 +86,6 @@ import {
   acpDisable,
   fetchAbout,
   fetchSettings,
-  fetchTelemetryStatus,
-  setTelemetryConsent,
-  reportTelemetrySeen,
   isDebugBuild,
   markWebTourSeen,
   updateWorkspaceOrdering,
@@ -196,7 +193,6 @@ import { LoginPage } from "./components/LoginPage";
 import { TokenEntryPage } from "./components/TokenEntryPage";
 import { LOGIN_REQUIRED_EVENT, TOKEN_EXPIRED_EVENT, resetTokenExpired } from "./lib/fetchInterceptor";
 import { AboutModal } from "./components/AboutModal";
-import { TelemetryConsentModal } from "./components/TelemetryConsentModal";
 import { TipsModal } from "./components/TipsModal";
 import { useTips, shouldAutoPopTips } from "./hooks/useTips";
 import { CommandPalette } from "./components/command-palette/CommandPalette";
@@ -879,12 +875,6 @@ function AppContent({
   // drives the shared SnoozeModal. Null when no snooze is in flight.
   const [snoozeTargetId, setSnoozeTargetId] = useState<string | null>(null);
   const [showAbout, setShowAbout] = useState(false);
-  const [telemetryConsentNeeded, setTelemetryConsentNeeded] = useState(false);
-  // Whether the telemetry status fetch has settled. `telemetryConsentNeeded`
-  // starts false, so before this is true "no consent needed" and "not resolved
-  // yet" look the same; the tips auto-pop waits on this so it can't slip in
-  // before a pending consent modal.
-  const [telemetryConsentKnown, setTelemetryConsentKnown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const keyboardProxyRef = useRef<HTMLTextAreaElement>(null);
   const [keyboardProxy, setKeyboardProxy] = useState<HTMLTextAreaElement | null>(null);
@@ -1216,9 +1206,8 @@ function AppContent({
   const refreshServerAbout = aboutRequests.refresh;
   const recoverServerAbout = aboutRequests.recover;
 
-  // Kick off the initial server-about fetch on mount. The effect body only
-  // calls fetchAbout and schedules the telemetry consent check; neither runs
-  // setState synchronously, so set-state-in-effect is not triggered.
+  // Kick off the initial server-about fetch on mount. The effect body does not
+  // run setState synchronously, so set-state-in-effect is not triggered.
   useEffect(() => {
     let active = true;
     const generation = aboutRequests.begin();
@@ -1231,24 +1220,12 @@ function AppContent({
           // Settings intro choices made before this answer was in wait to learn where they go.
           settleSettingsIntrosReadOnly(about.read_only);
         }
-        // Read-only servers can't persist an opt-in choice, so skip the ping.
-        if (about && !about.read_only) reportTelemetrySeen("web");
       })
       // `serverAboutLoaded` gates the shell render, so it must flip once the tries
       // run out too, not only on success. Otherwise the shell would hang on its
       // placeholder; it then renders read-only with a Retry notice.
       .finally(() => {
         if (active && aboutRequests.isCurrent(generation)) setServerAboutLoaded(true);
-      });
-    void fetchTelemetryStatus()
-      .then((status) => {
-        if (!active || !status) return;
-        if (!status.responded && !status.do_not_track) {
-          setTelemetryConsentNeeded(true);
-        }
-      })
-      .finally(() => {
-        if (active) setTelemetryConsentKnown(true);
       });
     return () => {
       active = false;
@@ -1262,25 +1239,6 @@ function AppContent({
       if (!down) void recoverServerAbout();
     });
   }, [serverAboutLoaded, serverAbout, recoverServerAbout]);
-
-  // Telemetry: report that the acp web UI was opened, folded into the
-  // daemon's next opt-in snapshot under the `usage_seen` map's `acp` key.
-  // `activeSession` drives both the desktop and mobile acp mounts, so this
-  // single effect covers both layouts. Same guard as the `"web"` ping above:
-  // skip until `serverAbout` loads, skip read-only servers (which can't
-  // persist). The backend folds repeated pings into a monotonic open-count
-  // (decremented by exactly what each snapshot reported), so re-fires on
-  // session switch are harmless. See #1882.
-  useEffect(() => {
-    if (!serverAboutLoaded || caps.readOnly) return;
-    if (activeSession?.view !== "structured") return;
-    reportTelemetrySeen("structured_view");
-  }, [serverAboutLoaded, caps.readOnly, activeSession?.view]);
-
-  const handleTelemetryConsent = useCallback((enabled: boolean) => {
-    setTelemetryConsentNeeded(false);
-    void setTelemetryConsent(enabled);
-  }, []);
 
   const liveDeletingSessions = deletingSessions.filter((session) => !session.trashed_at);
   const deletingSession = deletingSessions[0] ?? null;
@@ -2527,7 +2485,7 @@ function AppContent({
 
   // Auto-pop the tip-of-the-day once per load, after onboarding settles, like
   // GIMP/DBeaver. Gated like the tour: only on a settled dashboard, only when a
-  // tip is unseen and tips are enabled, never while the welcome/telemetry/tour
+  // tip is unseen and tips are enabled, never while the welcome/tour
   // flows are up, and never in an automated browser session (so the modal can't
   // intercept the rest of the Playwright suite). Only for users who already
   // finished onboarding before this load: first-run users get the welcome and
@@ -2539,9 +2497,6 @@ function AppContent({
       hasUnseen: tips.hasUnseen,
       tourSeenAtLoad: tourSeenAtLoadRef.current,
       onboardingReady: tourAutoLaunchReady && welcome.resolved,
-      // Treat "not resolved yet" as pending so tips can't pop ahead of a consent
-      // modal that the in-flight status fetch is about to raise.
-      telemetryPending: !telemetryConsentKnown || telemetryConsentNeeded,
       tourActive: tour.isTourActive,
       automated: isAutomatedSession(),
     });
@@ -2558,15 +2513,7 @@ function AppContent({
     // appeared for that load. The ref already makes the pop one-shot, so the
     // only cleanup needed is on unmount (below).
     tipsAutoPopFrameRef.current = requestAnimationFrame(() => tips.open());
-  }, [
-    tips,
-    tourSeenKnown,
-    tourAutoLaunchReady,
-    welcome.resolved,
-    telemetryConsentKnown,
-    telemetryConsentNeeded,
-    tour.isTourActive,
-  ]);
+  }, [tips, tourSeenKnown, tourAutoLaunchReady, welcome.resolved, tour.isTourActive]);
 
   // Drop a still-pending auto-pop frame on unmount only, so a committed open is
   // never cancelled by an unrelated re-render (see the effect above).
@@ -2802,7 +2749,6 @@ function AppContent({
           )}
 
           {showAbout && <AboutModal onClose={() => setShowAbout(false)} sessionId={activeSessionId} />}
-          {telemetryConsentNeeded && <TelemetryConsentModal onChoose={handleTelemetryConsent} />}
 
           {deletingSession && deletingCleanupDefaults && (
             <DeleteSessionDialog

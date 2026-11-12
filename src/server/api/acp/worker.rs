@@ -1009,10 +1009,6 @@ pub async fn switch_acp_agent(
             }
             Err(error) => return launch_error_response("agent switch completion", &error),
         };
-    state
-        .telemetry_structured
-        .agent_switches
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     let reason = req
         .reason
@@ -3136,13 +3132,6 @@ mod tests {
             "the target worker is stopped"
         );
         assert_eq!(switched(), 0);
-        assert_eq!(
-            state
-                .telemetry_structured
-                .agent_switches
-                .load(std::sync::atomic::Ordering::Relaxed),
-            0
-        );
         let memory = state.instances.read().await;
         assert_eq!(memory[0].agent_name.as_deref(), Some("claude"));
         assert_eq!(memory[0].acp_effort.as_deref(), Some("high"));
@@ -3157,13 +3146,6 @@ mod tests {
         let resp = switch().await;
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(switched(), 1);
-        assert_eq!(
-            state
-                .telemetry_structured
-                .agent_switches
-                .load(std::sync::atomic::Ordering::Relaxed),
-            1
-        );
         let stored = support::load_instances_from_disk_for_test(profile);
         assert_eq!(stored[0].agent_name.as_deref(), Some("codex"));
         assert_eq!(stored[0].acp_effort, None);

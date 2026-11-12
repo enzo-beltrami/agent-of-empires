@@ -3,7 +3,6 @@ import { Tooltip } from "../../Tooltip";
 import { CommentMarkdown } from "./CommentMarkdown";
 import { buildCommentsMarkdown, buildDiffCommentsPrompt } from "./buildPrompt";
 import type { DiffComment } from "./types";
-import { reportTelemetrySeen } from "../../../lib/api";
 
 interface Props {
   sessionId: string;
@@ -90,8 +89,6 @@ export function SendCommentsDialog({
         }
         return;
       }
-      // Counted only on a confirmed 2xx.
-      reportTelemetrySeen("diff_comments");
       onSent();
     } catch (e) {
       const message = e instanceof Error ? e.message : "Network error";

@@ -50,7 +50,6 @@ const INHERITED_BY_CONTRACT = new Set([
   // anything from, and `AOE_OPEN_URL_TO` is already dropped above.
   "BROWSER",
   "DISPLAY",
-  "DO_NOT_TRACK",
   "NO_COLOR",
   "SSH_CLIENT",
   "SSH_CONNECTION",

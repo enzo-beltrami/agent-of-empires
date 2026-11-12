@@ -61,7 +61,7 @@ struct LoginSession {
     elevation_locked_until: Option<Instant>,
     /// Wall-clock creation time, for the connected-devices view.
     created_at: SystemTime,
-    /// Client IP at creation, display-only telemetry for the devices view.
+    /// Client IP at creation, display-only, for the devices view.
     created_ip: String,
     /// User-agent string captured at login, for a friendly device
     /// label in the devices view. Display-only.

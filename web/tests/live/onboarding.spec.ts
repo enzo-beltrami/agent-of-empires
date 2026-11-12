@@ -1,11 +1,7 @@
-// First-run surfaces and usage signals: tutorial, tips of the day, and telemetry pings.
+// First-run surfaces: tutorial and tips of the day.
 
-import { spawnSync } from "node:child_process";
-import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { test, expect } from "../helpers/liveTest";
-import { resolveAoeBinary } from "../helpers/aoeServe";
-import { commitAll, initWorkingRepo, writeFiles } from "../helpers/gitFixture";
 
 /** Auto-launching onboarding is suppressed for automated browsers; present as a real one. */
 const presentAsRealBrowser = (page: Page) =>
@@ -201,108 +197,5 @@ test.describe("tips", () => {
     expect(tips === null ? true : tips.enabled).toBe(false);
     await openTopBarMenuItem(page, "Tips");
     await expect(page.getByRole("checkbox", { name: "Show tips on startup" })).not.toBeChecked();
-  });
-});
-
-test.describe("telemetry signals", () => {
-  type Ping = { surface?: string; form_factor?: string };
-  /** Record `POST /api/telemetry/seen` bodies the page sends. */
-  function captureSeenPings(page: Page): () => Ping[] {
-    const pings: Ping[] = [];
-    page.on("request", (req) => {
-      const body = req.postData();
-      if (req.method() === "POST" && req.url().includes("/api/telemetry/seen") && body) pings.push(JSON.parse(body));
-    });
-    return () => pings;
-  }
-
-  test("desktop and mobile-PWA clients report distinct form-factor classes", async ({ browser, serve }) => {
-    // #1883. The mobile context forces the classifier's media queries instead of relying on emulation.
-    const desktopCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-    const mobileCtx = await browser.newContext({
-      viewport: { width: 390, height: 844 },
-      hasTouch: true,
-      isMobile: true,
-    });
-    await mobileCtx.addInitScript(() => {
-      const orig = window.matchMedia.bind(window);
-      const forced: Record<string, boolean> = {
-        "(display-mode: standalone)": true,
-        "(pointer: coarse)": true,
-        "(min-width: 768px)": false,
-      };
-      window.matchMedia = ((query: string) =>
-        query in forced
-          ? ({
-              matches: forced[query],
-              media: query,
-              onchange: null,
-              addListener: () => {},
-              removeListener: () => {},
-              addEventListener: () => {},
-              removeEventListener: () => {},
-              dispatchEvent: () => false,
-            } as unknown as MediaQueryList)
-          : orig(query)) as typeof window.matchMedia;
-    });
-    try {
-      const desktopPage = await desktopCtx.newPage();
-      const desktopPings = captureSeenPings(desktopPage);
-      await desktopPage.goto(serve.baseUrl);
-      const mobilePage = await mobileCtx.newPage();
-      const mobilePings = captureSeenPings(mobilePage);
-      await mobilePage.goto(serve.baseUrl);
-
-      const hasPing = (pings: () => Ping[], formFactor: string) =>
-        expect
-          .poll(() => pings().some((p) => p.surface === "web" && p.form_factor === formFactor), {
-            timeout: 10_000,
-          })
-          .toBe(true);
-      await hasPing(desktopPings, "desktop");
-      await hasPing(mobilePings, "mobile_pwa");
-      expect(desktopPings().some((p) => p.form_factor === "mobile_pwa")).toBe(false);
-    } finally {
-      await desktopCtx.close();
-      await mobileCtx.close();
-    }
-  });
-
-  test("opening a session fires the diff_panel and web_terminal signals", async ({ page, spawnServe }) => {
-    // #1881
-    const serve = await spawnServe({
-      seedFn: ({ home, env }) => {
-        const projectDir = initWorkingRepo(join(home, "project"), env).path;
-        writeFiles(projectDir, { "src/a.ts": "export const a = 1;\n" });
-        commitAll(projectDir, "baseline", env);
-        // An uncommitted edit gives the diff panel something to show.
-        writeFiles(projectDir, { "src/a.ts": "export const a = 11;\n" });
-        const addRes = spawnSync(resolveAoeBinary(), ["add", projectDir, "-t", "usage-signals", "-c", "claude"], {
-          env,
-        });
-        if (addRes.status !== 0) {
-          throw new Error(`aoe add failed: status=${addRes.status} stderr=${addRes.stderr?.toString() ?? "<none>"}`);
-        }
-      },
-    });
-    const pings = captureSeenPings(page);
-    await page.goto(`${serve.baseUrl}/`);
-    const sessionRow = page.getByRole("link").filter({ hasText: "usage-signals" }).first();
-    await expect(sessionRow).toBeVisible({ timeout: 10_000 });
-    await sessionRow.click();
-    for (const surface of ["web_terminal", "diff_panel"]) {
-      await expect.poll(() => pings().some((p) => p.surface === surface), { timeout: 10_000 }).toBe(true);
-    }
-  });
-
-  test("a read-only server fires no feature-usage signals", async ({ serveReadOnly, page }) => {
-    const pings = captureSeenPings(page);
-    const about = page.waitForResponse((r) => r.url().endsWith("/api/about") && r.status() === 200, {
-      timeout: 10_000,
-    });
-    await page.goto(serveReadOnly.baseUrl);
-    await about;
-    await expect(page.getByText("This dashboard is in read-only mode.")).toBeVisible();
-    expect(pings()).toHaveLength(0);
   });
 });

@@ -30,7 +30,6 @@ describe("buildSidebar", () => {
       "sound",
       "-- System",
       "updates",
-      "telemetry",
       "logging",
       "logs",
       "plugins",

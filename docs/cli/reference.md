@@ -91,11 +91,6 @@ This document contains the help content for the `aoe` command-line program.
 * [`aoe cityhall`↴](#aoe-cityhall)
 * [`aoe cityhall export`↴](#aoe-cityhall-export)
 * [`aoe cityhall apply`↴](#aoe-cityhall-apply)
-* [`aoe telemetry`↴](#aoe-telemetry)
-* [`aoe telemetry status`↴](#aoe-telemetry-status)
-* [`aoe telemetry enable`↴](#aoe-telemetry-enable)
-* [`aoe telemetry disable`↴](#aoe-telemetry-disable)
-* [`aoe telemetry reset-id`↴](#aoe-telemetry-reset-id)
 * [`aoe mcp`↴](#aoe-mcp)
 * [`aoe mcp list`↴](#aoe-mcp-list)
 * [`aoe mcp add`↴](#aoe-mcp-add)
@@ -177,7 +172,6 @@ Run `aoe serve` to start the daemon and web dashboard.
 * `theme` — Manage color themes (list, export, customize)
 * `settings` — Inspect resolved settings and their provenance
 * `cityhall` — Export and apply the CityHall config bundle (settings + projects)
-* `telemetry` — Manage anonymous opt-in usage telemetry
 * `mcp` — Inspect the effective MCP server set (provenance, conflicts, drift)
 * `skill` — Query and manage agent skills
 * `hooks` — Let AoE write agent hooks into each agent's own config, for every agent and every profile
@@ -1461,53 +1455,6 @@ Apply a bundle to this install (merge settings, clone and register projects, ins
 ###### **Arguments:**
 
 * `<FILE>` — Bundle to apply; `-` reads stdin
-
-
-
-## `aoe telemetry`
-
-Manage anonymous opt-in usage telemetry
-
-**Usage:** `aoe telemetry <COMMAND>`
-
-###### **Subcommands:**
-
-* `status` — Show the current telemetry opt-in state and install id
-* `enable` — Opt in to anonymous usage telemetry
-* `disable` — Opt out of telemetry (deletes the local install id)
-* `reset-id` — Generate a fresh anonymous install id (only while opted in)
-
-
-
-## `aoe telemetry status`
-
-Show the current telemetry opt-in state and install id
-
-**Usage:** `aoe telemetry status`
-
-
-
-## `aoe telemetry enable`
-
-Opt in to anonymous usage telemetry
-
-**Usage:** `aoe telemetry enable`
-
-
-
-## `aoe telemetry disable`
-
-Opt out of telemetry (deletes the local install id)
-
-**Usage:** `aoe telemetry disable`
-
-
-
-## `aoe telemetry reset-id`
-
-Generate a fresh anonymous install id (only while opted in)
-
-**Usage:** `aoe telemetry reset-id`
 
 
 

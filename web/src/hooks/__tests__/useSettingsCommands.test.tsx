@@ -45,7 +45,6 @@ const SCHEMA: SettingsFieldDescriptor[] = [
   field("security", "danger", { kind: "toggle" }, { policy: "requires_elevation", reason: "x" }),
   field("acp", "replay", { kind: "select", options: [] }, { policy: "allow" }),
   field("session", "secret", { kind: "toggle" }, { policy: "local_only", reason: "x" }),
-  field("telemetry", "enabled", { kind: "toggle" }, { policy: "allow" }, false),
 ];
 
 beforeEach(() => {
@@ -64,7 +63,7 @@ async function render(overrides: Partial<Parameters<typeof useSettingsCommands>[
   const hook = renderHook((args: Parameters<typeof useSettingsCommands>[0]) => useSettingsCommands(args), {
     initialProps: { open: true, readOnly: false, onOpenSettingsTab, ...overrides },
   });
-  await waitFor(() => expect(hook.result.current.length).toBe(5));
+  await waitFor(() => expect(hook.result.current.length).toBe(4));
   const action = (id: string) => hook.result.current.find((a) => a.id === id);
   await waitFor(() =>
     expect(action("setting:worktree.auto_cleanup")?.subtitle).toBe(
@@ -144,14 +143,12 @@ describe("useSettingsCommands", () => {
     }
   });
 
-  it("opens settings for non-toggle widgets, elevation, and telemetry consent", async () => {
+  it("opens settings for non-toggle widgets and elevation", async () => {
     const { onOpenSettingsTab, action } = await render();
     action("setting:acp.replay")?.perform();
     expect(onOpenSettingsTab).toHaveBeenCalledWith("structured-view");
     action("setting:security.danger")?.perform();
     expect(onOpenSettingsTab).toHaveBeenCalledWith("security");
-    action("setting:telemetry.enabled")?.perform();
-    expect(onOpenSettingsTab).toHaveBeenCalledWith("telemetry");
     expect(updateSettings).not.toHaveBeenCalled();
   });
 

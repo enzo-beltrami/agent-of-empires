@@ -10,9 +10,6 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tokio_util::sync::CancellationToken;
 
-use super::serve_snapshot::{
-    FormFactorCounters, ReportedServeSignals, StructuredTelemetryCounters,
-};
 use super::token::TokenManager;
 use crate::server::{login, session_service};
 
@@ -163,14 +160,8 @@ pub struct AppState {
     /// Per-bind opt-out of the 426 plaintext-remote gate (`--dangerously-allow-plaintext-remote`).
     pub allow_plaintext_remote: bool,
     /// Coarse auth mode resolved once at launch (`"token"` / `"passphrase"` /
-    /// `"none"`). `/api/about` and the opt-in telemetry snapshot both read this
-    /// single value rather than re-deriving it; immutable for the daemon's
-    /// lifetime. Never the token or passphrase itself, only the mode.
+    /// `"none"`), read by `/api/about`. Never the token or passphrase itself.
     pub auth_mode: &'static str,
-    /// Coarse exposure mode resolved once at launch from the active transport
-    /// (`"tunnel"` / `"tailscale"` / `"local"`), fed to the telemetry snapshot.
-    /// Never a tunnel name, hostname, or `.ts.net` URL, only the mode.
-    pub serve_mode: &'static str,
     /// DNS-rebinding gate: accepted `Host` values, port-stripped,
     /// ASCII-lowercased, IPv6 unbracketed. Resolved once at launch by
     /// `resolve_access_policy` from the bind host, `--allowed-host`, and any
@@ -330,45 +321,6 @@ pub struct AppState {
     /// stays loop-local; only this derived scalar reaches `AppState`.
     /// `backend_available` is read live from the latch, not stored here.
     pub sleep_inhibit_snapshot: std::sync::atomic::AtomicU8,
-    /// Allowlisted usage-signal counters: per-signal counts of browser reports
-    /// that a surface (web dashboard / acp web UI) was opened, so the next
-    /// opt-in telemetry snapshot can carry the `usage_seen` map. Monotonic
-    /// counters rather than flags so the snapshot loop can decrement by exactly
-    /// what it reported (like the create counter): an open that lands during an
-    /// in-flight send is preserved for the next snapshot instead of being cleared
-    /// away. The browser never posts to the telemetry backend; it pings the local
-    /// daemon (`POST /api/telemetry/seen`), which folds the count in here.
-    /// Instrumenting a new surface is one entry in `telemetry::usage_signals`.
-    pub telemetry_usage_seen: crate::telemetry::usage_signals::UsageSeenCounters,
-    /// Per-form-factor open counts for the web dashboard / acp, layered on
-    /// the `usage_seen` registry counts above so the snapshot can report which
-    /// client classes (desktop / mobile / PWA) used each surface. The registry
-    /// counts the open; a classified open additionally bumps the matching class
-    /// here. An unclassified open (older frontend, no `form_factor`) is counted
-    /// only by the registry. See `telemetry::form_factor` and #1883.
-    pub telemetry_web_clients: FormFactorCounters,
-    pub telemetry_structured_clients: FormFactorCounters,
-    /// Sessions created since the last opt-in telemetry snapshot. Feeds the
-    /// `session_creates_since_last_snapshot` trend counter so short-lived sessions
-    /// that start and end between two snapshots are still counted. Decremented (by
-    /// the value reported) only after a confirmed send, so a failed send retains
-    /// the count for the next snapshot instead of silently dropping it.
-    pub telemetry_session_creates: Arc<std::sync::atomic::AtomicU32>,
-    /// Aggregate structured-interaction tallies for the next opt-in snapshot
-    /// (approvals decision mix, agent/substrate switches, plan-mode, queued
-    /// prompts). Same monotonic-counter, decrement-by-reported discipline as
-    /// the `telemetry_*_seen` counters, so an interaction that lands during an
-    /// in-flight send survives to the next snapshot. In-memory on purpose, like
-    /// the `seen` counters: these are coarse opt-in adoption signals, so losing
-    /// a partial window on a rare daemon crash is acceptable, and durability
-    /// would be a deliberate cross-cutting change for all telemetry counters,
-    /// not a per-feature one.
-    pub telemetry_structured: StructuredTelemetryCounters,
-    /// What the most recent serve snapshot reported, held until its send is
-    /// confirmed so the originating signals (the `usage_seen` counts and the
-    /// create counter) are cleared only on success. The telemetry loop is the
-    /// sole reader/writer, so it never overlaps an in-flight build.
-    pub(super) telemetry_last_reported: std::sync::Mutex<Option<ReportedServeSignals>>,
     /// Resolved when the daemon receives SIGINT/SIGTERM/SIGHUP. Long-lived
     /// handlers (acp WS, terminal WS) clone this and `select!` on
     /// `cancelled()` so they exit promptly instead of holding axum's

@@ -28,7 +28,6 @@ use super::settings::SettingsCommands;
 use super::skill::SkillCommands;
 use super::sounds::SoundsCommands;
 use super::status::StatusArgs;
-use super::telemetry::TelemetryCommands;
 use super::theme::ThemeCommands;
 use super::tmux::TmuxCommands;
 use super::uninstall::UninstallArgs;
@@ -211,12 +210,6 @@ pub enum Commands {
         command: CityHallCommands,
     },
 
-    /// Manage anonymous opt-in usage telemetry
-    Telemetry {
-        #[command(subcommand)]
-        command: TelemetryCommands,
-    },
-
     /// Inspect the effective MCP server set (provenance, conflicts, drift)
     Mcp {
         #[command(subcommand)]
@@ -327,85 +320,16 @@ struct ServeCli {
     args: ServeArgs,
 }
 
-pub const CLI_COMMAND_NAMES: &[&str] = &[
-    "add",
-    "agents",
-    "init",
-    "list",
-    "ps",
-    "logs",
-    "log_level",
-    "remove",
-    "send",
-    "status",
-    "killall",
-    "daemon",
-    "session",
-    "group",
-    "plugin",
-    "profile",
-    "project",
-    "sandbox",
-    "worktree",
-    "tmux",
-    "sounds",
-    "theme",
-    "settings",
-    "cityhall",
-    "telemetry",
-    "mcp",
-    "skill",
-    "hooks",
-    "serve",
-    "url",
-    "acp",
-    "uninstall",
-    "update",
-    "migrate",
-    "completion",
-];
-
-pub fn command_name(command: &Commands) -> Option<&'static str> {
-    Some(match command {
-        Commands::Add(_) => "add",
-        Commands::Agents => "agents",
-        Commands::Init(_) => "init",
-        Commands::List(_) => "list",
-        Commands::Ps(_) => "ps",
-        Commands::Logs(_) => "logs",
-        Commands::LogLevel(_) => "log_level",
-        Commands::Remove(_) => "remove",
-        Commands::Send(_) => "send",
-        Commands::Status(_) => "status",
-        Commands::Killall(_) => "killall",
-        Commands::Daemon { .. } => "daemon",
-        Commands::Stop { .. } => return None,
-        Commands::Session { .. } => "session",
-        Commands::Group { .. } => "group",
-        Commands::Plugin { .. } => "plugin",
-        Commands::Profile { .. } => "profile",
-        Commands::Project { .. } => "project",
-        Commands::Sandbox { .. } => "sandbox",
-        Commands::Worktree { .. } => "worktree",
-        Commands::Tmux { .. } => "tmux",
-        Commands::Sounds { .. } => "sounds",
-        Commands::Theme { .. } => "theme",
-        Commands::Settings { .. } => "settings",
-        Commands::Cityhall { .. } => "cityhall",
-        Commands::Telemetry { .. } => "telemetry",
-        Commands::Mcp { .. } => "mcp",
-        Commands::Skill { .. } => "skill",
-        Commands::Hooks { .. } => "hooks",
-        Commands::Serve(_) => "serve",
-        Commands::Url(_) => "url",
-        Commands::Acp { .. } => "acp",
-        Commands::AcpRunner(_) | Commands::PrimeRunner(_) => return None,
-        Commands::ExtractSessionId(_) => return None,
-        Commands::Uninstall(_) => "uninstall",
-        Commands::Update(_) => "update",
-        Commands::Migrate(_) => "migrate",
-        Commands::Completion { .. } => "completion",
-    })
+/// False for hidden machine-spawned subcommands, which must never print
+/// migration progress or config warnings into a worker's redirected stderr.
+pub fn is_user_command(command: &Commands) -> bool {
+    !matches!(
+        command,
+        Commands::Stop { .. }
+            | Commands::AcpRunner(_)
+            | Commands::PrimeRunner(_)
+            | Commands::ExtractSessionId(_)
+    )
 }
 
 #[cfg(test)]
@@ -443,49 +367,17 @@ mod tests {
     }
 
     #[test]
-    fn command_name_is_allowlisted_and_identifier_safe() {
-        let cases: &[(&[&str], &str)] = &[
-            (&["aoe", "add", "demo"], "add"),
-            (&["aoe", "agents"], "agents"),
-            (&["aoe", "ls"], "list"), // alias collapses to canonical
-            (&["aoe", "rm", "demo"], "remove"),
-            (&["aoe", "session", "current"], "session"),
-            (&["aoe", "telemetry", "status"], "telemetry"),
-            (&["aoe", "update"], "update"),
-            (&["aoe", "completion", "bash"], "completion"),
-        ];
-        for (argv, expected) in cases {
-            let cli = Cli::try_parse_from(*argv).expect("parse");
-            let name = command_name(cli.command.as_ref().expect("command")).expect("named");
-            assert_eq!(name, *expected, "argv {argv:?}");
-            assert!(
-                CLI_COMMAND_NAMES.contains(&name),
-                "`{name}` missing from CLI_COMMAND_NAMES"
-            );
-            assert!(
-                name.bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'),
-                "`{name}` is not an identifier-safe token"
-            );
-        }
-        let cli = Cli::try_parse_from(["aoe", "__extract-session-id"]).expect("parse");
-        assert_eq!(command_name(cli.command.as_ref().expect("command")), None);
-    }
-
-    #[test]
-    fn allowlist_covers_every_visible_subcommand() {
-        use clap::CommandFactory;
-        let visible: Vec<String> = Cli::command()
-            .get_subcommands()
-            .filter(|s| !s.is_hide_set())
-            .map(|s| s.get_name().replace('-', "_"))
-            .collect();
-        assert!(!visible.is_empty(), "expected visible subcommands");
-        for name in &visible {
-            assert!(
-                CLI_COMMAND_NAMES.contains(&name.as_str()),
-                "visible subcommand `{name}` is missing from CLI_COMMAND_NAMES; \
-                 it would be silently dropped from cli_usage telemetry"
+    fn machine_spawned_subcommands_are_not_user_commands() {
+        for (argv, expected) in [
+            (&["aoe", "add", "demo"][..], true),
+            (&["aoe", "session", "current"][..], true),
+            (&["aoe", "__extract-session-id"][..], false),
+        ] {
+            let cli = Cli::try_parse_from(argv).expect("parse");
+            assert_eq!(
+                is_user_command(cli.command.as_ref().expect("command")),
+                expected,
+                "argv {argv:?}"
             );
         }
     }

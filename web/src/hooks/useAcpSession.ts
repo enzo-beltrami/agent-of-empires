@@ -17,7 +17,6 @@ import {
   enqueueServerPrompt,
   listServerQueue,
   removeServerQueuedPrompt,
-  reportAcpInteraction,
   setSessionSnooze,
 } from "../lib/api";
 import { classifyResolveResponse, reducer, type Action } from "./acpSession/reducer";
@@ -246,7 +245,6 @@ export function useAcpSession(
       if (!sessionId) return;
       const id = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       dispatch({ kind: "enqueue_prompt", id, text, attachments });
-      reportAcpInteraction("prompt_queued");
       void (async () => {
         const row = await enqueueServerPrompt(sessionId, { id, text, attachments });
         dispatch(
@@ -286,7 +284,6 @@ export function useAcpSession(
       const result = await dispatchPromptNow(text, attachments);
       if (result.kind === "queued") {
         showServerQueued(result.queuedId, text, attachments);
-        reportAcpInteraction("prompt_queued");
         return;
       }
       // The daemon sent, resumed, and no worker arrived, so nothing was published. Keyed on its

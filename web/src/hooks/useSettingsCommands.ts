@@ -55,9 +55,7 @@ export function useSettingsCommands({ open, readOnly, onOpenSettingsTab }: Args)
       const keywords = [f.section, f.field, f.category, f.label, f.widget.kind, "setting", "config"];
       const id = `setting:${f.section}.${f.field}`;
 
-      // Telemetry must use its dedicated consent flow.
       const inlineToggle =
-        f.section !== "telemetry" &&
         f.widget.kind === "toggle" &&
         f.web_write.policy === "allow" &&
         loadedRequest === request &&

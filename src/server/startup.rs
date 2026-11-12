@@ -20,9 +20,6 @@ use super::disk_watch::{disk_watcher_consumer, init_disk_watch_subscriptions};
 use super::ip_discovery::{local_published_hosts, IpKind};
 use super::reload::load_all_instances;
 use super::router::build_router;
-use super::serve_snapshot::{
-    spawn_serve_snapshot_loop, FormFactorCounters, StructuredTelemetryCounters,
-};
 use super::startup_recovery::{daemon_startup_recovery_cascade, daemon_startup_recovery_mark};
 use super::state::{
     AppState, CleanupDefaultsCache, ACP_CHANNEL_CAPACITY, CLEANUP_DEFAULTS_TTL,
@@ -582,13 +579,11 @@ pub(crate) async fn start_server(
     let instances = Arc::new(RwLock::new(loaded.instances));
     let instance_locks = Arc::new(RwLock::new(std::collections::HashMap::new()));
     let idempotency_locks = Arc::new(RwLock::new(std::collections::HashMap::new()));
-    let telemetry_session_creates = Arc::new(std::sync::atomic::AtomicU32::new(0));
     let mutation_epoch = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let session_service = Arc::new(session_service::SessionService::new(
         Arc::clone(&instances),
         Arc::clone(&instance_locks),
         Arc::clone(&file_watch),
-        Arc::clone(&telemetry_session_creates),
         Arc::clone(&mutation_epoch),
         session_service::AcpDeps {
             supervisor: acp_supervisor.clone(),
@@ -646,11 +641,7 @@ pub(crate) async fn start_server(
         }
     };
 
-    // Telemetry (opt-in, no-op otherwise).
-    crate::telemetry::spawn_process_start(crate::telemetry::Surface::Serve);
-
-    // Resolve the coarse auth mode once at launch; `/api/about` and the
-    // telemetry snapshot both read this single value.
+    // Resolve the coarse auth mode once at launch for `/api/about`.
     let auth_mode = resolve_auth_mode(&token_manager, &login_manager).await;
 
     let listener = if core_only {
@@ -864,13 +855,6 @@ pub(crate) async fn start_server(
         None
     };
 
-    // Coarse exposure label for telemetry, read straight from the resolved transport so it
-    // cannot drift from what was actually spawned.
-    let serve_mode: &'static str = tunnel_handle
-        .as_ref()
-        .map(|h| h.mode_label())
-        .unwrap_or("local");
-
     // DNS-rebinding gate.
     let tunnel_host: Option<String> = tunnel_handle.as_ref().and_then(|h| host_from_url(&h.url));
     let (allowed_hosts, allowed_origins) = resolve_access_policy(
@@ -943,7 +927,6 @@ pub(crate) async fn start_server(
             .is_some_and(tunnel::TunnelHandle::sets_cf_connecting_ip),
         allow_plaintext_remote,
         auth_mode,
-        serve_mode,
         allowed_hosts,
         allowed_origins,
         instance_locks,
@@ -987,12 +970,6 @@ pub(crate) async fn start_server(
         web_config: config.web.clone(),
         web_presence: std::sync::Mutex::new(std::collections::HashMap::new()),
         sleep_inhibit_snapshot: std::sync::atomic::AtomicU8::new(0),
-        telemetry_usage_seen: crate::telemetry::usage_signals::UsageSeenCounters::new(),
-        telemetry_web_clients: FormFactorCounters::default(),
-        telemetry_structured_clients: FormFactorCounters::default(),
-        telemetry_session_creates,
-        telemetry_structured: StructuredTelemetryCounters::default(),
-        telemetry_last_reported: std::sync::Mutex::new(None),
         acp_orphan_cleanups: std::sync::Mutex::new(std::collections::HashSet::new()),
         shutdown,
         file_watch: Arc::clone(&file_watch),
@@ -1037,8 +1014,6 @@ pub(crate) async fn start_server(
                 super::runtime::publish_loop(runtime_state).await;
             });
     }
-
-    spawn_serve_snapshot_loop(state.clone()).await;
 
     // GC the recently_restarted suppression map periodically; the TTL check on read filters
     // but does not remove entries.

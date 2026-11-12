@@ -252,8 +252,8 @@ html[data-ios-standalone]:not([data-editing]) {
 /* The structured-view root publishes both conversation font-size preferences as
    custom properties; CSS picks the active one, so a resize or an orientation
    change switches sizes without a reload. Desktop is the default and mobile is
-   the override, keyed on the same classifier `clientFormFactor()` uses: coarse
-   primary pointer AND a viewport below the 768px `md` breakpoint. A touch
+   the override: coarse primary pointer AND a viewport below the 768px `md`
+   breakpoint. A touch
    laptop and a narrow desktop window both stay on the desktop size, matching
    how the rest of the dashboard decides what "mobile" means. */
 .acp-conversation-scope {

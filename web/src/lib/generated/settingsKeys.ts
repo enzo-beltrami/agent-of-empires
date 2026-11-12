@@ -11,7 +11,6 @@ export interface SettingsKeys {
   sound: "browser_approval_enabled" | "browser_enabled" | "browser_error_enabled" | "browser_idle_enabled" | "browser_scope" | "browser_volume" | "browser_waiting_enabled" | "enabled" | "on_approval" | "on_error" | "on_idle" | "on_running" | "on_start" | "on_waiting" | "server_enabled" | "server_error_enabled" | "server_idle_enabled" | "server_running_enabled" | "server_start_enabled" | "server_volume" | "server_waiting_enabled";
   status_hooks: "enabled" | "on_change" | "on_error" | "on_idle" | "on_running" | "on_starting" | "on_waiting";
   systemd: "enabled" | "memory_max" | "slice" | "survive_daemon_restart" | "tasks_max";
-  telemetry: "enabled";
   theme: "idle_decay_minutes" | "name";
   tmux: "clipboard" | "mouse" | "socket_name" | "status_bar" | "vt_live";
   updates: "auto_update_plugins" | "update_check_mode";

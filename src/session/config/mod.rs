@@ -28,8 +28,6 @@ pub struct Config {
     pub updates: UpdatesConfig,
 
     #[serde(default)]
-    pub telemetry: TelemetryConfig,
-    #[serde(default)]
     pub skills: SkillsConfig,
 
     #[serde(default)]
@@ -894,13 +892,6 @@ pub struct AppStateConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dismissed_image_digest: Option<String>,
 
-    /// True once the user has answered the telemetry opt-in prompt (in any
-    /// surface, either by enabling or declining). Gates the one-time
-    /// standalone consent popup shown to users who completed the walkthrough
-    /// before telemetry existed, so it appears once and never again.
-    #[serde(default)]
-    pub has_responded_to_telemetry: bool,
-
     #[serde(default)]
     pub has_acknowledged_agent_hooks: bool,
 
@@ -922,7 +913,7 @@ pub struct AppStateConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tips_seen: Vec<String>,
 
-    /// Successful session creations across all profiles, independent of telemetry.
+    /// Successful session creations across all profiles.
     #[serde(default)]
     pub sessions_created: u64,
 
@@ -2302,28 +2293,6 @@ pub struct SkillsConfig {
     pub auto_propagate: bool,
 }
 
-/// Anonymous, opt-in usage telemetry. Off by default; mirrors the privacy
-/// posture of [`UpdatesConfig`] (the only other outbound call in the tool).
-///
-/// The single `enabled` flag is the consent boundary the user controls in
-/// every settings surface. The anonymous install id lives in a dedicated
-/// `telemetry.json` (NOT here), so pasting `config.toml` into a bug report
-/// can never leak it. `DO_NOT_TRACK` overrides this flag at runtime and
-/// suppresses both sending and id generation regardless of its value.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, SettingsSection)]
-#[setting_section(name = "telemetry", category = "Telemetry")]
-pub struct TelemetryConfig {
-    /// User opted in to anonymous usage telemetry. Defaults to `false`.
-    #[serde(default)]
-    #[setting(
-        label = "Share anonymous usage data",
-        widget = "toggle",
-        global_only,
-        summary = "Anonymous counts: your Sessions and their Agents and models, which features and aoe commands you use, your AoE version and operating system. Never your prompts, file paths, names, branches or shell commands."
-    )]
-    pub enabled: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, SettingsSection)]
 // Activation and the path templates are repo-denied: a repo could otherwise
 // choose where on the host AoE materializes a checkout (#3711).
@@ -3689,10 +3658,6 @@ pub fn effective_profile(profile: &str) -> String {
 
 pub fn get_update_settings() -> UpdatesConfig {
     Config::load_or_warn().updates
-}
-
-pub fn get_telemetry_settings() -> TelemetryConfig {
-    Config::load_or_warn().telemetry
 }
 
 /// Wrap a value so the launching shell passes it through literally.

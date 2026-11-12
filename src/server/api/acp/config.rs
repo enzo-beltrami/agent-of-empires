@@ -17,17 +17,6 @@ pub struct SetConfigOptionRequest {
     pub value: String,
 }
 
-/// Tally plan-mode adoption. `"plan"` is the plan value on both the mode and
-/// the config-option channel, and no other category uses it.
-fn count_plan_mode(state: &AppState, value: &str) {
-    if value == "plan" {
-        state
-            .telemetry_structured
-            .plan_mode_seen
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
 pub async fn acp_set_mode(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -58,7 +47,6 @@ pub async fn acp_set_mode(
                 mode_id = %req.mode_id,
                 "mode set"
             );
-            count_plan_mode(&state, &req.mode_id);
             StatusCode::ACCEPTED.into_response()
         }
         Err(e) => supervisor_error_response("set_mode failed", &e),
@@ -238,7 +226,6 @@ pub async fn acp_set_config_option(
         value = %req.value,
         "config option set"
     );
-    count_plan_mode(&state, &req.value);
     StatusCode::ACCEPTED.into_response()
 }
 
@@ -445,13 +432,6 @@ mod tests {
         assert_eq!(
             state.acp_supervisor.worker_state(&id).await,
             crate::daemon::AcpWorkerState::Absent
-        );
-        assert_eq!(
-            state
-                .telemetry_structured
-                .plan_mode_seen
-                .load(std::sync::atomic::Ordering::Relaxed),
-            0
         );
         assert_eq!(
             state.instances.read().await[0].agent_model.as_deref(),

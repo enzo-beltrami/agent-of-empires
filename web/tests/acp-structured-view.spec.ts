@@ -1,9 +1,9 @@
 // Structured view against replayed ACP frames: transcript rendering, tool
-// cards, the composer footer, memory-recall cards, transcript font size, the
-// trashed read-only state, and the seen-ping telemetry.
+// cards, the composer footer, memory-recall cards, transcript font size, and
+// the trashed read-only state.
 
 import type { Locator, Page } from "@playwright/test";
-import { test, expect, waitForResponseBody, publishedRequests, observeFor } from "./helpers/mockedTest";
+import { test, expect, observeFor } from "./helpers/mockedTest";
 import {
   agentMessageChunk,
   configOptionsUpdated,
@@ -315,8 +315,8 @@ test("synthesize memory recall renders cleaned, sanitized markdown", async ({ pa
 
 // ─────────────────────────── font size ───────────────────────────
 
-// The transcript font size has mobile and desktop values chosen by
-// clientFormFactor() (coarse pointer and under 768px). A browser test because
+// The transcript font size has mobile and desktop values chosen by a coarse
+// pointer and a viewport under 768px. A browser test because
 // jsdom evaluates neither pointer media nor rem; pointer capability is fixed
 // per context, so each describe owns one and resizes live.
 const MOBILE_SIZE = 11;
@@ -444,40 +444,6 @@ test.describe("trashed structured session is read-only", () => {
 
     await expect(page.getByTestId(`acp-archived-banner-${mock.sessionId}`)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("Ask the agent anything about this workspace.")).toHaveCount(0);
-  });
-});
-
-// ────────────────────────── seen telemetry ────────────────────────
-test("opening a structured view session fires the structured view seen-ping", async ({ page }) => {
-  const mock = await mockAcpSession(page, { title: "acp-seen-ping" });
-  await openStructuredSession(page, mock);
-
-  // The structured view mount fires `reportTelemetrySeen("structured_view")`.
-  // Pre-fix no caller passed `"structured_view"`, so this poll timed out
-  // (the bug).
-  await expect
-    .poll(() => mock.telemetryPings.some((p) => p.surface === "structured_view"), {
-      timeout: 10_000,
-    })
-    .toBe(true);
-
-  // The on-load `"web"` ping still fires too; the structured view ping is
-  // additive, not a replacement.
-  expect(mock.telemetryPings.some((p) => p.surface === "web")).toBe(true);
-});
-
-test("a read-only server sends no telemetry seen-ping", async ({ page }) => {
-  // The seen-ping effects (both `"web"` and `"structured_view"`) share the
-  // same guard: skip on read-only servers, which can't persist a snapshot.
-  const mock = await mockAcpSession(page, { about: { read_only: true } });
-
-  await page.goto("/");
-  await expect(page.locator("header")).toBeVisible();
-  await waitForResponseBody(page, "/api/about");
-  await expect(page.getByTestId("sidebar-session-row")).toHaveCount(1);
-  await observeFor(page, 500, async () => {
-    expect(await publishedRequests(page, "/api/telemetry/seen", "POST")).toEqual([]);
-    expect(mock.telemetryPings).toEqual([]);
   });
 });
 

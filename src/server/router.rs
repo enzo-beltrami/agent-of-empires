@@ -432,16 +432,6 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
             get(api::get_log_level).patch(api::patch_log_level),
         )
         .route("/api/client-log", post(api::post_client_log))
-        // Telemetry consent (browser manages opt-in via the daemon; it never
-        // posts to the telemetry backend directly).
-        .route("/api/telemetry/status", get(api::get_telemetry_status))
-        .route("/api/telemetry/consent", post(api::set_telemetry_consent))
-        .route("/api/telemetry/reset-id", post(api::reset_telemetry_id))
-        .route("/api/telemetry/seen", post(api::post_telemetry_seen))
-        .route(
-            "/api/telemetry/structured-interaction",
-            post(api::post_telemetry_structured_interaction),
-        )
         // Terminal WebSockets (capture-streaming live view; the agent pane and
         // the paired host/container shells). The xterm PTY relay was removed.
         .route("/sessions/{id}/live-ws", get(live_ws::live_terminal_ws))

@@ -56,11 +56,10 @@ pub use crate::status_hooks::StatusHookConfig;
 pub(crate) use anchored_fs::AnchoredDir;
 pub(crate) use capture::is_valid_session_id;
 pub use config::{
-    get_telemetry_settings, get_update_settings, load_config, update_app_state, update_config,
-    validate_snooze_duration, AgentRuntimeConfig, CapabilityGrant, Config, ContainerRuntimeName,
-    DefaultTerminalMode, GroupByMode, PluginConfig, RowTagMode, SandboxConfig, SessionConfig,
-    TelemetryConfig, ThemeConfig, TmuxSettingMode, UpdatesConfig, VolumeIgnoresStrategy,
-    WorktreeConfig,
+    get_update_settings, load_config, update_app_state, update_config, validate_snooze_duration,
+    AgentRuntimeConfig, CapabilityGrant, Config, ContainerRuntimeName, DefaultTerminalMode,
+    GroupByMode, PluginConfig, RowTagMode, SandboxConfig, SessionConfig, ThemeConfig,
+    TmuxSettingMode, UpdatesConfig, VolumeIgnoresStrategy, WorktreeConfig,
 };
 pub(crate) use environment::user_shell;
 pub use environment::{validate_env_entries, validate_env_entry};
@@ -326,10 +325,7 @@ pub fn get_app_dir() -> Result<PathBuf> {
 
 /// Whether the app data dir already exists, **without** creating it (unlike
 /// [`get_app_dir`], which auto-creates). Lets side-effect-sensitive callers
-/// probe install state cheaply: the per-command telemetry recorder uses it to
-/// stay a true no-op for app-data-free commands (`aoe completion`, `aoe init`,
-/// ...) on an install that is not opted in, so those commands keep working in
-/// read-only / sandboxed (e.g. Nix) environments without materializing the dir.
+/// probe install state cheaply.
 pub fn app_dir_exists() -> bool {
     get_app_dir_path().map(|p| p.exists()).unwrap_or(false)
 }

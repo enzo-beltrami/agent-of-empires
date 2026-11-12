@@ -167,16 +167,6 @@ const requestCases: RequestCase[] = [
     () => api.fetchAbout(),
     { respond: json({ build_flavor: "debug" }), result: { build_flavor: "debug" } },
   ],
-  [
-    "GET /api/telemetry/status",
-    () => api.fetchTelemetryStatus(),
-    { respond: json({ enabled: true }), result: { enabled: true } },
-  ],
-  [
-    "POST /api/telemetry/consent",
-    () => api.setTelemetryConsent(true),
-    { body: { enabled: true }, respond: json({ enabled: true }), result: { enabled: true } },
-  ],
   ["GET /api/system/update-status", () => api.fetchUpdateStatus()],
   [
     "POST /api/app-state/dismiss-update",
@@ -1483,31 +1473,6 @@ describe("plugin results", () => {
     });
     offline();
     expect(await api.fetchPluginJob("j")).toEqual({ kind: "error", status: 0, message: "Network error." });
-  });
-});
-
-describe("telemetry pings", () => {
-  it.each([
-    ["reportTelemetrySeen", () => api.reportTelemetrySeen("web"), "/api/telemetry/seen", { surface: "web" }],
-    [
-      "reportAcpInteraction",
-      () => api.reportAcpInteraction("prompt_queued"),
-      "/api/telemetry/structured-interaction",
-      { kind: "prompt_queued" },
-    ],
-  ])("%s POSTs fire-and-forget and swallows failures", (_name, call, url, body) => {
-    fetchSpy.mockResolvedValueOnce(empty());
-    call();
-    expect(lastCall()).toMatchObject({ url, init: { method: "POST" } });
-    expect(bodyOf(lastCall().init)).toMatchObject(body);
-    offline();
-    expect(call).not.toThrow();
-  });
-
-  it("reportTelemetrySeen includes the form factor", () => {
-    fetchSpy.mockResolvedValueOnce(empty());
-    api.reportTelemetrySeen("diff_panel");
-    expect(bodyOf(lastCall().init)).toHaveProperty("form_factor");
   });
 });
 

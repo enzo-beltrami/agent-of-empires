@@ -3842,7 +3842,7 @@ fn cli_serve_daemon_profile_reaches_the_served_layer() {
     // Pin the machine default to `default` so the daemon's `--profile work`
     // is unambiguously the operator's choice and not the machine's.
     let machine_config = format!(
-        "default_profile = \"default\"\n\n[updates]\nupdate_check_mode = \"off\"\n\n[session]\ndefault_tool = \"claude\"\n\n[app_state]\nhas_seen_welcome = true\nhas_responded_to_telemetry = true\nhas_acknowledged_agent_hooks = true\nlast_seen_version = \"{version}\"\n"
+        "default_profile = \"default\"\n\n[updates]\nupdate_check_mode = \"off\"\n\n[session]\ndefault_tool = \"claude\"\n\n[app_state]\nhas_seen_welcome = true\nhas_acknowledged_agent_hooks = true\nlast_seen_version = \"{version}\"\n"
     );
     std::fs::write(app.join("config.toml"), machine_config).expect("write machine config.toml");
     std::fs::create_dir_all(app.join("profiles").join("default")).expect("default profile dir");

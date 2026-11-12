@@ -827,11 +827,6 @@ pub(crate) async fn spawn_structured_session(
             };
             let response_instance = instance.clone();
 
-            // Count the create for the opt-in telemetry trend counter.
-            service
-                .telemetry_session_creates
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
             if let Some((
                 id,
                 tool,

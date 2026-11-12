@@ -22,7 +22,6 @@ mod sandbox_image;
 pub(crate) mod sessions;
 mod skills;
 pub(crate) mod system;
-mod telemetry;
 
 pub(crate) use acp::structured_spawn_error_message;
 pub use acp::{
@@ -95,10 +94,6 @@ pub use system::{
     mark_volume_ignores_globs_acknowledged, mark_web_tour_seen, patch_web_ui_state,
     post_dashboard_presence, rename_profile, serve_sound_file, set_show_tips, system_health,
     update_profile_settings, update_settings, update_theme,
-};
-pub use telemetry::{
-    get_telemetry_status, post_telemetry_seen, post_telemetry_structured_interaction,
-    reset_telemetry_id, set_telemetry_consent, TelemetryMutation,
 };
 
 /// A clone of the live instance with this id.
@@ -583,16 +578,6 @@ mod tests {
             "push.rs",
             include_str!("../push.rs"),
             &["push::subscribe", "push::test", "push::unsubscribe"],
-        ),
-        (
-            "telemetry.rs",
-            include_str!("telemetry.rs"),
-            &[
-                "post_telemetry_seen",
-                "post_telemetry_structured_interaction",
-                "reset_telemetry_id",
-                "set_telemetry_consent",
-            ],
         ),
         (
             "plugins.rs",

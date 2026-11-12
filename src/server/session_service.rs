@@ -1,8 +1,8 @@
 //! Shared session-domain service handle.
 //!
 //! Holds the narrow set of daemon state the session create/turn paths need
-//! (live instances, ACP supervisor, storage file-watch, per-instance locks,
-//! telemetry counter), so those paths can be driven by callers that do not
+//! (live instances, ACP supervisor, storage file-watch, per-instance locks),
+//! so those paths can be driven by callers that do not
 //! hold the HTTP `AppState`: today the HTTP handlers, next the plugin host
 //! RPCs (#2897). `AppState` constructs one and keeps cloned handles to the
 //! same underlying state, so both views stay consistent; neither owns the
@@ -245,9 +245,6 @@ pub struct SessionService {
     pub instance_locks: Arc<RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     /// Storage change-notification service, shared with `AppState.file_watch`.
     pub file_watch: Arc<crate::file_watch::FileWatchService>,
-    /// Opt-in telemetry create counter, shared with
-    /// `AppState.telemetry_session_creates`.
-    pub telemetry_session_creates: Arc<std::sync::atomic::AtomicU32>,
     /// Shared with `AppState.mutation_epoch`; invalidates snapshots at memory
     /// mutation and mirrored persistence completion.
     pub mutation_epoch: Arc<std::sync::atomic::AtomicU64>,
@@ -450,7 +447,6 @@ impl SessionService {
         instances: Arc<RwLock<Vec<Instance>>>,
         instance_locks: Arc<RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
         file_watch: Arc<crate::file_watch::FileWatchService>,
-        telemetry_session_creates: Arc<std::sync::atomic::AtomicU32>,
         mutation_epoch: Arc<std::sync::atomic::AtomicU64>,
         acp: AcpDeps,
     ) -> Self {
@@ -462,7 +458,6 @@ impl SessionService {
             instances,
             instance_locks,
             file_watch,
-            telemetry_session_creates,
             mutation_epoch,
             acp_supervisor: acp.supervisor,
             acp_event_store: acp.event_store,

@@ -35,7 +35,6 @@ pub(crate) mod router;
 pub(crate) mod runtime;
 pub(crate) mod runtime_ws;
 mod secure_store;
-pub(crate) mod serve_snapshot;
 pub(crate) mod session_identity;
 pub(crate) mod session_service;
 pub(crate) mod session_spawn;
@@ -72,7 +71,6 @@ pub(crate) use disk_watch::{
     add_profile_disk_watch, remove_profile_disk_watch, rename_profile_disk_watch,
 };
 pub use ip_discovery::{discover_tagged_ips, local_published_hosts, IpKind};
-pub use serve_snapshot::{FormFactorCounters, StructuredTelemetryCounters};
 pub(crate) use sleep_inhibit::{
     SLEEP_INHIBIT_SNAPSHOT_ENABLED, SLEEP_INHIBIT_SNAPSHOT_SLOT_PRESENT,
 };

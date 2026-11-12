@@ -1,6 +1,6 @@
 //! xtask: development tasks for agent-of-empires.
 
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;

@@ -337,8 +337,8 @@ async fn allowlisted_route_stays_reachable() {
     let resp = app
         .oneshot(request(
             Method::POST,
-            "/api/telemetry/consent",
-            Body::from(r#"{"consent":false}"#),
+            "/api/client-log",
+            Body::from(r#"{"entries":[]}"#),
         ))
         .await
         .unwrap();

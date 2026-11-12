@@ -6,7 +6,6 @@ import { getToken } from "../lib/token";
 import { buttonMouseBytes, wheelMouseBytes } from "../lib/liveMouse";
 import { createFrameInflater, supportsFrameDeflate, type FrameInflater } from "../lib/frameStream";
 import { MAX_RETRIES, retryDelayMs } from "../lib/wsBackoff";
-import { reportTelemetrySeen } from "../lib/api";
 import type { LiveClientMessage, LivePane0, LiveServerMessage } from "../lib/generated/liveWire";
 
 export type { LiveCursor, LivePane0 as LivePaneRect } from "../lib/generated/liveWire";
@@ -90,7 +89,6 @@ export function useLiveTerminal(
     fast: boolean;
   }>({ resize: null, window: null, fast: true });
   const readingRef = useRef(false);
-  const telemetrySeenRef = useRef(false);
   // Binary keystrokes and JSON paste messages, in send order.
   const pendingInputRef = useRef<(Uint8Array<ArrayBuffer> | string)[]>([]);
   // Hold input until the server confirms this connection owns the pane.
@@ -183,10 +181,6 @@ export function useLiveTerminal(
 
       ws.onopen = () => {
         if (wsRef.current !== ws) return;
-        if (!readOnlyRef.current && !telemetrySeenRef.current) {
-          telemetrySeenRef.current = true;
-          reportTelemetrySeen("web_terminal");
-        }
         setState((prev) => ({
           ...prev,
           connected: true,

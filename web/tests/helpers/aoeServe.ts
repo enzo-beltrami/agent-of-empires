@@ -597,8 +597,6 @@ export async function spawnAoeServe(opts: SpawnOptions): Promise<ServeHandle> {
     FAKE_ACP_DEBUG_LOG: fakeAcpDebugLog,
     // trace adds enough I/O to cause unrelated REST flakes on CI.
     AOE_LOG_LEVEL: process.env.AOE_LOG_LEVEL ?? "info",
-    // Suppresses the telemetry consent modal, whose backdrop would intercept every click.
-    DO_NOT_TRACK: process.env.DO_NOT_TRACK ?? "1",
     // Debug builds ignore TMUX_TMPDIR, so pin the socket raw tmux calls use.
     AOE_TMUX_SOCKET: tmuxSocketPath(home),
   };

@@ -323,19 +323,12 @@ async fn run(
     }
 
     // Settings and MCP commands must resolve migrated configuration.
-    let command_name = cli.command.as_ref().and_then(cli::command_name);
+    let user_command = cli.command.as_ref().is_some_and(cli::is_user_command);
     if matches!(
         cli.command,
         Some(Commands::Settings { .. }) | Some(Commands::Mcp { .. })
     ) {
-        run_startup_migrations(command_name, is_daemon_child, None).await?;
-    }
-
-    // Skipped for the detached daemon child so `aoe serve --daemon` counts once.
-    if !is_daemon_child {
-        if let Some(name) = command_name {
-            agent_of_empires::telemetry::track_cli_command(name).await;
-        }
+        run_startup_migrations(user_command, is_daemon_child, None).await?;
     }
 
     // No app data or migrations needed; these work in read-only environments such as Nix builds.
@@ -406,14 +399,14 @@ async fn run(
         _ => None,
     };
 
-    run_startup_migrations(command_name, is_daemon_child, serve_lock.as_ref()).await?;
+    run_startup_migrations(user_command, is_daemon_child, serve_lock.as_ref()).await?;
     agent_of_empires::session::poller::configure_session_id_poller_max_threads(
         agent_of_empires::session::poller::configured_session_id_poller_max_threads(&profile),
     );
 
     // Unknown keys are only reported here; parse failures only when no subscriber is up.
     // Hidden machine-spawned subcommands never print into a worker's redirected stderr.
-    if command_name.is_some() {
+    if user_command {
         let warning = if should_init {
             agent_of_empires::session::collect_startup_ignored_key_warnings(&profile)
         } else {
@@ -444,9 +437,6 @@ async fn run(
         Some(Commands::Worktree { command }) => cli::worktree::run(&profile, command).await,
         Some(Commands::Skill { command }) => cli::skill::run(command).await,
         Some(Commands::Cityhall { command }) => cli::cityhall::run(command).await,
-        Some(Commands::Telemetry { command }) => {
-            return exit_zero(cli::telemetry::run(command).await)
-        }
         Some(Commands::Serve(args)) => cli::serve::run(&profile, args, serve_lock).await,
         Some(Commands::Url(args)) => cli::url::run(args),
         Some(Commands::Sandbox { command }) => cli::sandbox::run(command),
@@ -470,14 +460,14 @@ async fn run(
 /// record, wait on the very lock the parent holds. Verify the schema instead
 /// of migrating, and fail closed.
 async fn run_startup_migrations(
-    command_name: Option<&str>,
+    user_command: bool,
     is_daemon_child: bool,
     startup: Option<&cli::serve::ServeStartup>,
 ) -> Result<()> {
     if is_daemon_child {
         return migrations::assert_schema_current();
     }
-    let reporter = command_name.is_some().then(cli::migrate::stderr_reporter);
+    let reporter = user_command.then(cli::migrate::stderr_reporter);
     match startup {
         Some(startup) => startup.run_migrations(reporter),
         None => {

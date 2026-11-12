@@ -171,7 +171,6 @@ const KNOWN_TARGETS: { value: string; group: string }[] = [
   { value: "git.command", group: "Git" },
   { value: "git.worktree", group: "Git" },
   { value: "web.client", group: "Web" },
-  { value: "http.api.telemetry", group: "Telemetry" },
   { value: "log.runtime", group: "Meta" },
 ];
 

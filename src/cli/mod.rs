@@ -32,7 +32,6 @@ pub mod settings;
 pub mod skill;
 pub mod sounds;
 pub mod status;
-pub mod telemetry;
 pub mod theme;
 pub mod tmux;
 pub mod uninstall;
@@ -40,7 +39,7 @@ pub mod update;
 pub mod url;
 pub mod worktree;
 
-pub use definition::{command_name, Cli, Commands, DaemonCommands, CLI_COMMAND_NAMES};
+pub use definition::{is_user_command, Cli, Commands, DaemonCommands};
 
 pub(crate) fn color_enabled() -> bool {
     use std::io::IsTerminal;

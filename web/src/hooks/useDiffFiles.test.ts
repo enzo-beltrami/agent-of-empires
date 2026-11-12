@@ -8,13 +8,11 @@ import type { RichDiffFile, RichDiffFilesResponse } from "../lib/types";
 
 vi.mock("../lib/api", () => ({
   getSessionDiffFiles: vi.fn(),
-  reportTelemetrySeen: vi.fn(),
 }));
 
-import { getSessionDiffFiles, reportTelemetrySeen } from "../lib/api";
+import { getSessionDiffFiles } from "../lib/api";
 
 const mockGetFiles = vi.mocked(getSessionDiffFiles);
-const mockReportSeen = vi.mocked(reportTelemetrySeen);
 
 const file = (path = "src/a.ts"): RichDiffFile => ({
   path,
@@ -33,14 +31,13 @@ const resp = (over: Partial<RichDiffFilesResponse> = {}): RichDiffFilesResponse 
 
 beforeEach(() => {
   mockGetFiles.mockReset();
-  mockReportSeen.mockReset();
 });
 
 afterEach(() => vi.useRealTimers());
 
-async function mountLoaded(first: RichDiffFilesResponse, enabled = true) {
+async function mountLoaded(first: RichDiffFilesResponse) {
   mockGetFiles.mockResolvedValueOnce(first);
-  const hook = renderHook(() => useDiffFiles("s1", enabled));
+  const hook = renderHook(() => useDiffFiles("s1", true));
   await waitFor(() => expect(hook.result.current.revision).toBe(1));
   const refetch = async (next: RichDiffFilesResponse) => {
     mockGetFiles.mockResolvedValueOnce(next);
@@ -62,22 +59,11 @@ describe("useDiffFiles", () => {
     expect(mockGetFiles).not.toHaveBeenCalled();
   });
 
-  it("reports diff_panel once per session, and only while the panel is enabled", async () => {
-    const enabled = await mountLoaded(resp());
-    await enabled.refetch(resp({ files: [file("b.ts")] }));
-    expect(mockReportSeen.mock.calls).toEqual([["diff_panel"]]);
-
-    mockReportSeen.mockReset();
-    await mountLoaded(resp(), false);
-    expect(mockReportSeen).not.toHaveBeenCalled();
-  });
-
   it("keeps revision 0 on a null response, but counts an empty list", async () => {
     mockGetFiles.mockResolvedValue(null);
     const { result } = renderHook(() => useDiffFiles("s1", true));
     await waitFor(() => expect(mockGetFiles).toHaveBeenCalled());
     expect(result.current).toMatchObject({ files: [], revision: 0 });
-    expect(mockReportSeen).not.toHaveBeenCalled();
 
     await mountLoaded(resp({ files: [] }));
   });

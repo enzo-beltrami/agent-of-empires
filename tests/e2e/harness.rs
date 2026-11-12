@@ -365,7 +365,7 @@ impl TuiTestHarness {
             }
         }
 
-        // Pre-seed config.toml to skip update checks and the telemetry prompt.
+        // Pre-seed config.toml to skip update checks.
         // On Linux and macOS the app uses $XDG_CONFIG_HOME/agent-of-empires[-dev]/
         // (set below); other platforms use $HOME/.agent-of-empires[-dev]/. The
         // `-dev` suffix kicks in on debug builds, which is what `cargo test`
@@ -381,7 +381,6 @@ structured_view = "off"
 
 {SYSTEMD_OFF}
 [app_state]
-has_responded_to_telemetry = true
 has_acknowledged_agent_hooks = true
 "#
         );
@@ -414,11 +413,6 @@ has_acknowledged_agent_hooks = true
             // aoe addresses tmux via `-S <socket>`, so pin it to the harness socket.
             extra_env: vec![
                 ("AOE_TMUX_SOCKET".into(), tmux_socket_env.into()),
-                // Discard port: tests that opt in to telemetry must never reach production.
-                (
-                    "AOE_TELEMETRY_ENDPOINT".into(),
-                    "http://127.0.0.1:9/ingest".into(),
-                ),
                 (
                     "XDG_RUNTIME_DIR".into(),
                     config_dir.join("runtime").into_os_string(),

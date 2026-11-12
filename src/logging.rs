@@ -110,7 +110,6 @@ pub const DEFAULT_TARGET_ROOTS: &[&str] = &[
     "runtime",
     "hooks",
     "sound",
-    "telemetry",
     "smart_rename",
     "events",
     "conversation_summary",
@@ -192,7 +191,6 @@ pub const KNOWN_SUB_TARGETS: &[&str] = &[
     "daemon.client",
     "acp.queue",
     "plugin.install",
-    "http.api.telemetry",
     "http.api.system",
 ];
 

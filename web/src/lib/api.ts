@@ -1,6 +1,5 @@
 import type { AgentLifecycleInfo } from "./agentProfiles";
 import { notifySettingsChanged } from "./settingsEvents";
-import { clientFormFactor } from "./formFactor";
 import type { SchemaSettings } from "./generated/settingsKeys";
 import type {
   SessionResponse,
@@ -1475,48 +1474,6 @@ export function fetchAbout(signal?: AbortSignal): Promise<ServerAbout | null> {
 /** The current daemon run's id, read fresh right before a create's first send. */
 export async function fetchCreateBootId(): Promise<string | null> {
   return (await fetchAbout())?.create_boot_id ?? null;
-}
-
-export interface TelemetryStatus {
-  enabled: boolean;
-  responded: boolean;
-  do_not_track: boolean;
-}
-
-export function fetchTelemetryStatus(): Promise<TelemetryStatus | null> {
-  return fetchJson<TelemetryStatus>("/api/telemetry/status");
-}
-
-/// Set the opt-in state. The daemon owns the anonymous install id; the
-/// browser never posts to the telemetry backend itself. Returns the updated
-/// status, or null on failure.
-export async function setTelemetryConsent(enabled: boolean): Promise<TelemetryStatus | null> {
-  try {
-    return await fetchJson<TelemetryStatus>("/api/telemetry/consent", jsonInit("POST", { enabled }));
-  } catch {
-    return null;
-  }
-}
-
-/// Allowlisted usage-signal names the daemon accepts on `/api/telemetry/seen`.
-/// Mirrors `USAGE_SIGNALS` in `src/telemetry/usage_signals.rs`; an off-list
-/// name is rejected with a 400 server-side. `web` / `structured_view` are whole-UI
-/// opens; the rest are feature-level opens within the dashboard (#1881).
-export type TelemetrySignal = "web" | "structured_view" | "diff_panel" | "diff_comments" | "web_terminal";
-
-/// Tell the daemon an allowlisted surface or feature was opened, so its next
-/// opt-in snapshot can carry the `usage_seen` open-count map plus the coarse
-/// client form-factor class (#1883). Best-effort; the daemon only forwards the
-/// count when the install is opted in. The browser never posts to the telemetry
-/// backend; it pings the local daemon, which folds both into its own snapshot.
-export function reportTelemetrySeen(surface: TelemetrySignal): void {
-  void fetch("/api/telemetry/seen", jsonInit("POST", { surface, form_factor: clientFormFactor() })).catch(() => {});
-}
-
-/// Report a browser ACP interaction for the daemon's next opt-in snapshot.
-/// Best-effort; the daemon only sends counts when the user is opted in.
-export function reportAcpInteraction(kind: "prompt_queued"): void {
-  void fetch("/api/telemetry/structured-interaction", jsonInit("POST", { kind })).catch(() => {});
 }
 
 /** Runtime helper around `ServerAbout.build_flavor`. See #1055. */

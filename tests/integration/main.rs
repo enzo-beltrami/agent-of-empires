@@ -99,4 +99,3 @@ mod serve_response_compression;
 mod serve_settings_layers;
 #[cfg(debug_assertions)]
 mod serve_settings_logging;
-mod telemetry;

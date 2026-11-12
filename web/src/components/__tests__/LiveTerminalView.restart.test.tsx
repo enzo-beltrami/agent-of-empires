@@ -9,14 +9,13 @@ import { installResizeObserver } from "./liveTerminalHarness";
 import { clearMobileKeyboardProxyInput, deliverMobileKeyboardProxyInput } from "../../lib/mobileKeyboardProxy";
 import { makeSession } from "./fixtures";
 
-const { ensureSession, ensureTerminal, pasteImage, reportTelemetrySeen } = vi.hoisted(() => ({
+const { ensureSession, ensureTerminal, pasteImage } = vi.hoisted(() => ({
   ensureSession: vi.fn<(...args: unknown[]) => Promise<{ ok: boolean; message?: string | null }>>(async () => ({
     ok: true,
     message: null,
   })),
   ensureTerminal: vi.fn(async () => ({ ok: true })),
   pasteImage: vi.fn<(id: string, file: File, canUpload: () => boolean) => Promise<string | null>>(),
-  reportTelemetrySeen: vi.fn(),
 }));
 
 vi.mock("../../lib/token", () => ({ getToken: () => null }));
@@ -32,7 +31,6 @@ vi.mock("../../lib/api", async (importOriginal) => {
     ensureTerminal,
     pasteImage: pasteImage.mockImplementation(actual.pasteImage),
     isStartRefusal: () => false,
-    reportTelemetrySeen,
   };
 });
 const resize = installResizeObserver();
@@ -79,7 +77,6 @@ beforeEach(() => {
   ensureSession.mockReset().mockResolvedValue({ ok: true, message: null });
   ensureTerminal.mockClear();
   pasteImage.mockClear();
-  reportTelemetrySeen.mockClear();
   vi.stubGlobal("WebSocket", FakeWS);
 });
 afterEach(() => {
@@ -160,7 +157,6 @@ describe("read-only live consumers with the real socket and terminal", () => {
       fireEvent.paste(input, { clipboardData: { getData: () => "must not write", items: [] } });
       expect(mutationControls(socket)).toEqual([]);
       expect(socket.sent.every((data) => typeof data === "string")).toBe(true);
-      expect(reportTelemetrySeen).not.toHaveBeenCalled();
       act(() => {
         socket.readyState = FakeWS.CLOSED;
         socket.onclose?.(new CloseEvent("close", { code: 4001 }));

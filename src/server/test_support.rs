@@ -231,14 +231,12 @@ pub(crate) fn build_test_app_state_impl_with_event_store(
     let instances = Arc::new(RwLock::new(prior));
     let instance_locks = Arc::new(RwLock::new(HashMap::new()));
     let idempotency_locks = Arc::new(RwLock::new(HashMap::new()));
-    let telemetry_session_creates = Arc::new(std::sync::atomic::AtomicU32::new(0));
     let mutation_epoch = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let file_watch = FileWatchService::noop();
     let session_service = Arc::new(session_service::SessionService::new(
         Arc::clone(&instances),
         Arc::clone(&instance_locks),
         Arc::clone(&file_watch),
-        Arc::clone(&telemetry_session_creates),
         Arc::clone(&mutation_epoch),
         session_service::AcpDeps {
             supervisor: supervisor.clone(),
@@ -278,7 +276,6 @@ pub(crate) fn build_test_app_state_impl_with_event_store(
         // Handler tests drive requests from arbitrary peers; the 426 gate has its own tests.
         allow_plaintext_remote: true,
         auth_mode: "none",
-        serve_mode: "local",
         allowed_hosts,
         allowed_origins,
         instance_locks,
@@ -320,12 +317,6 @@ pub(crate) fn build_test_app_state_impl_with_event_store(
         web_config: crate::session::config::WebConfig::default(),
         web_presence: std::sync::Mutex::new(HashMap::new()),
         sleep_inhibit_snapshot: std::sync::atomic::AtomicU8::new(0),
-        telemetry_usage_seen: crate::telemetry::usage_signals::UsageSeenCounters::new(),
-        telemetry_web_clients: FormFactorCounters::default(),
-        telemetry_structured_clients: FormFactorCounters::default(),
-        telemetry_session_creates,
-        telemetry_structured: StructuredTelemetryCounters::default(),
-        telemetry_last_reported: std::sync::Mutex::new(None),
         acp_orphan_cleanups: std::sync::Mutex::new(std::collections::HashSet::new()),
         shutdown,
         file_watch,

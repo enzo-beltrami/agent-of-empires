@@ -190,16 +190,6 @@ test.describe("Diff comments (#928)", () => {
       captured = JSON.parse(r.request().postData() || "{}");
       return r.fulfill({ json: {} });
     });
-    const seenSignals: string[] = [];
-    await page.route("**/api/telemetry/seen", (r) => {
-      try {
-        const body = JSON.parse(r.request().postData() || "{}");
-        if (typeof body.surface === "string") seenSignals.push(body.surface);
-      } catch {
-        // Ignore unparseable bodies.
-      }
-      return r.fulfill({ status: 204, body: "" });
-    });
     await openSessionAndFile(page);
     await startSingleLineComment(page, 3);
     await page.getByPlaceholder(/Leave a comment \(markdown supported\)/).fill("**rename** this please");
@@ -228,7 +218,6 @@ test.describe("Diff comments (#928)", () => {
     expect(captured?.assembledMarkdown).not.toContain("aoe:diff-comments");
     await expect(page.getByText(/^1 comment$/)).toHaveCount(0);
     // #1881 usage signal.
-    await expect.poll(() => seenSignals).toContain("diff_comments");
   });
 
   test("terminal session annotates a diff and sends its feedback to the agent pane", async ({ page }) => {
