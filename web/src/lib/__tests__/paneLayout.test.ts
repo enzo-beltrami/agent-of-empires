@@ -196,8 +196,19 @@ describe("usePaneLayout migration + persistence", () => {
     expect(result.current.layout.closedPlugins).toEqual([]);
   });
 
-  it("drops tab ids duplicated across docks or within a group on load", () => {
-    persistV2([{ tabs: ["diff", "diff", "terminal:0"], active: "diff" }], [{ tabs: ["diff"], active: "diff" }]);
+  it.each([
+    [
+      "duplicated across docks or within a group",
+      [{ tabs: ["diff", "diff", "terminal:0"], active: "diff" }],
+      [{ tabs: ["diff"], active: "diff" }],
+    ],
+    [
+      "of removed built-in panes",
+      [{ tabs: ["coordinator", "diff", "terminal:0"], active: "coordinator" }],
+      [{ tabs: ["assistant"], active: "assistant" }],
+    ],
+  ])("drops tab ids %s on load", (_name, right, bottom) => {
+    persistV2(right, bottom);
     const { layout: l } = hook().current;
     expect([dockTabs(l, "right"), dockTabs(l, "bottom")]).toEqual([["diff", "terminal:0"], []]);
   });

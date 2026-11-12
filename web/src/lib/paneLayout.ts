@@ -283,13 +283,20 @@ function migrateTemplate(): DockLayout {
   return defaultTemplate();
 }
 
+const BUILTIN_TAB_IDS = new Set<string>(BUILTIN_PANES.map((p) => p.id));
+
+/** Drops ids of built-in panes that have since been removed, which would otherwise crash rendering. */
+function isKnownTabId(t: unknown): t is TabId {
+  return typeof t === "string" && (t.startsWith("plugin:") || isTerminalTabId(t) || BUILTIN_TAB_IDS.has(t));
+}
+
 function normalizeGroups(v: unknown): PaneGroup[] {
   if (!Array.isArray(v)) return [];
   const groups: PaneGroup[] = [];
   for (const g of v) {
     if (!g || typeof g !== "object") continue;
     const o = g as Record<string, unknown>;
-    const tabs = Array.isArray(o.tabs) ? o.tabs.filter((t): t is string => typeof t === "string") : [];
+    const tabs = Array.isArray(o.tabs) ? o.tabs.filter(isKnownTabId) : [];
     if (tabs.length === 0) continue;
     const active = typeof o.active === "string" && tabs.includes(o.active) ? o.active : tabs[0]!;
     groups.push({ tabs, active });
