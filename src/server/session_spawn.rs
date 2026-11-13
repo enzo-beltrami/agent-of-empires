@@ -670,7 +670,7 @@ pub(crate) async fn spawn_structured_session(
                 Ok(())
             }).context(CliCreationOutcomeUnknown)?;
             native.adopt_runtime_fields(&instance).context(CliCreationOutcomeUnknown)?;
-            crate::tips::record_session_creations(1);
+            crate::session::config::record_session_creations(1);
             return Ok((instance, build_warnings, agent_effort, native, creation_profile, None));
         }
 
@@ -780,7 +780,7 @@ pub(crate) async fn spawn_structured_session(
             }
         }
 
-        crate::tips::record_session_creations(1);
+        crate::session::config::record_session_creations(1);
         Ok::<_, anyhow::Error>((
             instance,
             build_warnings,

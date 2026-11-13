@@ -655,49 +655,6 @@ export async function markWebTourSeen(): Promise<boolean> {
   }
 }
 
-// --- Tips ---
-
-export interface TipDto {
-  id: string;
-  title: string;
-  body: string;
-  seen: boolean;
-}
-
-export interface TipsResponse {
-  /** Mirror of `session.show_tips`; the badge and panel hide when false. */
-  enabled: boolean;
-  /** Web-eligible tips in catalog order, each flagged with its seen state. */
-  tips: TipDto[];
-}
-
-/** Fetch the web-surface tips and whether tips are enabled. Null on failure so
- *  the caller simply shows no badge. */
-export function fetchTips(): Promise<TipsResponse | null> {
-  return fetchJson<TipsResponse>("/api/tips");
-}
-
-/** Mark one tip seen (mark-seen-on-view). Best-effort; returns success. Mirrors
- *  {@link markWebTourSeen}: off the elevation wall, blocked on read-only. */
-export async function markTipSeen(id: string): Promise<boolean> {
-  try {
-    return await fetchOk("/api/app-state/tip-seen", jsonInit("POST", { id }));
-  } catch {
-    return false;
-  }
-}
-
-/** Set "Show tips on startup" (`session.show_tips`). Dedicated endpoint, not
- *  `PATCH /api/settings`, so this cosmetic toggle stays off the passphrase/
- *  elevation wall. Returns false on read-only (403) or network failure. */
-export async function setShowTips(enabled: boolean): Promise<boolean> {
-  try {
-    return await fetchOk("/api/tips/show", jsonInit("POST", { enabled }));
-  } catch {
-    return false;
-  }
-}
-
 // --- Web UI state sync (server-side mirror of synced localStorage keys) ---
 
 /** Fetch the server-side UI-state blob: a flat map of localStorage key ->

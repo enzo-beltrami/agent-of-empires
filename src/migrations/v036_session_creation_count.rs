@@ -88,7 +88,7 @@ mod tests {
         .unwrap();
         run().unwrap();
         assert_eq!(AppStateConfig::load().unwrap().sessions_created, 3);
-        crate::tips::record_session_creations(1);
+        crate::session::config::record_session_creations(1);
         assert_eq!(AppStateConfig::load().unwrap().sessions_created, 4);
         update_app_state(|state| state.sessions_created = 40).unwrap();
         run().unwrap();

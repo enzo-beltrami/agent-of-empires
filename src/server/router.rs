@@ -295,9 +295,6 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
         // The CityHall config bundle an admin hands to CityHall.
         .route("/api/cityhall/bundle", get(api::get_cityhall_bundle))
         .route("/api/cityhall/apply", post(api::apply_cityhall_bundle))
-        .route("/api/tips", get(api::get_tips))
-        .route("/api/tips/show", post(api::set_show_tips))
-        .route("/api/app-state/tip-seen", post(api::mark_tip_seen))
         // Plugin management.
         .route("/api/plugins", get(api::list_plugins))
         .route(

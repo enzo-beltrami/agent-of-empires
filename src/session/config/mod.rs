@@ -839,10 +839,7 @@ pub struct AppStateConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sort_order: Option<SortOrder>,
 
-    /// Ids of tips the user has already seen/acknowledged. Drives the unseen
-    /// badge count. Ids come from
-    /// [`crate::tips`] and are stable, so this list stays meaningful across
-    /// upgrades.
+    /// Ids of tips seen before the tips feature was removed; kept so old state round-trips.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tips_seen: Vec<String>,
 
@@ -1467,21 +1464,6 @@ pub struct SessionConfig {
     )]
     pub favorites_first: bool,
 
-    /// Show occasional discovery tips: the `💡` badge in the footer, the
-    /// browsable tips overlay, and the one-time earned pop. Turn this off to
-    /// hide the badge and stop tips from popping; seen/earned state still lives
-    /// in `app_state`. A global UX preference, not profile-overridable. See
-    /// [`crate::tips`].
-    #[serde(default = "default_true")]
-    #[setting(
-        label = "Tips",
-        widget = "toggle",
-        category = "Interaction",
-        global_only,
-        summary = "Show an occasional tip in the footer."
-    )]
-    pub show_tips: bool,
-
     /// Keep an aoe-managed worktree session's directory leaf in sync with its
     /// title. When enabled (default), renaming the session also moves its
     /// worktree directory, and new sessions derive the directory leaf from the
@@ -1749,7 +1731,6 @@ impl Default for SessionConfig {
             unread_indicator: true,
             show_session_colors: true,
             favorites_first: true,
-            show_tips: true,
             tie_workdir_to_name: true,
         }
     }
@@ -3443,6 +3424,18 @@ pub fn update_app_state<R>(f: impl FnOnce(&mut AppStateConfig) -> R) -> Result<R
     match outcome {
         Ok((result, _)) => Ok(result),
         Err(never) => match never {},
+    }
+}
+
+/// Called only after a creation is committed, never for a restart or a placeholder.
+pub(crate) fn record_session_creations(count: usize) {
+    if count == 0 {
+        return;
+    }
+    if let Err(error) = update_app_state(|state| {
+        state.sessions_created = state.sessions_created.saturating_add(count as u64);
+    }) {
+        tracing::warn!(%error, "Failed to persist session creation count");
     }
 }
 

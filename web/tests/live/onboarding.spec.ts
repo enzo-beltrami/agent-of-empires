@@ -1,4 +1,4 @@
-// First-run surfaces: tutorial and tips of the day.
+// First-run surface: the tutorial.
 
 import type { Page } from "@playwright/test";
 import { test, expect } from "../helpers/liveTest";
@@ -9,8 +9,6 @@ const presentAsRealBrowser = (page: Page) =>
 
 type ApiJson = {
   app_state?: { has_seen_web_tour?: boolean };
-  tips?: { id: string; seen?: boolean }[];
-  enabled?: boolean;
 } | null;
 const fetchJson = (page: Page, path: string): Promise<ApiJson> =>
   page.evaluate(async (p) => {
@@ -40,9 +38,6 @@ test("first-run tutorial: auto-launch, skip, persist, re-trigger, and the Settin
   const tourStep = (title: string) => page.getByRole("alertdialog", { name: title, exact: true });
   const firstStep = tourStep("Search and commands");
   await presentAsRealBrowser(page);
-  // Tips would also auto-pop after reload; keep the tour the only modal here.
-  const disableTipsRes = await page.request.post(`${serve.baseUrl}/api/tips/show`, { data: { enabled: false } });
-  expect(disableTipsRes.ok(), "failed to disable tips before tutorial isolation").toBeTruthy();
 
   await page.goto(serve.baseUrl);
   // #1834: the theme welcome shows first.
@@ -136,66 +131,4 @@ test("a read-only dashboard keeps a Settings intro fold on the device across a r
   await page.reload();
   await expect(about).toBeVisible({ timeout: 10_000 });
   await expect(intro).toBeHidden();
-});
-
-// #2292: tip of the day, shared seen state with the TUI.
-test.describe("tips", () => {
-  const PWA_TIP = "Install the dashboard as an app";
-
-  test("tips: auto-pops on startup and marks the shown tip seen", async ({ page, serve }) => {
-    await presentAsRealBrowser(page);
-    // Clear the earlier onboarding phases: theme welcome (localStorage) and tour (server).
-    await page.addInitScript(() => window.localStorage.setItem("aoe-welcome-seen", "1"));
-    await page.request.post(`${serve.baseUrl}/api/app-state/web-tour-seen`);
-    const postSeen = page.waitForResponse(
-      (r) => r.url().includes("/api/app-state/tip-seen") && r.request().method() === "POST",
-      { timeout: 15_000 },
-    );
-    await page.goto(serve.baseUrl);
-
-    await expect(page.getByRole("heading", { name: "Tip of the day" })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: PWA_TIP })).toBeVisible();
-    // The TUI-only tip never appears on the web.
-    await expect(page.getByText("Reuse the selected session's settings")).toBeHidden();
-    await expect(page.getByText(/Tip 1 of \d+/)).toBeVisible();
-
-    expect((await postSeen).status()).toBe(200);
-    await page.getByRole("button", { name: "Close" }).click();
-    await page.reload();
-    await expect(page.getByRole("button", { name: "Go to dashboard" })).toBeVisible({ timeout: 10_000 });
-    // The POST returns before config.toml is flushed.
-    await expect
-      .poll(
-        () =>
-          fetchJson(page, "/api/tips").then(
-            (data) => data?.tips?.find((t) => t.id === "install-dashboard-pwa")?.seen === true,
-          ),
-        { timeout: 10_000 },
-      )
-      .toBe(true);
-  });
-
-  test("tips: reopen from the menu and persist the startup toggle", async ({ page, serve }) => {
-    await page.goto(serve.baseUrl);
-    await expect(page.getByRole("button", { name: "Go to dashboard" })).toBeVisible({ timeout: 10_000 });
-    await openTopBarMenuItem(page, "Tips");
-    await expect(page.getByRole("heading", { name: "Tip of the day" })).toBeVisible();
-    const checkbox = page.getByRole("checkbox", { name: "Show tips on startup" });
-    await expect(checkbox).toBeChecked();
-
-    const postShow = page.waitForResponse(
-      (r) => r.url().includes("/api/tips/show") && r.request().method() === "POST",
-      { timeout: 10_000 },
-    );
-    await checkbox.uncheck();
-    expect((await postShow).status()).toBe(200);
-    await page.getByRole("button", { name: "Close" }).click();
-
-    await page.reload();
-    await expect(page.getByRole("button", { name: "Go to dashboard" })).toBeVisible({ timeout: 10_000 });
-    const tips = await fetchJson(page, "/api/tips");
-    expect(tips === null ? true : tips.enabled).toBe(false);
-    await openTopBarMenuItem(page, "Tips");
-    await expect(page.getByRole("checkbox", { name: "Show tips on startup" })).not.toBeChecked();
-  });
 });

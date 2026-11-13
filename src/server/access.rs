@@ -422,10 +422,8 @@ pub(super) const CITYHALL_MUTATION_ALLOW: &[(&str, &str)] = &[
     ("POST", "/api/presence"),
     // Per-device UI preferences / client log.
     ("PATCH", "/api/app-state/web-ui-state"),
-    ("POST", "/api/app-state/tip-seen"),
     ("POST", "/api/app-state/volume-ignores-globs-acknowledged"),
     ("POST", "/api/app-state/web-tour-seen"),
-    ("POST", "/api/tips/show"),
     ("POST", "/api/client-log"),
     // Notifications (owner-scoped) + auth / session (must stay open).
     ("POST", "/api/push/subscribe"),

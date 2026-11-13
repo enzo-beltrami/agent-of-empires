@@ -28,7 +28,6 @@ pub mod terminal;
 #[cfg(any(test, debug_assertions))]
 pub(crate) mod test_env_lock;
 pub mod theme;
-pub mod tips;
 pub mod tmux;
 mod util;
 mod yaml;

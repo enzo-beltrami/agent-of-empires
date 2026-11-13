@@ -124,13 +124,6 @@ const requestCases: RequestCase[] = [
     { body: { keep: "1", drop: null }, result: true },
   ],
   [
-    "GET /api/tips",
-    () => api.fetchTips(),
-    { respond: json({ enabled: true, tips: [] }), result: { enabled: true, tips: [] } },
-  ],
-  ["POST /api/app-state/tip-seen", () => api.markTipSeen("pin"), { body: { id: "pin" }, result: true }],
-  ["POST /api/tips/show", () => api.setShowTips(false), { body: { enabled: false }, result: true }],
-  [
     "GET /api/sandbox/volume-ignores-preview?path=%2Frepo%2Fa+b",
     () => api.fetchVolumeIgnoresPreview("/repo/a b"),
     { respond: json({ acknowledged: false, globs: [] }), result: { acknowledged: false, globs: [] } },

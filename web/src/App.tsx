@@ -27,7 +27,6 @@ import { useOrphanSweep } from "./hooks/useOrphanSweep";
 import { AcpPrefsProvider } from "./lib/acpPrefs";
 import { SessionActionProvider } from "./components/sidebar/SessionActionProvider";
 import { safeGetItem, safeRemoveItem } from "./lib/safeStorage";
-import { isAutomatedSession } from "./lib/onboarding";
 import { useWorkspaces } from "./hooks/useWorkspaces";
 import { useLastSessionRestore } from "./hooks/useLastSessionRestore";
 import { SCRATCH_GROUP_ID, useRepoGroups } from "./hooks/useRepoGroups";
@@ -182,8 +181,6 @@ import { LoginPage } from "./components/LoginPage";
 import { TokenEntryPage } from "./components/TokenEntryPage";
 import { LOGIN_REQUIRED_EVENT, TOKEN_EXPIRED_EVENT, resetTokenExpired } from "./lib/fetchInterceptor";
 import { AboutModal } from "./components/AboutModal";
-import { TipsModal } from "./components/TipsModal";
-import { useTips, shouldAutoPopTips } from "./hooks/useTips";
 import { CommandPalette } from "./components/command-palette/CommandPalette";
 import { useConversationSearch } from "./hooks/useConversationSearch";
 import { BannerStack } from "./components/BannerStack";
@@ -703,18 +700,6 @@ function AppContent({
   const { modeFor: shellModeFor, setMode: setShellMode } = usePairedShellModes();
   const [showSessionWizard, setShowSessionWizard] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const tipsAutoPoppedRef = useRef(false);
-  // Pending `requestAnimationFrame` id for the tips auto-pop, cancelled only on
-  // unmount so a dep-change re-render cannot orphan a committed open.
-  const tipsAutoPopFrameRef = useRef<number | null>(null);
-  // Whether the tour was already seen when this page loaded (set in the settings
-  // fetch below). Auto-pop keys off this, not the live tourSeen, so finishing
-  // the tour this session does not then pop tips on top of the first-run flow.
-  const tourSeenAtLoadRef = useRef<boolean | null>(null);
-  // All tips orchestration (open state, mark-seen, the show toggle, the auto-pop
-  // decision) lives in the hook / lib so it stays out of this component and is
-  // unit-tested directly.
-  const tips = useTips();
   const [showPalette, setShowPalette] = useState(false);
   // Palette content-search query (#2515); declared here so the keyboard
   // handlers below can clear it on close/toggle. Consumed lower down by
@@ -2208,9 +2193,6 @@ function AppContent({
       const seenAtLoad = backendSeen || legacySeen;
       setTourSeen(seenAtLoad);
       setTourSeenKnown(true);
-      // Capture whether onboarding was already done at load so completing the
-      // tour this session does not then pop the tip-of-the-day on top of it.
-      tourSeenAtLoadRef.current = seenAtLoad;
       if (legacySeen && !backendSeen) {
         void markWebTourSeen().then((ok) => {
           if (ok) safeRemoveItem(LEGACY_TOUR_SEEN_KEY);
@@ -2258,49 +2240,6 @@ function AppContent({
     seenKnown: tourSeenKnown,
     onSeen: handleTourSeen,
   });
-
-  // Auto-pop the tip-of-the-day once per load, after onboarding settles, like
-  // GIMP/DBeaver. Gated like the tour: only on a settled dashboard, only when a
-  // tip is unseen and tips are enabled, never while the welcome/tour
-  // flows are up, and never in an automated browser session (so the modal can't
-  // intercept the rest of the Playwright suite). Only for users who already
-  // finished onboarding before this load: first-run users get the welcome and
-  // tour, not a tips modal piled on top. Reopen any time from the menu.
-  useEffect(() => {
-    if (tipsAutoPoppedRef.current) return;
-    const gate = shouldAutoPopTips({
-      loaded: tips.loaded,
-      hasUnseen: tips.hasUnseen,
-      tourSeenAtLoad: tourSeenAtLoadRef.current,
-      onboardingReady: tourAutoLaunchReady && welcome.resolved,
-      tourActive: tour.isTourActive,
-      automated: isAutomatedSession(),
-    });
-    if (!gate) return;
-    tipsAutoPoppedRef.current = true;
-    // Defer one frame so the open happens off the effect body (mirrors the
-    // tour's begin()), keeping the state change out of the effect. The frame is
-    // deliberately NOT cancelled when this effect re-runs: `useTips()` returns a
-    // fresh object each render, so `tips` changes identity on every render and
-    // this effect re-runs constantly. Cancelling on re-run meant any render in
-    // the ~16ms before the frame fired (an in-flight fetch resolving, the 3s
-    // session poll) killed the pending open, and the ref guard above then
-    // stopped it from ever being rescheduled: the tip modal silently never
-    // appeared for that load. The ref already makes the pop one-shot, so the
-    // only cleanup needed is on unmount (below).
-    tipsAutoPopFrameRef.current = requestAnimationFrame(() => tips.open());
-  }, [tips, tourSeenKnown, tourAutoLaunchReady, welcome.resolved, tour.isTourActive]);
-
-  // Drop a still-pending auto-pop frame on unmount only, so a committed open is
-  // never cancelled by an unrelated re-render (see the effect above).
-  useEffect(
-    () => () => {
-      if (tipsAutoPopFrameRef.current !== null) {
-        cancelAnimationFrame(tipsAutoPopFrameRef.current);
-      }
-    },
-    [],
-  );
 
   // Hold the shell behind a placeholder until /api/about resolves, so
   // CityHall-gated affordances (Clone URL, advanced sidebar) never flash in
@@ -2358,7 +2297,6 @@ function AppContent({
               loginRequired={loginRequired}
               isOffline={!!error}
               isDevBuild={isDebugBuild(serverAbout)}
-              onOpenTips={tips.open}
               onGoDashboard={handleGoDashboard}
               onExitFocusMode={focusMode ? exitFocusMode : undefined}
               sidebarColumnVisible={!focusMode && !fullPageView && sidebarOpen}
@@ -2510,17 +2448,6 @@ function AppContent({
           {tour.tourElement}
 
           {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
-
-          {tips.isOpen && (
-            <TipsModal
-              tips={tips.tips}
-              startIndex={tips.startIndex}
-              enabled={tips.enabled}
-              onMarkSeen={tips.markSeen}
-              onSetEnabled={tips.setEnabled}
-              onClose={tips.close}
-            />
-          )}
 
           {showAbout && <AboutModal onClose={() => setShowAbout(false)} sessionId={activeSessionId} />}
 

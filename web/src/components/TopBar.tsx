@@ -41,9 +41,6 @@ interface Props {
    *  (port 8081 / `aoe_dev_` tmux / `~/.agent-of-empires-dev/`) are visually distinct from release builds at a
    *  glance, including in PWA installs where the port is not visible in the window chrome. */
   isDevBuild: boolean;
-  /** Opens the tip-of-the-day modal; wired into the overflow menu so tips are
-   *  re-readable any time, like GIMP/DBeaver's Help menu entry. */
-  onOpenTips: () => void;
   onGoDashboard: () => void;
   /** Set in a focus-mode window: an "All Sessions" button replaces the sidebar toggle and the dashboard logo. */
   onExitFocusMode?: () => void;
@@ -80,7 +77,6 @@ export function TopBar({
   loginRequired,
   isOffline,
   isDevBuild,
-  onOpenTips,
   onGoDashboard,
   onExitFocusMode,
   sidebarColumnVisible,
@@ -92,12 +88,11 @@ export function TopBar({
     const items: OverflowItem[] = [
       { label: "Help", onClick: onOpenHelp },
       { label: "Show tutorial", onClick: onStartTutorial },
-      { label: "Tips", onClick: onOpenTips },
       { label: "About", onClick: onOpenAbout },
     ];
     if (loginRequired) items.push({ label: "Sign out", onClick: onLogout });
     return items;
-  }, [onOpenHelp, onStartTutorial, onOpenTips, onOpenAbout, onLogout, loginRequired]);
+  }, [onOpenHelp, onStartTutorial, onOpenAbout, onLogout, loginRequired]);
 
   // The left zone only borrows the sidebar's width while that column is visible, so the compact rail only crowds
   // the wordmark in that combination.

@@ -1035,20 +1035,6 @@
       "reason": "Curates CityHall settings and wizard; writes 15-minute trash retention through the profile PATCH and retains it after a full reload and profile-qualified settings GET."
     },
     {
-      "id": "tips.panel",
-      "kind": "vitest",
-      "risk": "low",
-      "specs": ["src/components/__tests__/TipsModal.test.tsx"],
-      "components": ["web/src/components/TipsModal.tsx"]
-    },
-    {
-      "id": "tips.persistence",
-      "kind": "live-playwright",
-      "risk": "medium",
-      "specs": ["tests/live/onboarding.spec.ts"],
-      "components": ["web/src/components/TipsModal.tsx", "web/src/hooks/useTips.ts", "web/src/lib/api.ts"]
-    },
-    {
       "id": "app-shell.routing",
       "kind": "mocked-playwright",
       "risk": "high",

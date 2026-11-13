@@ -1028,7 +1028,7 @@ async fn import_sessions(profile: &str, args: ImportArgs) -> Result<()> {
         Ok(ids)
     })?;
 
-    crate::tips::record_session_creations(created_ids.len());
+    crate::session::config::record_session_creations(created_ids.len());
     println!("✓ Imported {} session(s).", created_ids.len());
 
     if structured {
