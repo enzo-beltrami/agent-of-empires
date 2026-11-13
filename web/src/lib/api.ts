@@ -2679,18 +2679,34 @@ export async function updateDeploy(id: string, change: { deployed?: boolean; tes
   return fetchOk(`/api/coordinator/deploys/${encodeURIComponent(id)}`, jsonInit("PATCH", change));
 }
 
-/** The coordinator's `NOTES.md`, shared between the user and the coordinator. */
-export async function fetchCoordinatorNotes(): Promise<string | null> {
+export interface CoordinatorNote {
+  id: string;
+  /** Markdown. */
+  text: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The coordinator's notes, shared between the user and the coordinator, oldest first. */
+export async function fetchCoordinatorNotes(): Promise<CoordinatorNote[] | null> {
   try {
     const res = await fetch("/api/coordinator/notes", { headers: ACCEPT_JSON });
-    return res.ok ? ((await res.json()) as { text: string }).text : null;
+    return res.ok ? ((await res.json()) as CoordinatorNote[]) : null;
   } catch {
     return null;
   }
 }
 
-export async function saveCoordinatorNotes(text: string): Promise<boolean> {
-  return fetchOk("/api/coordinator/notes", jsonInit("PUT", { text }));
+export async function addCoordinatorNote(text: string): Promise<{ ok: boolean; message?: string }> {
+  return okWithMessage("/api/coordinator/notes", jsonInit("POST", { text }));
+}
+
+export async function updateCoordinatorNote(id: string, text: string): Promise<{ ok: boolean; message?: string }> {
+  return okWithMessage(`/api/coordinator/notes/${encodeURIComponent(id)}`, jsonInit("PATCH", { text }));
+}
+
+export async function removeCoordinatorNote(id: string): Promise<boolean> {
+  return fetchOk(`/api/coordinator/notes/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export async function removeDeploy(id: string): Promise<boolean> {

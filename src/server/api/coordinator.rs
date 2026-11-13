@@ -237,37 +237,86 @@ pub async fn delete_coordinator_deploy(
     }
 }
 
-#[derive(Serialize, serde::Deserialize)]
-pub struct NotesBody {
+#[derive(serde::Deserialize)]
+pub struct NoteBody {
     pub text: String,
 }
 
-pub async fn get_coordinator_notes() -> Response {
+pub async fn list_coordinator_notes() -> Response {
     match tokio::task::spawn_blocking(crate::session::coordinator::notes).await {
-        Ok(Ok(text)) => Json(NotesBody { text }).into_response(),
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(notes) => Json(notes).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
-pub async fn put_coordinator_notes(
+pub async fn add_coordinator_note(
     State(state): State<Arc<AppState>>,
-    body: Result<Json<NotesBody>, axum::extract::rejection::JsonRejection>,
+    body: Result<Json<NoteBody>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
     if state.read_only {
         return super::read_only_response();
     }
-    let Json(NotesBody { text }) = match body {
+    let Json(NoteBody { text }) = match body {
         Ok(body) => body,
         Err(rejection) => return rejection.into_response(),
     };
-    match tokio::task::spawn_blocking(move || {
-        crate::session::coordinator::write_notes(&text, false)
-    })
-    .await
+    match tokio::task::spawn_blocking(move || crate::session::coordinator::add_note(&text)).await {
+        Ok(Ok(note)) => (StatusCode::CREATED, Json(note)).into_response(),
+        Ok(Err(error)) => api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_note",
+            format!("{error:#}"),
+        ),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn update_coordinator_note(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    body: Result<Json<NoteBody>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if state.read_only {
+        return super::read_only_response();
+    }
+    let Json(NoteBody { text }) = match body {
+        Ok(body) => body,
+        Err(rejection) => return rejection.into_response(),
+    };
+    match tokio::task::spawn_blocking(move || crate::session::coordinator::update_note(&id, &text))
+        .await
     {
-        Ok(Ok(_)) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Ok(Some(note))) => Json(note).into_response(),
+        Ok(Ok(None)) => note_not_found(),
+        Ok(Err(error)) => api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_note",
+            format!("{error:#}"),
+        ),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn delete_coordinator_note(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    if state.read_only {
+        return super::read_only_response();
+    }
+    match tokio::task::spawn_blocking(move || crate::session::coordinator::remove_note(&id)).await {
+        Ok(Ok(true)) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Ok(false)) => note_not_found(),
         _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+fn note_not_found() -> Response {
+    api_error(
+        StatusCode::NOT_FOUND,
+        "note_not_found",
+        "No note with that id",
+    )
 }
 
 fn deploy_not_found() -> Response {
