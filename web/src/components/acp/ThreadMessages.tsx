@@ -51,7 +51,7 @@ export function UserMessage() {
         <div className="acp-copy-host flex max-w-[80%] min-w-0 flex-col items-end">
           <div
             data-testid="user-message-bubble"
-            className="flex min-w-0 flex-col gap-1.5 rounded-2xl rounded-br-sm border border-surface-700 bg-surface-800/70 p-1.5 text-sm"
+            className="flex max-w-full min-w-0 flex-col gap-1.5 rounded-2xl rounded-br-sm border border-surface-700 bg-surface-800/70 p-1.5 text-sm"
           >
             <SharedBubbleContext.Provider value>{parts}</SharedBubbleContext.Provider>
           </div>
@@ -119,7 +119,7 @@ function UserText({ text }: { text: string }) {
   }
   return (
     <div className="acp-copy-host flex max-w-[80%] min-w-0 flex-col items-end">
-      <div className="min-w-0 rounded-2xl rounded-br-sm border border-surface-700 bg-surface-800/70 px-3 py-1.5 text-sm">
+      <div className="max-w-full min-w-0 rounded-2xl rounded-br-sm border border-surface-700 bg-surface-800/70 px-3 py-1.5 text-sm">
         <Markdown text={text} smooth={false} breaks />
       </div>
       <div className="acp-copy-reveal">
