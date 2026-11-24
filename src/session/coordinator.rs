@@ -14,7 +14,7 @@ pub const MCP_SERVER_NAME: &str = "aoe";
 const INSTRUCTIONS: &str = include_str!("coordinator/CLAUDE.md");
 const WORKFLOW: &str = include_str!("coordinator/WORKFLOW.md");
 
-/// Claude Code permissions: every `aoe` tool, and edits to its own notes and workflow, run
+/// Claude Code permissions: every `aoe` tool, and edits to its own instructions and workflow, run
 /// without a prompt.
 const SETTINGS: &str = r#"{
   "permissions": {
@@ -183,36 +183,80 @@ pub fn remove_deploy(id: &str) -> Result<bool> {
 }
 
 /// The user's notes, shared with the coordinator, which keeps what it is asked to remember here.
-const NOTES: &str = "NOTES.md";
+pub(crate) const NOTES: &str = "notes.json";
 
-/// The notes; empty when there are none.
-pub fn notes() -> Result<String> {
-    match std::fs::read_to_string(coordinator_dir()?.join(NOTES)) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        other => Ok(other?),
+/// One note in the coordinator's Notes tab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Note {
+    pub id: String,
+    /// Markdown.
+    pub text: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl Note {
+    pub(crate) fn new(text: String, at: chrono::DateTime<chrono::Utc>) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().simple().to_string()[..12].to_string(),
+            text,
+            created_at: at,
+            updated_at: at,
+        }
     }
 }
 
-/// Replaces the notes, or with `append` adds `text` on lines of its own; returns the result.
-pub fn write_notes(text: &str, append: bool) -> Result<String> {
-    let _files = FILES
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let notes = if append {
-        let mut notes = notes()?;
-        if !notes.is_empty() && !notes.ends_with('\n') {
-            notes.push('\n');
-        }
-        notes.push_str(text);
-        if !text.ends_with('\n') {
-            notes.push('\n');
-        }
-        notes
-    } else {
-        text.to_string()
-    };
-    write_atomic(&coordinator_dir()?, NOTES, notes.as_bytes())?;
-    Ok(notes)
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub(crate) struct NoteList {
+    #[serde(default)]
+    pub(crate) notes: Vec<Note>,
+}
+
+/// The notes, oldest first.
+pub fn notes() -> Vec<Note> {
+    load::<NoteList>(NOTES).notes
+}
+
+fn note_text(text: &str) -> Result<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        anyhow::bail!("The note is empty");
+    }
+    Ok(text.to_string())
+}
+
+pub fn add_note(text: &str) -> Result<Note> {
+    let note = Note::new(note_text(text)?, chrono::Utc::now());
+    update(NOTES, |list: &mut NoteList| {
+        list.notes.push(note.clone());
+        Ok(())
+    })?;
+    Ok(note)
+}
+
+/// Replaces a note's text; `None` when there is no such id.
+pub fn update_note(id: &str, text: &str) -> Result<Option<Note>> {
+    let text = note_text(text)?;
+    update(NOTES, |list: &mut NoteList| {
+        Ok(list.notes.iter_mut().find(|n| n.id == id).map(|n| {
+            if n.text != text {
+                n.text = text;
+                n.updated_at = chrono::Utc::now();
+            }
+            n.clone()
+        }))
+    })
+    .map(|(_, note)| note)
+}
+
+/// Removes a note; false when there is no such id.
+pub fn remove_note(id: &str) -> Result<bool> {
+    update(NOTES, |list: &mut NoteList| {
+        let before = list.notes.len();
+        list.notes.retain(|n| n.id != id);
+        Ok(list.notes.len() != before)
+    })
+    .map(|(_, removed)| removed)
 }
 
 /// Serializes read-modify-write of the coordinator's files across dashboard and MCP callers.
@@ -316,14 +360,27 @@ mod tests {
 
     #[test]
     #[serial]
-    fn notes_round_trip_and_start_empty() {
+    fn notes_add_edit_and_remove_individually() {
         let _home = crate::session::test_support::isolate_app_dir();
-        assert_eq!(notes().unwrap(), "");
-        write_notes("- ship PI-1921 Friday", false).unwrap();
-        assert_eq!(notes().unwrap(), "- ship PI-1921 Friday");
-        let appended = write_notes("- ask about tests", true).unwrap();
-        assert_eq!(appended, "- ship PI-1921 Friday\n- ask about tests\n");
-        assert_eq!(notes().unwrap(), appended);
+        assert!(notes().is_empty());
+        let first = add_note("  ship PI-1921 Friday \n").unwrap();
+        assert_eq!(first.text, "ship PI-1921 Friday");
+        let second = add_note("ask about tests").unwrap();
+        assert!(add_note("   ").is_err());
+        assert_eq!(notes(), [first.clone(), second.clone()]);
+
+        let edited = update_note(&first.id, "ship PI-1921 Monday")
+            .unwrap()
+            .unwrap();
+        assert_eq!(edited.text, "ship PI-1921 Monday");
+        assert!(edited.updated_at >= first.updated_at);
+        assert_eq!(edited.created_at, first.created_at);
+        assert!(update_note(&first.id, " ").is_err());
+        assert_eq!(update_note("nope", "x").unwrap(), None);
+
+        assert!(remove_note(&second.id).unwrap());
+        assert!(!remove_note(&second.id).unwrap());
+        assert_eq!(notes(), [edited]);
     }
 
     #[test]

@@ -28,10 +28,11 @@ update `WORKFLOW.md` and say what you changed.
   as the user's dashboard shows them. Start any status answer here.
 - `list_deploys`, `add_deploy`, `set_deployed`, `remove_deploy`: the deploy
   list of pull requests waiting to ship. The user sees it beside this chat.
-- `read_notes`, `write_notes`: the notes the user keeps in the Notes tab
-  beside this chat. Read them for context. When asked to note or remember
-  something, `write_notes` with `append: true`; replace the whole text only to
-  edit what is there, keeping everything the user wrote.
+- `list_notes`, `add_note`, `update_note`, `remove_note`: the individual
+  notes the user keeps in the Notes tab beside this chat. Read them for
+  context. When asked to note or remember something, `add_note` with one topic
+  per note; `update_note` a note only to change what it says, keeping what the
+  user wrote; `remove_note` only when asked.
 - `stop_session`, `archive_session` (`archived: false` unarchives),
   `trash_session` / `restore_session`: tidy sessions up. Archive is the normal
   way to put away finished or unused work; only trash what the user asked to

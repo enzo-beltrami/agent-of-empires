@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{read_only_refusal, tool_error, McpServer};
 use crate::server::api::{deploy_views, session_summary, DeployView, SessionSummary};
-use crate::session::coordinator::{self, Deploy, NewDeploy};
+use crate::session::coordinator::{self, Deploy, NewDeploy, Note};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(super) struct AddDeployParams {
@@ -41,17 +41,27 @@ pub(super) struct DeployIdParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub(super) struct WriteNotesParams {
-    /// Markdown. Replaces all the notes unless `append` is set.
+pub(super) struct AddNoteParams {
+    /// Markdown; one topic per note.
     text: String,
-    /// Add `text` on new lines at the end instead of replacing the notes.
-    #[serde(default)]
-    append: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(super) struct UpdateNoteParams {
+    id: String,
+    /// The note's new Markdown, replacing its old text.
+    text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(super) struct NoteIdParams {
+    id: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub(super) struct Notes {
-    text: String,
+pub(super) struct NoteList {
+    /// Oldest first.
+    notes: Vec<Note>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -164,31 +174,63 @@ impl McpServer {
     }
 
     #[rmcp::tool(
-        description = "The user's notes: the Markdown they keep in the dashboard's Notes tab \
-            beside the coordinator, for anything they want to keep track of."
+        description = "The user's notes: individual Markdown notes they keep in the dashboard's \
+            Notes tab beside the coordinator, oldest first."
     )]
-    async fn read_notes(&self) -> Result<Json<Notes>, CallToolResult> {
-        match blocking(coordinator::notes).await.map_err(|e| *e)? {
-            Ok(text) => Ok(Json(Notes { text })),
-            Err(e) => Err(tool_error("internal", format!("{e:#}"))),
-        }
+    async fn list_notes(&self) -> Result<Json<NoteList>, CallToolResult> {
+        let notes = blocking(coordinator::notes).await.map_err(|e| *e)?;
+        Ok(Json(NoteList { notes }))
     }
 
     #[rmcp::tool(
-        description = "Change the user's notes. Prefer `append: true` to add an item; replace \
-            the whole text only to edit or remove what is there, after `read_notes`, keeping \
-            everything the user wrote that you were not asked to change. Returns the notes."
+        description = "Add a note to the user's Notes tab. Keep one topic per note, so it can be \
+            edited or removed on its own."
     )]
-    async fn write_notes(
+    async fn add_note(
         &self,
-        Parameters(p): Parameters<WriteNotesParams>,
-    ) -> Result<Json<Notes>, CallToolResult> {
+        Parameters(p): Parameters<AddNoteParams>,
+    ) -> Result<Json<Note>, CallToolResult> {
         self.writable().map_err(|e| *e)?;
-        match blocking(move || coordinator::write_notes(&p.text, p.append))
+        blocking(move || coordinator::add_note(&p.text))
+            .await
+            .map_err(|e| *e)?
+            .map(Json)
+            .map_err(|e| tool_error("invalid_request", format!("{e:#}")))
+    }
+
+    #[rmcp::tool(
+        description = "Replace one note's text. Read it with `list_notes` first and keep what \
+            the user wrote that you were not asked to change."
+    )]
+    async fn update_note(
+        &self,
+        Parameters(p): Parameters<UpdateNoteParams>,
+    ) -> Result<Json<Note>, CallToolResult> {
+        self.writable().map_err(|e| *e)?;
+        let id = p.id.clone();
+        match blocking(move || coordinator::update_note(&p.id, &p.text))
             .await
             .map_err(|e| *e)?
         {
-            Ok(text) => Ok(Json(Notes { text })),
+            Ok(Some(note)) => Ok(Json(note)),
+            Ok(None) => Err(note_not_found(&id)),
+            Err(e) => Err(tool_error("invalid_request", format!("{e:#}"))),
+        }
+    }
+
+    #[rmcp::tool(description = "Remove one note. Only remove notes the user asked you to.")]
+    async fn remove_note(
+        &self,
+        Parameters(p): Parameters<NoteIdParams>,
+    ) -> Result<Json<NoteList>, CallToolResult> {
+        self.writable().map_err(|e| *e)?;
+        let id = p.id.clone();
+        match blocking(move || coordinator::remove_note(&p.id))
+            .await
+            .map_err(|e| *e)?
+        {
+            Ok(true) => self.list_notes().await,
+            Ok(false) => Err(note_not_found(&id)),
             Err(e) => Err(tool_error("internal", format!("{e:#}"))),
         }
     }
@@ -294,6 +336,10 @@ fn coordinator_message(title: &str, id: &str, message: &str, needs_decision: boo
         "[aoe message] \"{title}\" (`{id}`) {kind}:\n\n{}\n\n{ask}",
         message.trim()
     )
+}
+
+fn note_not_found(id: &str) -> CallToolResult {
+    tool_error("not_found", format!("No note with id {id}"))
 }
 
 fn deploy_not_found(id: &str) -> CallToolResult {

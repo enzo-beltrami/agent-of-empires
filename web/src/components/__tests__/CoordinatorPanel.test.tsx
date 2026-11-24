@@ -13,7 +13,7 @@ beforeEach(() => {
     needs_action: [row("c", "waiting")],
     idle: [],
   });
-  vi.spyOn(api, "fetchCoordinatorNotes").mockResolvedValue("");
+  vi.spyOn(api, "fetchCoordinatorNotes").mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -85,17 +85,69 @@ describe("CoordinatorPanel", () => {
     await waitFor(() => expect(mark).toHaveBeenCalledWith("d1", { tested: true }));
   });
 
-  it("loads the notes and saves edits after typing pauses", async () => {
+  const note = (id: string, text: string, created: string, updated = created): api.CoordinatorNote => ({
+    id,
+    text,
+    created_at: created,
+    updated_at: updated,
+  });
+
+  it("lists notes newest first and adds one with Ctrl+Enter", async () => {
     vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
-    vi.spyOn(api, "fetchCoordinatorNotes").mockResolvedValue("- ship Friday");
-    const save = vi.spyOn(api, "saveCoordinatorNotes").mockResolvedValue(true);
+    const notes = [
+      note("n1", "ship Friday", "2026-11-12T10:00:00Z"),
+      note("n2", "ask about tests", "2026-11-13T10:00:00Z"),
+    ];
+    vi.spyOn(api, "fetchCoordinatorNotes")
+      .mockResolvedValueOnce(notes)
+      .mockResolvedValue([...notes, note("n3", "call Ana", "2026-11-13T11:00:00Z")]);
+    const add = vi.spyOn(api, "addCoordinatorNote").mockResolvedValue({ ok: true });
     render(<CoordinatorPanel onOpenSession={vi.fn()} />);
     fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
-    const notes = await screen.findByDisplayValue("- ship Friday");
+    await waitFor(() => expect(screen.getAllByTestId("note-card")).toHaveLength(2));
+    expect(screen.getAllByTestId("note-card")[0]!.textContent).toContain("ask about tests");
 
-    fireEvent.change(notes, { target: { value: "- ship Friday\n- ask about PI-1921" } });
-    await waitFor(() => expect(save).toHaveBeenCalledWith("- ship Friday\n- ask about PI-1921"));
-    expect(save).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(screen.getByTestId("notes-status").textContent).toBe("Saved"));
+    const box = screen.getByLabelText("New note");
+    fireEvent.change(box, { target: { value: "call Ana" } });
+    fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(add).toHaveBeenCalledWith("call Ana"));
+    await waitFor(() => expect(screen.getAllByTestId("note-card")).toHaveLength(3));
+    expect((box as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("edits one note, cancels with Escape, and deletes only after confirming", async () => {
+    vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
+    vi.spyOn(api, "fetchCoordinatorNotes").mockResolvedValue([note("n1", "ship Friday", "2026-11-12T10:00:00Z")]);
+    const update = vi.spyOn(api, "updateCoordinatorNote").mockResolvedValue({ ok: true });
+    const remove = vi.spyOn(api, "removeCoordinatorNote").mockResolvedValue(true);
+    render(<CoordinatorPanel onOpenSession={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    await screen.findByText("ship Friday");
+
+    fireEvent.click(screen.getByText("Edit"));
+    fireEvent.change(screen.getByLabelText("Edit note"), { target: { value: "ship Monday" } });
+    fireEvent.keyDown(screen.getByLabelText("Edit note"), { key: "Escape" });
+    expect(screen.queryByLabelText("Edit note")).toBeNull();
+    expect(update).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("Edit"));
+    fireEvent.change(screen.getByLabelText("Edit note"), { target: { value: "ship Monday" } });
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("n1", "ship Monday"));
+
+    fireEvent.click(screen.getByText("Delete"));
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Confirm delete"));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("n1"));
+  });
+
+  it("shows why a note was not added", async () => {
+    vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
+    vi.spyOn(api, "addCoordinatorNote").mockResolvedValue({ ok: false, message: "The note is empty" });
+    render(<CoordinatorPanel onOpenSession={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    fireEvent.change(screen.getByLabelText("New note"), { target: { value: "x" } });
+    fireEvent.click(screen.getByText("Add note"));
+    expect(await screen.findByText("The note is empty")).toBeTruthy();
   });
 });

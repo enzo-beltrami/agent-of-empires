@@ -62,8 +62,14 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
         )
         .route(
             "/api/coordinator/notes",
-            get(api::get_coordinator_notes)
-                .put(api::put_coordinator_notes)
+            get(api::list_coordinator_notes)
+                .post(api::add_coordinator_note)
+                .layer(read_only.clone()),
+        )
+        .route(
+            "/api/coordinator/notes/{id}",
+            patch(api::update_coordinator_note)
+                .delete(api::delete_coordinator_note)
                 .layer(read_only.clone()),
         )
         .route(
