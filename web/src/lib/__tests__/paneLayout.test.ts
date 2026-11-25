@@ -173,7 +173,7 @@ describe("usePaneLayout migration + persistence", () => {
     ],
     [
       "of removed built-in panes",
-      [{ tabs: ["coordinator", "diff", "terminal:0"], active: "coordinator" }],
+      [{ tabs: ["plugin-panel", "diff", "terminal:0"], active: "plugin-panel" }],
       [{ tabs: ["assistant"], active: "assistant" }],
     ],
   ])("drops tab ids %s on load", (_name, right, bottom) => {

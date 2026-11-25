@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { ExternalLink, X } from "lucide-react";
 
 import {
@@ -15,7 +15,7 @@ import {
   type CoordinatorSummaryRow,
   type Deploy,
 } from "../lib/api";
-import { deployGroups, deployLabel, isCoordinatorPath, ticketLabel } from "../lib/coordinator";
+import { deployGroups, deployLabel, ticketLabel } from "../lib/coordinator";
 
 const REFRESH_MS = 5000;
 
@@ -41,7 +41,7 @@ interface Props {
   onOpenSession: (id: string) => void;
 }
 
-/** Beside the coordinator's chat: what every session needs, and the PRs waiting to ship. */
+/** The coordinator session's pane: what every session needs, and the PRs waiting to ship. */
 export function CoordinatorPanel({ onOpenSession }: Props) {
   const [summary, setSummary] = useState<CoordinatorSummary | null>(null);
   const [deploys, setDeploys] = useState<Deploy[]>([]);
@@ -65,10 +65,7 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
   const pending = deploys.filter((d) => !d.deployed_at).length;
 
   return (
-    <aside
-      data-testid="coordinator-panel"
-      className="hidden lg:flex w-80 shrink-0 flex-col border-l border-surface-700/60 bg-surface-850"
-    >
+    <div data-testid="coordinator-panel" className="flex h-full min-h-0 flex-col bg-surface-850">
       <div
         role="tablist"
         aria-label="Coordinator panel"
@@ -184,7 +181,7 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
       >
         <NotesList />
       </section>
-    </aside>
+    </div>
   );
 }
 
@@ -486,20 +483,3 @@ function DeployCard({
 }
 
 /** Adds the panel beside a session's view when that session is the coordinator. */
-export function WithCoordinatorPanel({
-  projectPath,
-  onOpenSession,
-  children,
-}: {
-  projectPath: string;
-  onOpenSession: (id: string) => void;
-  children: ReactNode;
-}) {
-  if (!isCoordinatorPath(projectPath)) return children;
-  return (
-    <div className="flex h-full min-h-0">
-      <div className="flex min-w-0 flex-1 flex-col">{children}</div>
-      <CoordinatorPanel onOpenSession={onOpenSession} />
-    </div>
-  );
-}

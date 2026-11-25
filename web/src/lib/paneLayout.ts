@@ -206,8 +206,8 @@ export function removeAllTerminals(layout: DockLayout): DockLayout {
   return next;
 }
 
-// Sub agents and Files are opt-in, so they never auto-open as empty tabs.
-const AUTO_OPEN_PANES = BUILTIN_PANES.filter((p) => p.id !== "agents" && p.id !== "files");
+// Sub agents, Files and Coordinator are opt-in, so they never auto-open as empty or foreign tabs.
+const AUTO_OPEN_PANES = BUILTIN_PANES.filter((p) => p.id === "diff" || p.id === "terminal");
 
 function defaultTemplate(): DockLayout {
   // Narrow viewports start empty and use the mobile picker.

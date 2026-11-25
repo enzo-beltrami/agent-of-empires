@@ -103,7 +103,7 @@ import { onSettingsChanged } from "./lib/settingsEvents";
 import { parseSystemHealthEnabled, SystemHealthEnabledContext } from "./lib/systemHealth";
 import { toastBus, reportError } from "./lib/toastBus";
 import { isCoordinatorPath, isCoordinatorWorkspace } from "./lib/coordinator";
-import { WithCoordinatorPanel } from "./components/CoordinatorPanel";
+import { CoordinatorPanel } from "./components/CoordinatorPanel";
 import { restartForUpdate } from "./lib/restartForUpdate";
 import { startPendingCreates } from "./lib/pendingCreates";
 import { isAbsolutePath, resolveToRepoRelative, type FileRef } from "./lib/fileRef";
@@ -741,13 +741,15 @@ function AppContent({
     // The background-agents panel only applies to structured-view (ACP)
     // sessions; a plain terminal session never launches sub-agents.
     ...(activeSession?.view === "structured" ? ["agents"] : []),
+    ...(isCoordinatorPath(activeSession?.project_path) ? ["coordinator"] : []),
   ];
   // The mobile picker/single-pane view reuses this exact list (minus
   // "terminal", desktop's multi-instance extra-terminal dock, which has no
   // single-pane mobile equivalent) so its available views can't drift from
   // desktop's capability/session gating the way the sub-agents and Files
   // panes previously did.
-  const mobilePaneIds = allPaneIds.filter((id) => id !== "terminal");
+  // The coordinator pane has no single-pane mobile view.
+  const mobilePaneIds = allPaneIds.filter((id) => id !== "terminal" && id !== "coordinator");
 
   // Fetch the diff when the panel is actually showing: on desktop when the
   // split is expanded, on mobile when the diff view is the active pane.
@@ -1761,6 +1763,9 @@ function AppContent({
       if (id === "agents") {
         return <BackgroundAgentsPanel sessionId={activeSessionId} />;
       }
+      if (id === "coordinator") {
+        return <CoordinatorPanel onOpenSession={handleSelectSession} />;
+      }
       if (id === "files") {
         // Remount on session switch so the selected file (and any in-flight
         // read) resets instead of requesting the old path from the new
@@ -1818,44 +1823,42 @@ function AppContent({
                       persistent={webSettings.persistentStructuredViews}
                       maxPersistentViews={webSettings.maxPersistentStructuredViews}
                       renderSession={(session, active, selected) => (
-                        <WithCoordinatorPanel projectPath={session.project_path} onOpenSession={handleSelectSession}>
-                          <Suspense fallback={<AcpLoadingFallback />}>
-                            <StructuredView
-                              active={active}
-                              selected={selected}
-                              sessionId={session.id}
-                              acpWorkerState={session.acp_worker_state ?? "absent"}
-                              rateLimitAutoResume={session.rate_limit_auto_resume}
-                              settingsHref={autoResumeSettingsHref(session.profile, serverAbout)}
-                              tool={session.tool}
-                              acpAgent={session.acp_agent ?? null}
-                              startedBefore={hasStartedBefore(session)}
-                              acpProvider={session.acp_provider ?? null}
-                              clearAliases={session.clear_aliases}
-                              compactAliases={session.compact_aliases}
-                              onStartSession={() => void handleStartSession(session.id)}
-                              archivedAt={session.archived_at ?? null}
-                              snoozedUntil={session.snoozed_until ?? null}
-                              trashedAt={session.trashed_at ?? null}
-                              onRestore={
-                                session.trashed_at
-                                  ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, session.id))
-                                  : undefined
-                              }
-                              onOpenFileRef={handleOpenFileRef}
-                              fileRefSession={session}
-                              onOpenAgentsPane={openAgentsPane}
-                              isSandboxed={session.is_sandboxed}
-                              onSwitchToTerminal={
-                                canSwitchToTerminal ? () => handleSwitchView(session.id, false) : undefined
-                              }
-                              onOpenTerminal={
-                                canSwitchToTerminal ? (mode) => handleOpenPairedTerminal(session.id, mode) : undefined
-                              }
-                              canRestartAgent={canRestartAgent}
-                            />
-                          </Suspense>
-                        </WithCoordinatorPanel>
+                        <Suspense fallback={<AcpLoadingFallback />}>
+                          <StructuredView
+                            active={active}
+                            selected={selected}
+                            sessionId={session.id}
+                            acpWorkerState={session.acp_worker_state ?? "absent"}
+                            rateLimitAutoResume={session.rate_limit_auto_resume}
+                            settingsHref={autoResumeSettingsHref(session.profile, serverAbout)}
+                            tool={session.tool}
+                            acpAgent={session.acp_agent ?? null}
+                            startedBefore={hasStartedBefore(session)}
+                            acpProvider={session.acp_provider ?? null}
+                            clearAliases={session.clear_aliases}
+                            compactAliases={session.compact_aliases}
+                            onStartSession={() => void handleStartSession(session.id)}
+                            archivedAt={session.archived_at ?? null}
+                            snoozedUntil={session.snoozed_until ?? null}
+                            trashedAt={session.trashed_at ?? null}
+                            onRestore={
+                              session.trashed_at
+                                ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, session.id))
+                                : undefined
+                            }
+                            onOpenFileRef={handleOpenFileRef}
+                            fileRefSession={session}
+                            onOpenAgentsPane={openAgentsPane}
+                            isSandboxed={session.is_sandboxed}
+                            onSwitchToTerminal={
+                              canSwitchToTerminal ? () => handleSwitchView(session.id, false) : undefined
+                            }
+                            onOpenTerminal={
+                              canSwitchToTerminal ? (mode) => handleOpenPairedTerminal(session.id, mode) : undefined
+                            }
+                            canRestartAgent={canRestartAgent}
+                          />
+                        </Suspense>
                       )}
                     />
                   ) : (

@@ -2241,6 +2241,14 @@
       "notes": "Coordinator sessions are kept out of every axis and pinned above all headers in their own tinted section, unaffected by the filter, collapse or drag."
     },
     {
+      "id": "coordinator.pane",
+      "kind": "mocked-playwright",
+      "risk": "medium",
+      "specs": ["tests/coordinator-pane.spec.ts", "src/components/__tests__/CoordinatorPanel.test.tsx"],
+      "components": ["web/src/components/CoordinatorPanel.tsx", "web/src/lib/panes.ts", "web/src/App.tsx"],
+      "notes": "The coordinator's Sessions, Deploys and Notes panel is a dockable pane whose activity-bar toggle appears only on the coordinator session; desktop only."
+    },
+    {
       "id": "sidebar.projects-section-listing",
       "kind": "mocked-playwright",
       "risk": "low",

@@ -1,8 +1,8 @@
 // Built-in dockable panes.
 
-import { Bot, FileDiff, FolderTree, SquareTerminal, type LucideIcon } from "lucide-react";
+import { Bot, FileDiff, FolderTree, Sparkles, SquareTerminal, type LucideIcon } from "lucide-react";
 
-export type BuiltinPaneId = "diff" | "terminal" | "agents" | "files";
+export type BuiltinPaneId = "diff" | "terminal" | "agents" | "files" | "coordinator";
 
 export type DockLocation = "right" | "bottom";
 
@@ -18,6 +18,8 @@ export const BUILTIN_PANES: PaneDescriptor[] = [
   { id: "files", title: "Files", icon: FolderTree, defaultDock: "right" },
   { id: "terminal", title: "Terminal", icon: SquareTerminal, defaultDock: "right" },
   { id: "agents", title: "Sub agents", icon: Bot, defaultDock: "right" },
+  // Offered only on the coordinator session.
+  { id: "coordinator", title: "Coordinator", icon: Sparkles, defaultDock: "right" },
 ];
 
 // Terminals are the only multi-instance pane: tab `terminal:<n>` maps to tmux index n.
