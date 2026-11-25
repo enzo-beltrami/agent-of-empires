@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CopyMarkdownButton } from "../../acp/CopyMarkdownButton";
-import { CommentMarkdown } from "./CommentMarkdown";
+import { PlainMarkdown } from "../../PlainMarkdown";
 import { buildDiffCommentsPrompt, compareComments, type DiffCommentsCardPayload } from "./buildPrompt";
 import type { DiffComment } from "./types";
 import { highlightSnippet } from "../../../lib/snippetHighlighter";
@@ -32,7 +32,7 @@ export function DiffCommentsUserCard({ payload }: Props) {
       </div>
       {intro && (
         <div className="mb-3 border-l-2 border-surface-700 pl-3 text-text-secondary">
-          <CommentMarkdown text={intro} />
+          <PlainMarkdown text={intro} />
         </div>
       )}
       <ul className="flex flex-col gap-3">
@@ -41,14 +41,14 @@ export function DiffCommentsUserCard({ payload }: Props) {
             <CommentHeader comment={c} isMultiRepo={isMultiRepo} />
             <HighlightedSnippet code={c.capturedSnippet} language={c.language} filePath={c.filePath} />
             <div className="px-3 py-2 text-text-primary">
-              <CommentMarkdown text={c.body} />
+              <PlainMarkdown text={c.body} />
             </div>
           </li>
         ))}
       </ul>
       {outro && (
         <div className="mt-3 border-l-2 border-surface-700 pl-3 text-text-secondary">
-          <CommentMarkdown text={outro} />
+          <PlainMarkdown text={outro} />
         </div>
       )}
     </div>

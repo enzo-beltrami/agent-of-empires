@@ -20,6 +20,7 @@ import {
   type Deploy,
 } from "../lib/api";
 import { deployGroups, deployLabel, ticketLabel } from "../lib/coordinator";
+import { PlainMarkdown } from "./PlainMarkdown";
 
 const REFRESH_MS = 5000;
 
@@ -328,7 +329,7 @@ function NoteCard({ note, onChanged }: { note: CoordinatorNote; onChanged: () =>
   return (
     <li data-testid="note-card" className="group rounded-md border border-surface-700/60 bg-surface-900 px-2.5 py-2">
       {editing === null ? (
-        <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-primary">{note.text}</p>
+        <PlainMarkdown text={note.text} />
       ) : (
         <textarea
           aria-label="Edit note"
@@ -519,7 +520,8 @@ function DeployCard({
 
 /** Adds the panel beside a session's view when that session is the coordinator. */
 
-/** One open decision: pick an option or write an answer, which goes back to the coordinator, or dismiss it. */
+/** One open decision: pick an option, write an answer, or both, then send it back to the coordinator; or
+ *  dismiss it. Picking only selects, so a misclick sends nothing. */
 function DecisionCard({
   decision,
   onOpenSession,
@@ -530,6 +532,7 @@ function DecisionCard({
   onSettled: () => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -542,9 +545,10 @@ function DecisionCard({
       else setError(result.message ?? "Could not reach the coordinator.");
     });
   };
-  const answer = (text: string) => settle(() => answerCoordinatorDecision(decision.id, text));
-  const submitDraft = () => {
-    if (draft.trim() && !busy) answer(draft.trim());
+  const typed = draft.trim();
+  const reply = picked && typed ? `${picked}\n\n${typed}` : (picked ?? typed);
+  const submit = () => {
+    if (reply && !busy) settle(() => answerCoordinatorDecision(decision.id, reply));
   };
   const sessionId = decision.session_id;
 
@@ -559,9 +563,7 @@ function DecisionCard({
           {decision.session_title ?? sessionId}
         </button>
       )}
-      <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-primary">
-        {decision.question}
-      </p>
+      <PlainMarkdown text={decision.question} />
       {decision.options.length > 0 && (
         <div className="mt-2 flex flex-col gap-1">
           {decision.options.map((option, i) => (
@@ -569,10 +571,11 @@ function DecisionCard({
               key={option}
               type="button"
               disabled={busy}
-              onClick={() => answer(option)}
+              aria-pressed={picked === option}
+              onClick={() => setPicked(picked === option ? null : option)}
               className={`${SMALL_BUTTON} h-auto min-h-7 py-1 text-left border ${
-                i === 0
-                  ? "border-brand-500/50 bg-brand-500/10 text-text-primary enabled:hover:bg-brand-500/20"
+                picked === option
+                  ? "border-brand-500 bg-brand-500/25 text-text-primary"
                   : "border-surface-700 bg-surface-800 text-text-secondary enabled:hover:bg-surface-700/60"
               }`}
             >
@@ -587,8 +590,8 @@ function DecisionCard({
         value={draft}
         rows={2}
         onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={noteKeys(submitDraft)}
-        placeholder="Or write your own answer"
+        onKeyDown={noteKeys(submit)}
+        placeholder={picked ? "Add a note (optional)" : "Or write your own answer"}
         className={`${FIELD} mt-2`}
       />
       {error && <p className="mt-1 text-xs text-status-error-text">{error}</p>}
@@ -606,9 +609,9 @@ function DecisionCard({
         </button>
         <button
           type="button"
-          disabled={busy || !draft.trim()}
-          onClick={submitDraft}
-          className={`${SMALL_BUTTON} border border-surface-700 bg-surface-800 text-text-secondary enabled:hover:bg-surface-700/60`}
+          disabled={busy || !reply}
+          onClick={submit}
+          className={`${SMALL_BUTTON} border border-brand-500/50 bg-brand-500/15 text-text-primary enabled:hover:bg-brand-500/25 disabled:border-surface-700 disabled:bg-surface-800 disabled:text-text-dim`}
         >
           Send answer
         </button>

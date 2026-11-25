@@ -175,13 +175,24 @@ describe("CoordinatorPanel", () => {
     fireEvent.click(screen.getByText("PI-2871"));
     expect(onOpen).toHaveBeenCalledWith("s-9");
 
-    fireEvent.click(screen.getByRole("button", { name: /Yes, behind a flag/ }));
-    await waitFor(() => expect(answer).toHaveBeenLastCalledWith("d-1", "Yes, behind a flag"));
-
+    // Picking only selects; nothing is sent until Send answer.
     const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
+    const yes = screen.getByRole("button", { name: /Yes, behind a flag/ });
+    fireEvent.click(yes);
+    expect(yes.getAttribute("aria-pressed")).toBe("true");
+    expect(answer).not.toHaveBeenCalled();
+    fireEvent.click(send);
+    await waitFor(() => expect(answer).toHaveBeenLastCalledWith("d-1", "Yes, behind a flag"));
+
+    // A typed note goes with the picked option.
     fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "  only for EU  " } });
-    await waitFor(() => expect(send.disabled).toBe(false));
+    fireEvent.click(send);
+    await waitFor(() => expect(answer).toHaveBeenLastCalledWith("d-1", "Yes, behind a flag\n\nonly for EU"));
+
+    // Clicking the option again unpicks it, leaving the typed answer alone.
+    fireEvent.click(yes);
+    expect(yes.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(send);
     await waitFor(() => expect(answer).toHaveBeenLastCalledWith("d-1", "only for EU"));
 
@@ -197,8 +208,36 @@ describe("CoordinatorPanel", () => {
     vi.spyOn(api, "answerCoordinatorDecision").mockResolvedValue({ ok: false, message: "Try again in a moment." });
     render(<CoordinatorPanel onOpenSession={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: /Yes/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
     expect(await screen.findByText("Try again in a moment.")).toBeTruthy();
     expect(screen.getByText("Merge?")).toBeTruthy();
+  });
+
+  it("renders Markdown in decision questions and notes, with links opening in a new tab", async () => {
+    vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
+    vi.spyOn(api, "fetchCoordinatorDecisions").mockResolvedValue([
+      {
+        id: "d-3",
+        question: "Ship **PI-1** now?\n\n- risk: `billing`\n- see [the PR](https://github.com/o/r/pull/1)",
+        options: [],
+        asked_at: "2026-11-25T10:00:00Z",
+      },
+    ]);
+    vi.spyOn(api, "fetchCoordinatorNotes").mockResolvedValue([
+      note("n1", "# Plan\n1. *first*", "2026-11-12T10:00:00Z"),
+    ]);
+    render(<CoordinatorPanel onOpenSession={vi.fn()} />);
+
+    expect((await screen.findByText("PI-1")).tagName).toBe("STRONG");
+    expect(screen.getByText("billing").tagName).toBe("CODE");
+    expect(screen.getAllByRole("listitem").length).toBeGreaterThanOrEqual(2);
+    const link = screen.getByRole("link", { name: "the PR" });
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    expect((await screen.findByRole("heading", { name: "Plan" })).tagName).toBe("H1");
+    expect(screen.getByText("first").tagName).toBe("EM");
   });
 
   it("shows an empty Decisions tab when nothing waits", async () => {
