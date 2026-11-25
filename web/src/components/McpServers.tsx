@@ -7,6 +7,8 @@ import {
   createMcpServer,
   updateMcpServer,
   deleteMcpServer,
+  startMcpSignIn,
+  signOutMcp,
   type McpServerInput,
   type McpServersResponse,
   type McpServerView,
@@ -25,16 +27,66 @@ function detail(s: McpServerView): string {
   return base;
 }
 
+/** Remote servers without their own Authorization header can sign in through AoE. */
+function canSignIn(s: McpServerView): boolean {
+  return s.transport !== "stdio" && !!s.url && !(s.headerNames ?? []).some((h) => h.toLowerCase() === "authorization");
+}
+
+function SignInControls({
+  s,
+  busy,
+  onSignIn,
+  onSignOut,
+}: {
+  s: McpServerView;
+  busy: boolean;
+  onSignIn: () => void;
+  onSignOut: () => void;
+}) {
+  const button =
+    "px-2.5 py-1 text-[12px] rounded border border-surface-700 text-text-secondary hover:bg-surface-700 disabled:opacity-50";
+  if (s.oauth === "signed_in") {
+    return (
+      <>
+        <span className="font-mono text-[11px] text-status-running" data-testid={`mcp-signed-in-${s.name}`}>
+          signed in
+        </span>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onSignOut}
+          aria-label={`sign out of ${s.name}`}
+          className={button}
+        >
+          Sign out
+        </button>
+      </>
+    );
+  }
+  return (
+    <>
+      {s.oauth === "expired" && <span className="font-mono text-[11px] text-status-waiting">sign-in expired</span>}
+      <button type="button" disabled={busy} onClick={onSignIn} aria-label={`sign in to ${s.name}`} className={button}>
+        {s.oauth === "expired" ? "Sign in again" : "Sign in"}
+      </button>
+    </>
+  );
+}
+
 function ServerRow({
   s,
   busy,
   onEdit,
   onDelete,
+  onSignIn,
+  onSignOut,
 }: {
   s: McpServerView;
   busy: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
+  onSignIn?: () => void;
+  onSignOut?: () => void;
 }) {
   return (
     <div className="py-2 border-b border-surface-700">
@@ -42,8 +94,13 @@ function ServerRow({
         <span className="font-body text-[13px] font-medium text-text-primary">{s.name}</span>
         <span className="font-mono text-[11px] text-text-muted">({s.transport})</span>
         <ProvenanceBadge label={s.provenance} />
+        {onSignIn && onSignOut && (
+          <span className="ml-auto flex items-center gap-2">
+            <SignInControls s={s} busy={busy} onSignIn={onSignIn} onSignOut={onSignOut} />
+          </span>
+        )}
         {onEdit && onDelete && (
-          <span className="ml-auto flex gap-2">
+          <span className={`${onSignIn ? "" : "ml-auto "}flex gap-2`}>
             <button
               type="button"
               disabled={busy}
@@ -146,6 +203,7 @@ export function McpServers({ readOnly = false }: { readOnly?: boolean } = {}) {
   const [notice, setNotice] = useState<string | null>(null);
   const [form, setForm] = useState<{ server?: McpServerView } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [signInLink, setSignInLink] = useState<{ name: string; url: string } | null>(null);
 
   const load = useCallback(async () => {
     const result = await fetchMcpServers();
@@ -159,7 +217,12 @@ export function McpServers({ readOnly = false }: { readOnly?: boolean } = {}) {
 
   useEffect(() => {
     const first = setTimeout(load, 0);
-    return () => clearTimeout(first);
+    // Sign-in finishes in another tab; coming back shows the new state.
+    window.addEventListener("focus", load);
+    return () => {
+      clearTimeout(first);
+      window.removeEventListener("focus", load);
+    };
   }, [load]);
 
   const agent = data?.agent ?? "";
@@ -218,6 +281,36 @@ export function McpServers({ readOnly = false }: { readOnly?: boolean } = {}) {
     await load();
   };
 
+  const onSignIn = async (s: McpServerView) => {
+    if (!s.url) return;
+    // Opened before the request so the browser treats it as a user-initiated popup.
+    const popup = window.open("about:blank", "_blank");
+    setBusy(true);
+    const result = await startMcpSignIn(s.url);
+    setBusy(false);
+    if ("error" in result) {
+      popup?.close();
+      setNotice(result.error);
+      return;
+    }
+    if (popup) {
+      popup.opener = null;
+      popup.location.href = result.authorizationUrl;
+      setNotice(`Finish signing in to "${s.name}" in the new tab.`);
+    } else {
+      setSignInLink({ name: s.name, url: result.authorizationUrl });
+    }
+  };
+
+  const onSignOut = async (s: McpServerView) => {
+    if (!s.url) return;
+    setBusy(true);
+    const ok = await signOutMcp(s.url);
+    setBusy(false);
+    setNotice(ok ? null : `Could not sign out of "${s.name}".`);
+    await load();
+  };
+
   const onDelete = async (name: string) => {
     if (!window.confirm(`Delete MCP server "${name}"?`)) return;
     setBusy(true);
@@ -256,6 +349,21 @@ export function McpServers({ readOnly = false }: { readOnly?: boolean } = {}) {
       {notice && (
         <p className="font-body text-[12px] text-status-waiting mb-3" role="status">
           {notice}
+        </p>
+      )}
+
+      {signInLink && (
+        <p className="font-body text-[12px] text-text-secondary mb-3" role="status">
+          The browser blocked the sign-in tab.{" "}
+          <a
+            href={signInLink.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setSignInLink(null)}
+            className="text-brand-500 underline"
+          >
+            Sign in to {signInLink.name}
+          </a>
         </p>
       )}
 
@@ -306,6 +414,8 @@ export function McpServers({ readOnly = false }: { readOnly?: boolean } = {}) {
                     : undefined
                 }
                 onDelete={owned ? () => onDelete(s.name) : undefined}
+                onSignIn={!readOnly && canSignIn(s) ? () => onSignIn(s) : undefined}
+                onSignOut={!readOnly && canSignIn(s) ? () => onSignOut(s) : undefined}
               />
             );
           })}

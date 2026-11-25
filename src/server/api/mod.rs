@@ -460,6 +460,8 @@ mod tests {
                 "delete_coordinator_note",
                 "update_coordinator_note",
                 "update_coordinator_deploy",
+                "answer_coordinator_decision",
+                "dismiss_coordinator_decision",
             ],
         ),
         (
@@ -571,6 +573,11 @@ mod tests {
             "push.rs",
             include_str!("../push.rs"),
             &["push::subscribe", "push::test", "push::unsubscribe"],
+        ),
+        (
+            "../mcp_oauth.rs",
+            include_str!("../mcp_oauth.rs"),
+            &["mcp_oauth::start", "mcp_oauth::sign_out"],
         ),
         (
             "plugins.rs",

@@ -3,4 +3,5 @@
 pub mod mcp_model;
 pub mod mcp_overrides;
 pub mod mcp_state;
+pub mod oauth;
 pub mod project_mcp;

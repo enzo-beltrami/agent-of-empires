@@ -10,10 +10,10 @@ use super::access::{access_policy, cityhall_gate, security_headers};
 use super::assets::{serve_asset, serve_index, serve_public_file};
 use super::state::AppState;
 use crate::server::{
-    acp_ws, api, auth, live_ws, login, passkeys, push, runtime_ws, session_status_ws,
+    acp_ws, api, auth, live_ws, login, mcp_oauth, passkeys, push, runtime_ws, session_status_ws,
 };
 
-pub(super) fn build_router(state: Arc<AppState>) -> Router {
+fn build_router(state: Arc<AppState>) -> Router {
     use axum::routing::{delete, get, patch, post, put};
     let read_only = axum::middleware::from_fn_with_state(state.clone(), api::read_only_gate);
 
@@ -112,6 +112,14 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
         )
         .route("/api/mcp/servers/{name}/keep", post(api::keep_mcp_server))
         .route("/api/mcp/servers/{name}/drop", post(api::drop_mcp_server))
+        .route(
+            "/api/mcp/oauth/start",
+            post(mcp_oauth::start).layer(read_only.clone()),
+        )
+        .route(
+            "/api/mcp/oauth/sign-out",
+            post(mcp_oauth::sign_out).layer(read_only.clone()),
+        )
         // Unified skills management surface (#3050).
         .route("/api/skills", get(api::list_skills).post(api::create_skill))
         // Static, so it wins over `/api/skills/{directory}` and a managed skill
@@ -531,6 +539,20 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
     .layer(compression_layer())
     .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
     .with_state(state)
+}
+
+/// The served app: [`build_router`] plus routes that authorize themselves; see [`mcp_oauth`].
+pub(super) fn build_app(state: Arc<AppState>) -> Router {
+    build_router(state).merge(unauthenticated_routes())
+}
+
+fn unauthenticated_routes() -> Router {
+    use axum::routing::{any, get};
+    Router::new()
+        .route("/api/mcp/oauth/callback", get(mcp_oauth::callback))
+        .route("/mcp-proxy/{key}", any(mcp_oauth::proxy))
+        .layer(axum::middleware::from_fn(security_headers))
+        .layer(axum::middleware::from_fn(http_request_span))
 }
 
 /// gzip/zstd for JSON bodies only. Upgrades, SSE, replay streams and assets

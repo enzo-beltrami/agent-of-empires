@@ -825,7 +825,7 @@ impl<S: BroadcastSink> Drain<S> {
             "MCP re-resolution on respawn failed",
         )
         .await;
-        super::launch::add_aoe_relay(
+        super::launch::complete_mcp_servers(
             &mut config.mcp_servers,
             config.sandbox_info.is_some(),
             session_id,

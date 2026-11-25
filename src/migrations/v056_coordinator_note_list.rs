@@ -39,7 +39,7 @@ fn run_in(dir: &Path) -> Result<()> {
             list.notes.push(Note::new(text.to_string(), at));
             crate::session::atomic_write(&list_path, &serde_json::to_vec_pretty(&list)?)?;
         }
-        tracing::info!(target: "migration", "moved the coordinator notes into notes.json");
+        tracing::info!(target: "migrations", "moved the coordinator notes into notes.json");
     }
     fs::remove_file(&legacy).with_context(|| format!("Remove {}", legacy.display()))
 }

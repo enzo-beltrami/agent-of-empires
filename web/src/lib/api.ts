@@ -2344,6 +2344,8 @@ export interface McpServerView {
   headerNames?: string[];
   provenance: string;
   shadowed?: string[];
+  /** Present when AoE holds an OAuth token for this server's URL. */
+  oauth?: "signed_in" | "expired";
 }
 
 export interface McpConflictView {
@@ -2423,6 +2425,22 @@ export function updateMcpServer(name: string, input: McpServerInput): Promise<Mc
 
 export function deleteMcpServer(name: string): Promise<McpMutationResult> {
   return mcpMutation(`/api/mcp/servers/${encodeURIComponent(name)}`, "DELETE");
+}
+
+/** The URL to open in the browser to approve AoE's access, or why sign-in could not start. */
+export async function startMcpSignIn(url: string): Promise<{ authorizationUrl: string } | { error: string }> {
+  try {
+    const res = await fetch("/api/mcp/oauth/start", jsonInit("POST", { url }));
+    const body = (await res.json().catch(() => ({}))) as { authorizationUrl?: string; message?: string };
+    if (res.ok && body.authorizationUrl) return { authorizationUrl: body.authorizationUrl };
+    return { error: body.message ?? `Sign-in failed (${res.status})` };
+  } catch {
+    return { error: "Sign-in failed: network error" };
+  }
+}
+
+export function signOutMcp(url: string): Promise<boolean> {
+  return fetchOk("/api/mcp/oauth/sign-out", jsonInit("POST", { url }));
 }
 
 // --- Skills (#3050) ---

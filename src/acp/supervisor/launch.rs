@@ -520,7 +520,7 @@ impl<S: BroadcastSink> Supervisor<S> {
             "MCP resolution task failed",
         )
         .await;
-        add_aoe_relay(
+        complete_mcp_servers(
             &mut mcp_servers,
             req.sandbox_info.is_some(),
             &req.session_id,
@@ -1450,15 +1450,16 @@ fn resolve_mcp_layers(
     crate::acp::mcp_config::project_servers_to_acp(merged, session_env)
 }
 
-/// Every host session gets AoE's own tools, so it can reach the coordinator. A sandbox cannot
-/// run the host binary, the relay needs the daemon to serve `/mcp`, and a server the user
-/// named `aoe` themselves wins.
-pub(super) fn add_aoe_relay(
+/// Adds tokens for OAuth-signed-in servers, and AoE's own tools to every host session so it can
+/// reach the coordinator. A sandbox cannot run the host binary, the relay needs the daemon to
+/// serve `/mcp`, and a server the user named `aoe` themselves wins.
+pub(super) fn complete_mcp_servers(
     servers: &mut Vec<agent_client_protocol::v1::schema::McpServer>,
     sandboxed: bool,
     session_id: &str,
     profile: Option<&str>,
 ) {
+    crate::session::mcp::oauth::authorize_servers(servers, sandboxed);
     let aoe_named = |server: &agent_client_protocol::v1::schema::McpServer| {
         crate::acp::mcp_config::server_name(server) == crate::session::coordinator::MCP_SERVER_NAME
     };
@@ -2556,7 +2557,7 @@ time.sleep(60)
         let aoe_servers = |sandboxed: bool| {
             let cwd = tmp.path().to_path_buf();
             let mut servers = resolve_mcp_layers("claude", "s1", None, &cwd, &[], None);
-            add_aoe_relay(&mut servers, sandboxed, "s1", None);
+            complete_mcp_servers(&mut servers, sandboxed, "s1", None);
             let val = serde_json::to_value(&servers).unwrap();
             val.as_array()
                 .unwrap()

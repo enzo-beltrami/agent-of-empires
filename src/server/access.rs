@@ -451,6 +451,8 @@ pub(super) const CITYHALL_MUTATION_DENY: &[(&str, &str)] = &[
     ("POST", "/api/coordinator/notes"),
     ("PATCH", "/api/coordinator/notes/{id}"),
     ("DELETE", "/api/coordinator/notes/{id}"),
+    ("POST", "/api/coordinator/decisions/{id}"),
+    ("DELETE", "/api/coordinator/decisions/{id}"),
     ("POST", "/api/sandbox/image-pull"),
     ("POST", "/api/sandbox/image-dismiss"),
     ("POST", "/api/sessions/creation-trust"),
@@ -489,6 +491,8 @@ pub(super) const CITYHALL_MUTATION_DENY: &[(&str, &str)] = &[
     ("POST", "/api/mcp/servers/{name}/drop"),
     ("POST", "/api/mcp/servers/{name}/keep"),
     ("POST", "/api/mcp/servers/{name}/resolve"),
+    ("POST", "/api/mcp/oauth/start"),
+    ("POST", "/api/mcp/oauth/sign-out"),
     // Skills mutations.
     ("POST", "/api/skills"),
     ("POST", "/api/skills/sync"),

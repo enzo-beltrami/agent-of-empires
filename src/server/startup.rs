@@ -18,7 +18,7 @@ use super::access::{host_from_url, resolve_access_policy};
 use super::acp_events::{acp_event_listener, seed_acp_statuses};
 use super::disk_watch::{disk_watcher_consumer, init_disk_watch_subscriptions};
 use super::ip_discovery::{local_published_hosts, IpKind};
-use super::router::build_router;
+use super::router::build_app;
 use super::startup_recovery::{daemon_startup_recovery_cascade, daemon_startup_recovery_mark};
 use super::state::{
     AppState, CleanupDefaultsCache, ACP_CHANNEL_CAPACITY, CLEANUP_DEFAULTS_TTL,
@@ -586,6 +586,15 @@ pub(crate) async fn start_server(
         .map(|listener| listener.local_addr().map(|addr| addr.port()))
         .transpose()?
         .unwrap_or(0);
+    if local_port != 0 {
+        let loopback = match host {
+            "0.0.0.0" | "localhost" => "127.0.0.1".to_string(),
+            "::" => "[::1]".to_string(),
+            h if h.contains(':') => format!("[{h}]"),
+            h => h.to_string(),
+        };
+        crate::session::mcp::oauth::set_proxy_base(format!("http://{loopback}:{local_port}"));
+    }
     let socket_path = crate::daemon::transport::local_socket_path()?;
     let (unix_listener, _socket_lease) = super::peer::bind_private(&socket_path).await?;
 
@@ -908,7 +917,7 @@ pub(crate) async fn start_server(
     });
     state.session_service.bind_native_state(&state);
 
-    let app = build_router(state.clone());
+    let app = build_app(state.clone());
 
     // Maintenance starts persisted ACP workers, including later CLI additions.
 

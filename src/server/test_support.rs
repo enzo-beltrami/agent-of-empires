@@ -401,7 +401,7 @@ pub async fn has_disk_watch_handle(state: &Arc<AppState>, profile: &str) -> bool
 }
 
 pub fn build_router_for_test(state: Arc<AppState>) -> axum::Router {
-    super::router::build_router(state)
+    super::router::build_app(state)
 }
 
 pub async fn disk_watch_handle_count(state: &Arc<AppState>) -> usize {

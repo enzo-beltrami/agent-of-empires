@@ -12,6 +12,8 @@ const dropMcpServer = vi.fn<[string, string], Promise<boolean>>();
 const createMcpServer = vi.fn<[string, McpServerInput], Promise<McpMutationResult>>();
 const updateMcpServer = vi.fn<[string, McpServerInput], Promise<McpMutationResult>>();
 const deleteMcpServer = vi.fn<[string], Promise<McpMutationResult>>();
+const startMcpSignIn = vi.fn<[string], Promise<{ authorizationUrl: string } | { error: string }>>();
+const signOutMcp = vi.fn<[string], Promise<boolean>>();
 
 vi.mock("../../lib/api", () => ({
   fetchMcpServers: (agent?: string) => fetchMcpServers(agent),
@@ -22,6 +24,8 @@ vi.mock("../../lib/api", () => ({
   createMcpServer: (name: string, input: McpServerInput) => createMcpServer(name, input),
   updateMcpServer: (name: string, input: McpServerInput) => updateMcpServer(name, input),
   deleteMcpServer: (name: string) => deleteMcpServer(name),
+  startMcpSignIn: (url: string) => startMcpSignIn(url),
+  signOutMcp: (url: string) => signOutMcp(url),
 }));
 
 // Imported after the mock is registered.
@@ -46,6 +50,8 @@ beforeEach(() => {
   createMcpServer.mockReset();
   updateMcpServer.mockReset();
   deleteMcpServer.mockReset();
+  startMcpSignIn.mockReset();
+  signOutMcp.mockReset();
 });
 
 describe("McpServers read view", () => {
@@ -298,5 +304,54 @@ describe("McpServers add / edit / delete", () => {
     await waitFor(() => expect(deleteMcpServer).toHaveBeenCalledWith("fs"));
     await waitFor(() => expect(screen.queryByLabelText("delete fs")).toBeNull());
     confirm.mockRestore();
+  });
+});
+
+describe("McpServers OAuth sign-in", () => {
+  const CI = { name: "ci", transport: "http", url: "https://ci.example/mcp", provenance: "global" };
+
+  it("offers sign-in only for remote servers without their own Authorization header", async () => {
+    fetchMcpServers.mockResolvedValue(
+      response({
+        effective: [
+          CI,
+          { ...CI, name: "keyed", headerNames: ["authorization"] },
+          { name: "fs", transport: "stdio", command: "mcp-fs", provenance: "global" },
+        ],
+      }),
+    );
+    render(<McpServers />);
+    expect(await screen.findByLabelText("sign in to ci")).toBeTruthy();
+    expect(screen.queryByLabelText("sign in to keyed")).toBeNull();
+    expect(screen.queryByLabelText("sign in to fs")).toBeNull();
+  });
+
+  it("sends the tab it opened to the authorization URL, and closes it when sign-in cannot start", async () => {
+    fetchMcpServers.mockResolvedValue(response({ effective: [CI] }));
+    const popup = { opener: {}, location: { href: "about:blank" }, close: vi.fn() };
+    const open = vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+    startMcpSignIn.mockResolvedValueOnce({ authorizationUrl: "https://auth.example/authorize?state=s" });
+    render(<McpServers />);
+    fireEvent.click(await screen.findByLabelText("sign in to ci"));
+    await waitFor(() => expect(popup.location.href).toBe("https://auth.example/authorize?state=s"));
+    expect(startMcpSignIn).toHaveBeenCalledWith("https://ci.example/mcp");
+    expect(popup.opener).toBeNull();
+
+    startMcpSignIn.mockResolvedValueOnce({ error: "Could not start sign-in: no registration endpoint" });
+    fireEvent.click(screen.getByLabelText("sign in to ci"));
+    expect(await screen.findByText("Could not start sign-in: no registration endpoint")).toBeTruthy();
+    expect(popup.close).toHaveBeenCalled();
+    open.mockRestore();
+  });
+
+  it("shows a signed-in server and signs out of it", async () => {
+    fetchMcpServers.mockResolvedValue(response({ effective: [{ ...CI, oauth: "signed_in" }] }));
+    signOutMcp.mockResolvedValue(true);
+    render(<McpServers />);
+    expect(await screen.findByTestId("mcp-signed-in-ci")).toBeTruthy();
+    fetchMcpServers.mockResolvedValue(response({ effective: [{ ...CI, oauth: "expired" }] }));
+    fireEvent.click(screen.getByLabelText("sign out of ci"));
+    await waitFor(() => expect(signOutMcp).toHaveBeenCalledWith("https://ci.example/mcp"));
+    expect((await screen.findByLabelText("sign in to ci")).textContent).toBe("Sign in again");
   });
 });

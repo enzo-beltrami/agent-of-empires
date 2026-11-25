@@ -21,6 +21,7 @@ pub mod lifecycle_feed;
 pub mod live_ws;
 pub mod login;
 mod mcp;
+mod mcp_oauth;
 mod open_url;
 mod pane;
 pub mod passkeys;

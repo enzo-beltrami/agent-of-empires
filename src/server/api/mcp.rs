@@ -60,7 +60,7 @@ pub async fn get_mcp_servers(
         let view = mcp_model::resolve_surface(&agent, profile_opt, &cwd);
         serde_json::json!({
             "agent": agent,
-            "effective": view.effective.iter().map(|s| s.redacted()).collect::<Vec<_>>(),
+            "effective": view.effective.iter().map(with_sign_in).collect::<Vec<_>>(),
             "keptOnRemoval": view.kept_on_removal.iter().map(|s| s.redacted()).collect::<Vec<_>>(),
             "conflicts": view
                 .conflicts
@@ -87,6 +87,20 @@ pub async fn get_mcp_servers(
         )
             .into_response(),
     }
+}
+
+/// The redacted view plus, for a remote server, whether AoE holds an OAuth token for it.
+fn with_sign_in(server: &ResolvedMcpServer) -> serde_json::Value {
+    let redacted = server.redacted();
+    let sign_in = redacted
+        .url
+        .as_deref()
+        .and_then(crate::session::mcp::oauth::status);
+    let mut value = serde_json::to_value(redacted).unwrap_or_default();
+    if let (Some(sign_in), Some(object)) = (sign_in, value.as_object_mut()) {
+        object.insert("oauth".into(), serde_json::json!(sign_in));
+    }
+    value
 }
 
 #[derive(Debug, Deserialize)]
