@@ -7,7 +7,9 @@ repository, organization, and repository then Group is gone. In Manual sort,
 drag a Group header to reorder Groups and a Session row to reorder it or move
 it into another Group. A Group header's menu renames it (server-side, across
 the profiles its Sessions belong to) and sets its color; its `+` opens the
-wizard with the Group prefilled.
+wizard with the Group prefilled. The coordinator is pinned above every Group
+in its own tinted section, on both axes, and is never filtered, collapsed or
+dragged.
 
 Removed with the repository headers: per-repository aliases and colors,
 pinning a Project as a header, and the organization avatar. The Projects

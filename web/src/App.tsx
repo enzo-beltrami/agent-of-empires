@@ -29,7 +29,7 @@ import { SessionActionProvider } from "./components/sidebar/SessionActionProvide
 import { safeGetItem, safeRemoveItem } from "./lib/safeStorage";
 import { useWorkspaces } from "./hooks/useWorkspaces";
 import { useLastSessionRestore } from "./hooks/useLastSessionRestore";
-import { useSessionGroups } from "./hooks/useSessionGroups";
+import { useCoordinatorGroup, useSessionGroups } from "./hooks/useSessionGroups";
 import { useStatusGroups } from "./hooks/useStatusGroups";
 import { useAttentionJump } from "./hooks/useAttentionJump";
 import { nextAttentionSessionId, workspaceIsTrashed } from "./lib/sidebarSort";
@@ -102,7 +102,7 @@ import { settleSettingsIntrosReadOnly } from "./lib/settingsIntros";
 import { onSettingsChanged } from "./lib/settingsEvents";
 import { parseSystemHealthEnabled, SystemHealthEnabledContext } from "./lib/systemHealth";
 import { toastBus, reportError } from "./lib/toastBus";
-import { isCoordinatorPath } from "./lib/coordinator";
+import { isCoordinatorPath, isCoordinatorWorkspace } from "./lib/coordinator";
 import { WithCoordinatorPanel } from "./components/CoordinatorPanel";
 import { restartForUpdate } from "./lib/restartForUpdate";
 import { startPendingCreates } from "./lib/pendingCreates";
@@ -468,16 +468,22 @@ function AppContent({
     return undefined;
   }, [projectProfile, projectsReady]);
   const savedProjects = useMemo(() => listSavedProjects(projects), [projects]);
+  // The coordinator is pinned above every Group and status bucket, so it is kept out of both axes.
+  const [coordinatorWorkspaces, groupedWorkspaces] = useMemo(
+    () => [workspaces.filter(isCoordinatorWorkspace), workspaces.filter((ws) => !isCoordinatorWorkspace(ws))],
+    [workspaces],
+  );
+  const coordinatorGroup = useCoordinatorGroup(coordinatorWorkspaces);
   const {
     groups: sessionGroups,
     toggleGroupCollapsed,
     reorderGroups,
     setGroupColor,
     carryGroupPrefs,
-  } = useSessionGroups(workspaces, sidebarSortMode, workspaceOrdering);
+  } = useSessionGroups(groupedWorkspaces, sidebarSortMode, workspaceOrdering);
   // The status axis groups by execution status instead of by Group, so it owns its own grouping and collapse state.
   const { groups: statusGroups, toggleGroupCollapsed: toggleStatusGroupCollapsed } = useStatusGroups(
-    workspaces,
+    groupedWorkspaces,
     sidebarSortMode,
   );
   const sidebarGroups = sidebarAxis === "status" ? statusGroups : sessionGroups;
@@ -1574,7 +1580,11 @@ function AppContent({
   // Flattened, display-ordered session ids plus the subset needing attention,
   // sourced from the same sidebar model the user sees so jump-to-next follows
   // the visible order under any sort or axis.
-  const attentionJump = useAttentionJump(sidebarGroups);
+  const attentionGroups = useMemo(
+    () => (coordinatorGroup ? [coordinatorGroup, ...sidebarGroups] : sidebarGroups),
+    [coordinatorGroup, sidebarGroups],
+  );
+  const attentionJump = useAttentionJump(attentionGroups);
 
   const handleJumpToAttention = useCallback(() => {
     const next = nextAttentionSessionId(attentionJump.orderedIds, attentionJump.attention, activeSessionId);
@@ -2272,6 +2282,7 @@ function AppContent({
                 runtimeEpoch={runtimeEpoch}
                 onSessionMutation={applySessionMutation}
                 groups={sidebarGroups}
+                coordinator={coordinatorGroup}
                 trashedWorkspaces={trashedWorkspaces}
                 trashedCount={trashedCount}
                 trashLoaded={trashLoaded}

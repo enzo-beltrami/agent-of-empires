@@ -582,3 +582,40 @@ test.describe("sidebar status axis (#4867)", () => {
     await expect.poll(() => [...patched].sort()).toEqual(["s-run:unread", "s-wait:archive"]);
   });
 });
+
+test.describe("sidebar coordinator", () => {
+  test("the coordinator is pinned above every Group on both axes, outside them, and survives the filter", async ({
+    page,
+  }) => {
+    await installSidebarMocks(page, {
+      sessions: [
+        ...groupedSessions(),
+        {
+          id: "s-coord",
+          title: "Coordinator",
+          project_path: "/home/me/.config/agent-of-empires/coordinator",
+          branch: null,
+          group: "feature",
+          fields: { status: "Waiting" },
+        },
+      ],
+    });
+    await gotoDesktop(page);
+    const pinned = page.getByTestId("sidebar-coordinator");
+    const firstNavItem = page.locator("[role='navigation'] [data-sidebar-nav-item]").first();
+
+    for (const axis of ["group", "status"]) {
+      if (axis === "status") await pickAxis(page, page.locator(AXIS_TOGGLE), "status");
+      await expect(pinned.locator(ROW), axis).toHaveCount(1);
+      await expect(pinned.locator(ROW)).toContainText("Coordinator");
+      // Before any header, and in none of them.
+      await expect(firstNavItem).toHaveAttribute("data-testid", "sidebar-session-row");
+      await expect(page.locator(ROW).filter({ hasText: "Coordinator" }), axis).toHaveCount(1);
+    }
+
+    await page.getByLabel("Filter sessions").click();
+    await page.getByTestId("sidebar-filter-input").fill("refac");
+    await expect(pinned.locator(ROW)).toHaveCount(1);
+    await expect(page.locator(HEADER)).toHaveCount(1);
+  });
+});

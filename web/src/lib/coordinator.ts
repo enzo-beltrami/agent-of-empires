@@ -1,10 +1,16 @@
 import type { Deploy } from "./api";
+import type { Workspace } from "./types";
 
 // The coordinator's directory is `<app dir>/coordinator`; see `src/session/coordinator.rs`.
 const COORDINATOR_DIR_RE = /[\\/]\.?agent-of-empires(-dev)?[\\/]coordinator[\\/]?$/;
 
 export function isCoordinatorPath(path: string | null | undefined): boolean {
   return !!path && COORDINATOR_DIR_RE.test(path);
+}
+
+/** A workspace the sidebar pins above every Group: any of its sessions runs the coordinator. */
+export function isCoordinatorWorkspace(ws: Workspace): boolean {
+  return ws.sessions.some((s) => isCoordinatorPath(s.project_path));
 }
 
 /** `owner/repo/pull/12` shows as `repo#12`; anything else as the URL. */

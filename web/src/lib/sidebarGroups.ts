@@ -12,6 +12,8 @@ import {
 // Bucket for sessions with no `group_path`; also a localStorage collapse key.
 export const UNGROUPED_GROUP_ID = "__ungrouped__";
 
+export const COORDINATOR_GROUP_ID = "__coordinator__";
+
 // In the group axis `sessions` is a per-group slice, so use `workspace.id` for actions and `key` only for render/DnD identity.
 export interface SidebarWorkspaceView {
   key: string;
@@ -20,8 +22,11 @@ export interface SidebarWorkspaceView {
 
 export interface SidebarGroup {
   id: string;
-  /** A user Group reorders, renames, takes a color and accepts rows dropped from another; a status bucket does none. */
-  kind: "sessionGroup" | "status";
+  /**
+   * A user Group reorders, renames, takes a color and accepts rows dropped from another; a status bucket does
+   * none; the coordinator section is pinned above both and never collapses.
+   */
+  kind: "sessionGroup" | "status" | "coordinator";
   displayName: string;
   color: GroupColor | null;
   workspaces: SidebarWorkspaceView[];
@@ -180,6 +185,27 @@ export function buildStatusGroups(
       collapsed: opts.isCollapsed(id),
     };
   });
+}
+
+/** The coordinator's rows, kept out of every axis; `null` when there are none. */
+export function buildCoordinatorGroup(workspaces: Workspace[], idleDecayWindowMs: number): SidebarGroup | null {
+  if (workspaces.length === 0) return null;
+  const views = workspaces.map((ws) => ({
+    key: `${COORDINATOR_GROUP_ID}::${ws.id}`,
+    workspace: {
+      ...ws,
+      status: ws.sessions.some((s) => isSessionActive(s, idleDecayWindowMs)) ? "active" : "idle",
+    } satisfies Workspace,
+  }));
+  return {
+    id: COORDINATOR_GROUP_ID,
+    kind: "coordinator",
+    displayName: "Coordinator",
+    color: null,
+    workspaces: views,
+    status: views.some((v) => v.workspace.status === "active") ? "active" : "idle",
+    collapsed: false,
+  };
 }
 
 export function sidebarGroupHasLiveWorkspace(group: SidebarGroup): boolean {

@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   archivableWorkspaces,
+  buildCoordinatorGroup,
   buildSessionGroups,
+  COORDINATOR_GROUP_ID,
   buildStatusGroups,
   sidebarGroupHasLiveWorkspace,
   statusGroupId,
@@ -12,6 +14,7 @@ import {
   type SidebarGroup,
 } from "../sidebarGroups";
 import type { SidebarSortMode } from "../sidebarSort";
+import { isCoordinatorWorkspace } from "../coordinator";
 import { IDLE_DECAY_WINDOW_MS } from "../session";
 import type { SessionResponse, SessionStatus, Workspace } from "../types";
 
@@ -205,6 +208,19 @@ describe("buildStatusGroups", () => {
     const [group] = buildStatus([ws("w1", "", { status: "Waiting" })], (id) => id === statusGroupId("Waiting"));
     expect(group).toMatchObject({ collapsed: true, color: null });
     expect(group!.groupPath).toBeUndefined();
+  });
+});
+
+describe("buildCoordinatorGroup", () => {
+  const coordinator = (id: string, over: Partial<SessionResponse> = {}) =>
+    workspace(id, [session({ id: `${id}-s`, project_path: "/home/me/.config/agent-of-empires/coordinator", ...over })]);
+
+  it("pins the coordinator's rows in a never-collapsed group, or none without a coordinator", () => {
+    expect([coordinator("c"), ws("w", "feature")].map(isCoordinatorWorkspace)).toEqual([true, false]);
+    expect(buildCoordinatorGroup([], IDLE_DECAY_WINDOW_MS)).toBeNull();
+    const group = buildCoordinatorGroup([coordinator("c", { status: "Running" })], IDLE_DECAY_WINDOW_MS)!;
+    expect(group).toMatchObject({ id: COORDINATOR_GROUP_ID, kind: "coordinator", collapsed: false, status: "active" });
+    expect(group.workspaces.map((v) => [v.key, v.workspace.id])).toEqual([[`${COORDINATOR_GROUP_ID}::c`, "c"]]);
   });
 });
 

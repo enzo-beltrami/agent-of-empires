@@ -2227,6 +2227,20 @@
       "notes": "A Group header renames its path on the server in every profile its sessions belong to, takes a per-browser color that follows the rename, and its + opens the wizard with the Group prefilled."
     },
     {
+      "id": "sidebar.coordinator-pinned",
+      "kind": "mocked-playwright",
+      "risk": "medium",
+      "specs": ["tests/sidebar-grouping.spec.ts", "src/lib/__tests__/sidebarGroups.test.ts"],
+      "components": [
+        "web/src/components/sidebar/CoordinatorSection.tsx",
+        "web/src/components/WorkspaceSidebar.tsx",
+        "web/src/App.tsx",
+        "web/src/lib/sidebarGroups.ts",
+        "web/src/lib/coordinator.ts"
+      ],
+      "notes": "Coordinator sessions are kept out of every axis and pinned above all headers in their own tinted section, unaffected by the filter, collapse or drag."
+    },
+    {
       "id": "sidebar.projects-section-listing",
       "kind": "mocked-playwright",
       "risk": "low",

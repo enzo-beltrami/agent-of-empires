@@ -19,6 +19,7 @@ import { NAV_ITEM, ROWS, onSidebarArrowKey } from "./sidebar/keyboardNav";
 import { newDragClickGuard, useSuppressClickAfterDrag, type DragClickGuard } from "./sidebar/dnd";
 import { filterGroups, makeRowFilter, renderedOrder, sunkViews } from "./sidebar/filterGroups";
 import { GroupList, type ListContext } from "./sidebar/GroupLists";
+import { CoordinatorSection } from "./sidebar/CoordinatorSection";
 import { SessionRow } from "./sidebar/SessionRow";
 import { SidebarToolbar } from "./sidebar/SidebarToolbar";
 import { TrashMenu } from "./sidebar/TrashMenu";
@@ -34,6 +35,8 @@ interface Props {
   runtimeEpoch: string | null;
   onSessionMutation: (mutation: SessionMutation) => void;
   groups: SidebarGroup[];
+  /** Pinned above `groups` on every axis; `null` when there is no coordinator session. */
+  coordinator?: SidebarGroup | null;
   /** Workspaces whose every session is trashed, computed by the parent from the unsliced list. */
   trashedWorkspaces?: Workspace[];
   /** Trashed sessions the daemon holds; the rows load on demand, so this keeps the Trash control visible before then. */
@@ -81,7 +84,7 @@ interface Props {
 }
 
 export function WorkspaceSidebar(props: Props) {
-  const { groups, trashedWorkspaces = [], activeId, activeSessionId, open, readOnly, axis } = props;
+  const { groups, coordinator = null, trashedWorkspaces = [], activeId, activeSessionId, open, readOnly, axis } = props;
   const { settings: webSettings, update: updateWebSettings } = useWebSettings();
   const rightSide = webSettings.sidebarSide === "right";
   const compact = webSettings.sidebarCompact;
@@ -112,16 +115,18 @@ export function WorkspaceSidebar(props: Props) {
   // also after its siblings are gone. The status axis repeats a workspace per bucket, so the records come
   // from every slice plus their session children.
   const triageWorkspaces = useMemo(() => {
-    const slices = groups.flatMap((g) => g.workspaces.map((v) => v.workspace));
+    const slices = [...(coordinator?.workspaces ?? []), ...groups.flatMap((g) => g.workspaces)].map((v) => v.workspace);
     return [...slices, ...sessionWorkspaces(slices)];
-  }, [groups]);
+  }, [coordinator, groups]);
   const triage = useSidebarTriage(triageWorkspaces);
   // Rows, not workspaces: the status axis renders a workspace once per bucket, and each row's
   // actions belong to its own session. Filtering keeps the selection, so ranges use `filtered`.
-  const [orderedIds, rows] = useMemo(
-    () => [renderedOrder(filteredGroups, hasFilter, sunkExpanded), groups.flatMap((g) => g.workspaces)] as const,
-    [groups, filteredGroups, hasFilter, sunkExpanded],
-  );
+  // The coordinator renders first and is never filtered, so its rows lead both lists.
+  const [orderedIds, rows] = useMemo(() => {
+    const pinned = coordinator?.workspaces ?? [];
+    const ordered: string[] = [...pinned.map((v) => v.key), ...renderedOrder(filteredGroups, hasFilter, sunkExpanded)];
+    return [ordered, [...pinned, ...groups.flatMap((g) => g.workspaces)]] as const;
+  }, [coordinator, groups, filteredGroups, hasFilter, sunkExpanded]);
   const selection = useSidebarSelection({
     rows,
     orderedIds,
@@ -189,7 +194,7 @@ export function WorkspaceSidebar(props: Props) {
 
   const savedProjectsMatchQuery =
     !!q && props.savedProjects.some((p) => p.displayName.toLowerCase().includes(q) || p.path.toLowerCase().includes(q));
-  const hasResults = filteredGroups.length > 0 || savedProjectsMatchQuery;
+  const hasResults = filteredGroups.length > 0 || savedProjectsMatchQuery || (!hasFilter && !!coordinator);
   const sunk = sunkViews(filteredGroups);
 
   const toggleFilter = () => {
@@ -252,6 +257,7 @@ export function WorkspaceSidebar(props: Props) {
         )}
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden border-t border-surface-700/60">
+          {coordinator && <CoordinatorSection group={coordinator} rowProps={ctx.rowProps} />}
           <GroupList
             ctx={ctx}
             groups={filteredGroups}

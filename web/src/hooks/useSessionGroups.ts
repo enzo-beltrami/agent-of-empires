@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import type { Workspace } from "../lib/types";
-import { buildSessionGroups, type SidebarGroup } from "../lib/sidebarGroups";
+import { buildCoordinatorGroup, buildSessionGroups, type SidebarGroup } from "../lib/sidebarGroups";
 import type { SidebarSortMode } from "../lib/sidebarSort";
 import { useIdleDecayWindowMs } from "../lib/idleDecay";
 import { loadGroupOrder, persistGroupOrder } from "../lib/groupOrder";
@@ -64,4 +64,9 @@ export function useSessionGroups(
   }, []);
 
   return { groups, toggleGroupCollapsed: toggle, reorderGroups, setGroupColor, carryGroupPrefs };
+}
+
+export function useCoordinatorGroup(workspaces: Workspace[]): SidebarGroup | null {
+  const idleDecayWindowMs = useIdleDecayWindowMs();
+  return useMemo(() => buildCoordinatorGroup(workspaces, idleDecayWindowMs), [workspaces, idleDecayWindowMs]);
 }
