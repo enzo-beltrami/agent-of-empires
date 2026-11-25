@@ -11,6 +11,7 @@ use std::sync::Mutex as StateMutex;
 use tokio::sync::{oneshot, Mutex, MutexGuard, Notify};
 
 use super::errors::acp_internal_error;
+use super::kiro;
 use crate::acp::control_protocol::{
     PromptCompletedMarker, SessionReplayed, MAX_CONTROL_QUEUE_BYTES, MAX_CONTROL_QUEUE_FRAMES,
 };
@@ -46,6 +47,8 @@ pub(super) enum SessionIngressNotification {
     /// `_auth/status_update`: the agent's own identity. Connection-scoped, so
     /// it carries no session id and never passes the ingress fence (#4241).
     AuthStatus(AuthStatus),
+    /// A vendor notification translated to its standard `session/update`.
+    Vendor(Box<SessionNotification>),
 }
 
 /// Params of `_auth/status_update`. Unknown fields, including the upstream
@@ -62,6 +65,7 @@ impl JsonRpcMessage for SessionIngressNotification {
             || SessionReplayed::matches_method(method)
             || PromptCompletedMarker::matches_method(method)
             || method == AUTH_STATUS_UPDATE_METHOD
+            || method == kiro::COMMANDS_AVAILABLE_METHOD
     }
 
     fn method(&self) -> &str {
@@ -70,6 +74,7 @@ impl JsonRpcMessage for SessionIngressNotification {
             Self::Replayed(marker) => marker.method(),
             Self::PromptCompleted(marker) => marker.method(),
             Self::AuthStatus(_) => AUTH_STATUS_UPDATE_METHOD,
+            Self::Vendor(_) => "session/update",
         }
     }
 
@@ -81,6 +86,7 @@ impl JsonRpcMessage for SessionIngressNotification {
             Self::AuthStatus(status) => {
                 UntypedMessage::new(self.method(), serde_json::json!({ "authStatus": status }))
             }
+            Self::Vendor(notification) => UntypedMessage::new(self.method(), notification),
         }
     }
 
@@ -101,6 +107,9 @@ impl JsonRpcMessage for SessionIngressNotification {
         if method == AUTH_STATUS_UPDATE_METHOD {
             let parsed: AuthStatusParams = serde_json::from_value(params.clone())?;
             return Ok(Self::AuthStatus(parsed.auth_status));
+        }
+        if method == kiro::COMMANDS_AVAILABLE_METHOD {
+            return kiro::commands_update(params).map(|n| Self::Vendor(Box::new(n)));
         }
         if !SessionNotification::matches_method(method) {
             return Err(agent_client_protocol::Error::method_not_found());

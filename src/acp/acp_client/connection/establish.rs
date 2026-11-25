@@ -33,6 +33,7 @@ use crate::acp::acp_client::errors::{acp_internal_error, AcpError, IncompatibleA
 use crate::acp::acp_client::handshake::{build_initialize_request, should_fork};
 use crate::acp::acp_client::lifecycle::LifecycleEnvelope;
 use crate::acp::acp_client::session_identity::ordered_session_request;
+use crate::acp::acp_client::session_models::{merge_session_models, ModelAware, WithModels};
 
 /// Fully silent grace after reattaching to an in-flight turn.
 const RESUME_IDLE_GRACE_DEFAULT: Duration = Duration::from_secs(30);
@@ -362,9 +363,13 @@ impl Session {
     async fn load_request(
         &self,
         req: LoadSessionRequest,
-    ) -> Result<LoadSessionResponse, agent_client_protocol::Error> {
+    ) -> Result<WithModels<LoadSessionResponse>, agent_client_protocol::Error> {
         let Some(control) = self.control.as_ref() else {
-            return self.connection.send_request(req).block_task().await;
+            return self
+                .connection
+                .send_request(ModelAware(req))
+                .block_task()
+                .await;
         };
         let result = establish_session_v3(control, "session/load", &req).await;
         if result.is_ok() {
@@ -481,7 +486,10 @@ impl Session {
             let req = LoadSessionRequest::new(stored.clone(), self.agent_cwd.clone())
                 .mcp_servers(mcp_servers.clone());
             match self.load_request(req).await {
-                Ok(resp) => {
+                Ok(WithModels {
+                    response: resp,
+                    models,
+                }) => {
                     self.session_from_storage = true;
                     info!(
                         target: "acp.protocol",
@@ -489,14 +497,14 @@ impl Session {
                         stored_id = %stored,
                         "session/load succeeded; suppressing post-load history replay"
                     );
-                    self.channels =
-                        SessionChannels::new(resp.modes.as_ref(), resp.config_options.as_deref());
+                    let options = merge_session_models(resp.config_options, models.as_ref());
+                    self.channels = SessionChannels::new(resp.modes.as_ref(), options.as_deref());
                     self.shared
                         .emit(Event::AcpSessionAssigned {
                             acp_session_id: stored.clone(),
                         })
                         .await;
-                    if let Some(event) = config_options_event(resp.config_options) {
+                    if let Some(event) = config_options_event(options) {
                         self.shared.emit(event).await;
                     }
                     return Ok(SessionId::from(stored));
@@ -544,11 +552,17 @@ impl Session {
         let label = self.shared.session_label.clone();
         info!(target: "acp.protocol", session = %label, "creating fresh session via session/new");
         let req = NewSessionRequest::new(self.agent_cwd.clone()).mcp_servers(mcp_servers);
-        let new_session = self
-            .minting_request("session/new", req, |resp: &NewSessionResponse| {
-                resp.session_id.clone()
-            })
+        let WithModels {
+            response: new_session,
+            models,
+        } = self
+            .minting_request(
+                "session/new",
+                ModelAware(req),
+                |resp: &WithModels<NewSessionResponse>| resp.response.session_id.clone(),
+            )
             .await?;
+        let options = merge_session_models(new_session.config_options, models.as_ref());
         let id = new_session.session_id.clone();
         if let Some(reason) = context_reset_reason {
             self.shared
@@ -562,21 +576,15 @@ impl Session {
             new_id = %id.0,
             "session/new succeeded, captured acp_session_id"
         );
-        self.channels = SessionChannels::new(
-            new_session.modes.as_ref(),
-            new_session.config_options.as_deref(),
-        );
+        self.channels = SessionChannels::new(new_session.modes.as_ref(), options.as_deref());
         if let Some(modes) = &new_session.modes {
             self.shared.emit(modes_available_event(modes)).await;
         }
-        if let Some(event) = config_options_event(new_session.config_options.clone()) {
+        if let Some(event) = config_options_event(options.clone()) {
             self.shared.emit(event).await;
         }
         // Only a live `mode` config option is driven from defaults (#2631).
-        if let (Some(mode), Some(options)) = (
-            self.default_mode.as_deref(),
-            new_session.config_options.as_deref(),
-        ) {
+        if let (Some(mode), Some(options)) = (self.default_mode.as_deref(), options.as_deref()) {
             match mode_config_id(options) {
                 Some(config_id) => {
                     let _ = apply_config_default(
@@ -585,6 +593,7 @@ impl Session {
                         id.clone(),
                         config_id,
                         mode,
+                        None,
                         &label,
                     )
                     .await;
@@ -631,6 +640,7 @@ impl Session {
             self.acp_session_id.clone(),
             SessionConfigId::new(option.id.clone()),
             model,
+            self.channels.session_model_options.as_deref(),
             label,
         )
         .await;
@@ -638,6 +648,9 @@ impl Session {
             Ok(options) => {
                 self.channels.thought_level_config_option_id =
                     thought_level_config_id(&options).map(|id| id.0.to_string());
+                if self.channels.session_model_options.is_some() {
+                    self.channels.session_model_options = Some(options);
+                }
             }
             Err(reason) => {
                 let event = config_option_failure_event(
@@ -665,6 +678,7 @@ impl Session {
                     self.acp_session_id.clone(),
                     SessionConfigId::new(config_id.to_string()),
                     effort,
+                    None,
                     &self.shared.session_label,
                 )
                 .await;

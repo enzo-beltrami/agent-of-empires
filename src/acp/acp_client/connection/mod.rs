@@ -219,7 +219,7 @@ pub(super) async fn run_connection_task<W, R>(
                 move |notification: SessionIngressNotification, _cx| {
                     let (shared, control) = (shared.clone(), control.clone());
                     async move {
-                        let params = match notification {
+                        let (notification, wire_bytes) = match notification {
                             SessionIngressNotification::Replayed(marker) => {
                                 if let Some(control) = control.as_ref() {
                                     control.mark_session_replayed(marker);
@@ -242,12 +242,17 @@ pub(super) async fn run_connection_task<W, R>(
                                     .await;
                                 return Ok(());
                             }
-                            SessionIngressNotification::Update(params) => params,
+                            SessionIngressNotification::Update(params) => {
+                                SessionIngressNotification::decode_update(
+                                    params,
+                                    control_notifications,
+                                )?
+                            }
+                            // The relay tags only `session/update` with its size.
+                            SessionIngressNotification::Vendor(notification) => {
+                                (*notification, None)
+                            }
                         };
-                        let (notification, wire_bytes) = SessionIngressNotification::decode_update(
-                            params,
-                            control_notifications,
-                        )?;
                         let admitted = shared
                             .ingress
                             .notification(notification, wire_bytes)

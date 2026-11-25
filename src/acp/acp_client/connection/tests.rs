@@ -313,8 +313,8 @@ async fn auth_events(mode: ConnectMode, reports: bool) -> Vec<bool> {
     seen
 }
 
-/// A connection driven against a fake agent that answers the handshake and, on
-/// each `session/prompt`, writes the lines `on_prompt` returns for its request id.
+/// A connection driven against a fake agent that answers the handshake. Any
+/// request `on_request` answers, by method and id, gets its lines instead.
 struct FakeConnection {
     event_rx: mpsc::Receiver<Event>,
     cmd_tx: mpsc::Sender<ClientCmd>,
@@ -326,7 +326,7 @@ struct FakeConnection {
 
 async fn spawn_fake_connection(
     session_id: &'static str,
-    on_prompt: impl Fn(&serde_json::Value) -> Vec<String> + Send + 'static,
+    on_request: impl Fn(&str, &serde_json::Value) -> Option<Vec<String>> + Send + 'static,
 ) -> FakeConnection {
     let (daemon_write, agent_read) = tokio::io::duplex(64 * 1024);
     let (agent_write, daemon_read) = tokio::io::duplex(64 * 1024);
@@ -375,15 +375,16 @@ async fn spawn_fake_connection(
         while let Ok(Some(line)) = lines.next_line().await {
             let msg: serde_json::Value = serde_json::from_str(&line).unwrap();
             let id = &msg["id"];
-            let replies = match msg["method"].as_str() {
-                Some("initialize") => vec![format!(
+            let method = msg["method"].as_str().unwrap_or_default();
+            let replies = match (on_request(method, id), method) {
+                (Some(replies), _) => replies,
+                (None, "initialize") => vec![format!(
                     r#"{{"jsonrpc":"2.0","id":{id},"result":{{"protocolVersion":1,"agentCapabilities":{{}}}}}}"#
                 )],
-                Some("session/new") => vec![format!(
+                (None, "session/new") => vec![format!(
                     r#"{{"jsonrpc":"2.0","id":{id},"result":{{"sessionId":"{session_id}"}}}}"#
                 )],
-                Some("session/prompt") => on_prompt(id),
-                _ => continue,
+                (None, _) => continue,
             };
             for reply in replies {
                 write_line(&reply_write, &reply).await;
@@ -409,7 +410,7 @@ async fn spawn_fake_connection(
 /// (#4373).
 #[tokio::test]
 async fn rate_limit_on_an_agent_initiated_turn_ends_the_connection() {
-    let mut fake = spawn_fake_connection("s-limit", |_| Vec::new()).await;
+    let mut fake = spawn_fake_connection("s-limit", |_, _| None).await;
 
     tokio::time::timeout(Duration::from_secs(10), async {
         while !matches!(
@@ -484,13 +485,15 @@ async fn prompted_turn_ending_on_a_rejected_window_parks() {
         let update = format!(
             r#"{{"jsonrpc":"2.0","method":"session/update","params":{{"sessionId":"s-prompted","update":{{"sessionUpdate":"usage_update","used":10,"size":100,"_meta":{{"_claude/rateLimit":{{"status":"rejected","rateLimitType":"five_hour","resetsAt":{resets_at}{overage}}}}}}}}}}}"#
         );
-        let mut fake = spawn_fake_connection("s-prompted", move |id| {
-            vec![
-                update.clone(),
-                format!(
-                    r#"{{"jsonrpc":"2.0","id":{id},"result":{{"stopReason":"{stop_reason}"}}}}"#
-                ),
-            ]
+        let mut fake = spawn_fake_connection("s-prompted", move |method, id| {
+            (method == "session/prompt").then(|| {
+                vec![
+                    update.clone(),
+                    format!(
+                        r#"{{"jsonrpc":"2.0","id":{id},"result":{{"stopReason":"{stop_reason}"}}}}"#
+                    ),
+                ]
+            })
         })
         .await;
         fake.cmd_tx
@@ -542,4 +545,83 @@ async fn prompted_turn_ending_on_a_rejected_window_parks() {
         fake.agent.abort();
         let _ = fake.agent.await;
     }
+}
+
+/// Kiro advertises its models in the legacy `models` field and its commands in
+/// a vendor notification; both must reach the structured view, and a model
+/// pick must go over `session/set_model`.
+#[tokio::test]
+async fn kiro_models_and_commands_reach_the_view() {
+    let set_model = Arc::new(AtomicBool::new(false));
+    let seen_set = set_model.clone();
+    let mut fake = spawn_fake_connection("s-kiro", move |method, id| match method {
+        "session/new" => Some(vec![
+            format!(
+                r#"{{"jsonrpc":"2.0","id":{id},"result":{{"sessionId":"s-kiro","models":{{"currentModelId":"auto","availableModels":[{{"modelId":"auto","name":"auto"}},{{"modelId":"claude-opus-5","name":"claude-opus-5"}}]}}}}}}"#
+            ),
+            r#"{"jsonrpc":"2.0","method":"_kiro.dev/commands/available","params":{"sessionId":"s-kiro","commands":[{"name":"/compact","description":"Compact"},{"name":"/quit","description":"Quit","meta":{"local":true}}]}}"#.into(),
+        ]),
+        "session/set_model" => {
+            seen_set.store(true, Ordering::SeqCst);
+            Some(vec![format!(r#"{{"jsonrpc":"2.0","id":{id},"result":{{}}}}"#)])
+        }
+        _ => None,
+    })
+    .await;
+
+    let model = |options: &[crate::acp::state::ConfigOptionDescriptor]| {
+        let [option] = options else {
+            panic!("expected only the model option: {options:?}");
+        };
+        assert_eq!(
+            option.category,
+            crate::acp::state::ConfigOptionCategory::Model
+        );
+        assert_eq!(option.options.len(), 2);
+        (option.id.clone(), option.current_value.clone())
+    };
+    let (mut config_id, mut commands) = (None, None);
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while config_id.is_none() || commands.is_none() {
+            match fake.event_rx.recv().await.expect("connection remains open") {
+                Event::ConfigOptionsUpdated { options } => config_id = Some(model(&options)),
+                Event::AvailableCommandsUpdated { commands: list } => commands = Some(list),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("models and commands arrive");
+    let (config_id, current) = config_id.unwrap();
+    assert_eq!(current, "auto");
+    let names: Vec<_> = commands.unwrap().into_iter().map(|c| c.name).collect();
+    assert_eq!(names, ["compact"]);
+
+    fake.cmd_tx
+        .send(ClientCmd::SetConfigOption {
+            config_id: config_id.clone(),
+            value: "claude-opus-5".into(),
+        })
+        .await
+        .unwrap();
+    let switched = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Event::ConfigOptionsUpdated { options } =
+                fake.event_rx.recv().await.expect("connection remains open")
+            {
+                return model(&options);
+            }
+        }
+    })
+    .await
+    .expect("the pick is confirmed");
+    assert_eq!(switched, (config_id, "claude-opus-5".to_string()));
+    assert!(
+        set_model.load(Ordering::SeqCst),
+        "sent as session/set_model"
+    );
+
+    fake.connection.abort();
+    fake.agent.abort();
+    let _ = tokio::join!(fake.connection, fake.agent);
 }

@@ -8,6 +8,7 @@ export const ACP_CAPABLE_TOOLS: ReadonlySet<string> = new Set([
   "pi",
   "omp",
   "kimi",
+  "kiro",
   "prime-agent",
 ]);
 

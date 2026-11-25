@@ -11,8 +11,14 @@ use agent_client_protocol::v1::schema::{
 };
 use agent_client_protocol::v1::ConnectionTo;
 use agent_client_protocol::Agent;
+use futures_util::future::BoxFuture;
+use futures_util::FutureExt;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
+
+use super::session_models::{
+    with_session_model_value, SetSessionModelRequest, SESSION_MODEL_CONFIG_ID,
+};
 
 /// `None` when the response carried no options, so cached selectors persist.
 /// An empty list is a real replacement and must propagate (#1403).
@@ -44,6 +50,9 @@ pub(super) struct SessionChannels {
     pub(super) mode_config_option_id: Option<String>,
     pub(super) thought_level_config_option_id: Option<String>,
     pub(super) model_option: Option<ModelOption>,
+    /// The advertised list, kept only when it holds the synthetic
+    /// session-model option, whose `session/set_model` reply carries none.
+    pub(super) session_model_options: Option<Vec<SessionConfigOption>>,
 }
 
 impl SessionChannels {
@@ -63,6 +72,13 @@ impl SessionChannels {
                 .and_then(thought_level_config_id)
                 .map(|id| id.0.to_string()),
             model_option: options.and_then(model_option),
+            session_model_options: options
+                .filter(|options| {
+                    options
+                        .iter()
+                        .any(|o| o.id.0.as_ref() == SESSION_MODEL_CONFIG_ID)
+                })
+                .map(<[_]>::to_vec),
         }
     }
 }
@@ -74,11 +90,11 @@ pub(super) enum ConfigOptionDispatchPurpose {
 }
 
 fn config_option_success_events(
-    options: Vec<SessionConfigOption>,
+    options: Option<Vec<SessionConfigOption>>,
     value: String,
     purpose: ConfigOptionDispatchPurpose,
 ) -> Vec<Event> {
-    let mut events: Vec<_> = config_options_event(Some(options)).into_iter().collect();
+    let mut events: Vec<_> = config_options_event(options).into_iter().collect();
     if purpose == ConfigOptionDispatchPurpose::Mode {
         events.push(Event::CurrentModeChanged {
             current_mode_id: value,
@@ -106,6 +122,40 @@ pub(super) fn config_option_failure_event(
     }
 }
 
+/// Sends an option change, resolving to the agent's resulting option list.
+/// The synthetic session-model option goes over `session/set_model`, whose
+/// empty reply is rebuilt from `advertised`; `None` when that is unknown, as
+/// after a resume. Sent eagerly so requests keep their order.
+pub(super) fn send_set_config_option(
+    connection: &ConnectionTo<Agent>,
+    session_id: SessionId,
+    config_id: String,
+    value: String,
+    advertised: Option<&[SessionConfigOption]>,
+) -> BoxFuture<'static, Result<Option<Vec<SessionConfigOption>>, agent_client_protocol::Error>> {
+    if config_id == SESSION_MODEL_CONFIG_ID {
+        info!(target: "acp.protocol", "sending session/set_model {value}");
+        let rebuilt = advertised.and_then(|options| with_session_model_value(options, &value));
+        let sent = connection
+            .send_request(SetSessionModelRequest::new(session_id, value))
+            .block_task();
+        return async move { sent.await.map(|_| rebuilt) }.boxed();
+    }
+    info!(
+        target: "acp.protocol",
+        "sending session/set_config_option {config_id}={value}"
+    );
+    connection
+        .send_request(SetSessionConfigOptionRequest::new(
+            session_id,
+            SessionConfigId::new(config_id),
+            SessionConfigValueId::new(value),
+        ))
+        .block_task()
+        .map(|result| result.map(|resp| Some(resp.config_options)))
+        .boxed()
+}
+
 /// The adapter answers with the full option list but sends no follow-up
 /// notification, so the response itself is re-emitted. Runs detached so the
 /// command loop never blocks.
@@ -114,24 +164,23 @@ pub(super) fn dispatch_set_config_option(
     acp_session_id: &SessionId,
     config_id: String,
     value: String,
+    advertised: Option<&[SessionConfigOption]>,
     purpose: ConfigOptionDispatchPurpose,
     event_tx: mpsc::Sender<Event>,
 ) {
-    info!(
-        target: "acp.protocol",
-        "sending session/set_config_option {config_id}={value}"
-    );
-    let sent = connection.send_request(SetSessionConfigOptionRequest::new(
+    let sent = send_set_config_option(
+        connection,
         acp_session_id.clone(),
-        SessionConfigId::new(config_id.clone()),
-        SessionConfigValueId::new(value.clone()),
-    ));
+        config_id.clone(),
+        value.clone(),
+        advertised,
+    );
     tokio::spawn(async move {
-        let events = match sent.block_task().await {
-            Ok(resp) => config_option_success_events(resp.config_options, value, purpose),
+        let events = match sent.await {
+            Ok(options) => config_option_success_events(options, value, purpose),
             Err(e) => {
                 let reason = e.to_string();
-                warn!(target: "acp.protocol", "session/set_config_option failed: {reason}");
+                warn!(target: "acp.protocol", "{config_id} switch failed: {reason}");
                 vec![config_option_failure_event(
                     config_id, value, reason, purpose,
                 )]
@@ -152,6 +201,7 @@ pub(super) async fn apply_config_default(
     session_id: SessionId,
     config_id: SessionConfigId,
     value: &str,
+    advertised: Option<&[SessionConfigOption]>,
     session_label: &str,
 ) -> Result<Vec<SessionConfigOption>, String> {
     info!(
@@ -161,17 +211,19 @@ pub(super) async fn apply_config_default(
         value,
         "applying structured view default"
     );
-    let request = SetSessionConfigOptionRequest::new(
+    let sent = send_set_config_option(
+        connection,
         session_id,
-        config_id,
-        SessionConfigValueId::new(value.to_string()),
+        config_id.0.to_string(),
+        value.to_string(),
+        advertised,
     );
-    match connection.send_request(request).block_task().await {
-        Ok(resp) => {
-            if let Some(event) = config_options_event(Some(resp.config_options.clone())) {
+    match sent.await {
+        Ok(options) => {
+            if let Some(event) = config_options_event(options.clone()) {
                 let _ = event_tx.send(event).await;
             }
-            Ok(resp.config_options)
+            Ok(options.unwrap_or_default())
         }
         Err(e) => {
             warn!(
@@ -353,6 +405,7 @@ pub(super) fn dispatch_set_mode(
             acp_session_id,
             config_id.to_string(),
             mode_id,
+            None,
             ConfigOptionDispatchPurpose::Mode,
             event_tx,
         );

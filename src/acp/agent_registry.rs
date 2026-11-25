@@ -46,7 +46,7 @@ impl AgentRegistry {
         let claude_description =
             format!("Anthropic Claude via the official ACP adapter ({claude_install})");
         // (name, command, args, description)
-        let defaults: [(&str, &str, &[&str], &str); 11] = [
+        let defaults: [(&str, &str, &[&str], &str); 12] = [
             ("claude", "claude-agent-acp", &[], &claude_description),
             // Legacy alias from older session records.
             (
@@ -96,6 +96,12 @@ impl AgentRegistry {
                 "kimi",
                 &["acp"],
                 "Kimi Code (Moonshot AI), native ACP via `kimi acp`",
+            ),
+            (
+                "kiro",
+                "kiro-cli",
+                &["acp"],
+                "Kiro CLI, native ACP via `kiro-cli acp`",
             ),
             (
                 "prime-agent",
@@ -417,7 +423,7 @@ mod tests {
                 "opencode",
                 "prime-agent"
             ],
-            "unverified adapters (pi, omp, kimi, vibe) must stay without an env_allowlist"
+            "unverified adapters (pi, omp, kimi, kiro, vibe) must stay without an env_allowlist"
         );
     }
 }

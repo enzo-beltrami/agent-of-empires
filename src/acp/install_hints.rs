@@ -19,6 +19,7 @@ pub fn install_hint_for(binary: &str) -> Option<&'static str> {
         }
         "kimi" => "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash  (then `kimi acp`)",
         "omp" => "curl -fsSL https://omp.sh/install | sh",
+        "kiro-cli" => "curl -fsSL https://cli.kiro.dev/install | bash  (then `kiro-cli acp`)",
         // Bundled in the aoe binary; installed into the data dir on demand.
         AOE_AGENT_BINARY => "aoe acp doctor --fix --adapter aoe-agent",
         "prime-agent" => {
@@ -152,6 +153,7 @@ mod tests {
             "vibe-acp",
             "pi-acp",
             "kimi",
+            "kiro-cli",
             "omp",
             "prime-agent",
         ] {

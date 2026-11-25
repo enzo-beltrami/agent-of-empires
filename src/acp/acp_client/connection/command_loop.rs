@@ -4,8 +4,7 @@
 use crate::acp::state::Event;
 use agent_client_protocol::v1::schema::{
     CancelNotification, ContentBlock, McpServer, NewSessionRequest, NewSessionResponse,
-    SessionConfigId, SessionConfigOption, SessionConfigValueId, SessionId,
-    SetSessionConfigOptionRequest,
+    SessionConfigId, SessionConfigOption, SessionId,
 };
 use agent_client_protocol::v1::ConnectionTo;
 use agent_client_protocol::Agent;
@@ -23,7 +22,7 @@ use crate::acp::acp_client::between_prompt::{
 use crate::acp::acp_client::commands::ClientCmd;
 use crate::acp::acp_client::config_options::{
     config_option_failure_event, config_options_event, dispatch_set_config_option,
-    dispatch_set_mode, mode_config_id, model_option, modes_available_event,
+    dispatch_set_mode, mode_config_id, model_option, modes_available_event, send_set_config_option,
     thought_level_config_id, ConfigOptionDispatchPurpose, SessionChannels,
 };
 use crate::acp::acp_client::control::DaemonControlClient;
@@ -35,6 +34,9 @@ use crate::acp::acp_client::reset::{
     await_reset_request, ResetRequestError, ResetSessionOutcome, SESSION_RESET_IN_TASK_TIMEOUT,
 };
 use crate::acp::acp_client::session_identity::ordered_session_request;
+use crate::acp::acp_client::session_models::{
+    merge_session_models, with_session_model_value, ModelAware, WithModels, SESSION_MODEL_CONFIG_ID,
+};
 
 pub(super) struct Session {
     pub(super) connection: ConnectionTo<Agent>,
@@ -86,14 +88,22 @@ impl Session {
         {
             self.default_model = Some(value.clone());
         }
+        let advertised = self.channels.session_model_options.as_deref();
         dispatch_set_config_option(
             &self.connection,
             &self.acp_session_id,
-            config_id,
-            value,
+            config_id.clone(),
+            value.clone(),
+            advertised,
             ConfigOptionDispatchPurpose::Generic,
             self.shared.event_tx.clone(),
         );
+        // Later switches rebuild from this list, so it follows the pick.
+        if config_id == SESSION_MODEL_CONFIG_ID {
+            if let Some(options) = advertised.and_then(|o| with_session_model_value(o, &value)) {
+                self.channels.session_model_options = Some(options);
+            }
+        }
     }
 
     pub(super) fn dispatch_mode(&self, mode_id: String, while_prompting: bool) {
@@ -321,8 +331,8 @@ impl Session {
                 &connection,
                 &ingress,
                 generation,
-                req,
-                |resp: &NewSessionResponse| resp.session_id.clone(),
+                ModelAware(req),
+                |resp: &WithModels<NewSessionResponse>| resp.response.session_id.clone(),
             )
         })
         .await;
@@ -331,22 +341,24 @@ impl Session {
         let commit_guard = ingress.fence.lock().await;
         let retained_id = result
             .as_ref()
-            .map(|resp| resp.session_id.clone())
+            .map(|resp| resp.response.session_id.clone())
             .unwrap_or_else(|_| self.acp_session_id.clone());
         let mut replay = ingress.finish(Some(retained_id.clone()))?;
         if retained_id == self.acp_session_id {
             self.shared.apply_replay(std::mem::take(&mut replay)).await;
         }
         let message = match result {
-            Ok(new_session) if new_session.session_id.0 != self.acp_session_id.0 => {
+            Ok(WithModels {
+                response: new_session,
+                models,
+            }) if new_session.session_id.0 != self.acp_session_id.0 => {
                 let new_id = new_session.session_id.clone();
+                let options = merge_session_models(new_session.config_options, models.as_ref());
                 // session/new is the irreversible commit; the loop picks the
                 // id back up from the ingress on its next iteration.
                 self.session_from_storage = false;
-                self.channels = SessionChannels::new(
-                    new_session.modes.as_ref(),
-                    new_session.config_options.as_deref(),
-                );
+                self.channels =
+                    SessionChannels::new(new_session.modes.as_ref(), options.as_deref());
                 info!(
                     target: "acp.protocol",
                     session = %label,
@@ -369,10 +381,10 @@ impl Session {
                 if let Some(modes) = &new_session.modes {
                     self.shared.emit(modes_available_event(modes)).await;
                 }
-                if let Some(event) = config_options_event(new_session.config_options.clone()) {
+                if let Some(event) = config_options_event(options.clone()) {
                     self.shared.emit(event).await;
                 }
-                self.reapply_defaults(&new_id, new_session.config_options.as_deref(), deadline)
+                self.reapply_defaults(&new_id, options.as_deref(), deadline)
                     .await;
                 self.shared
                     .emit(Event::Stopped {
@@ -427,7 +439,7 @@ impl Session {
             if !option.is_current(model) {
                 let config_id = SessionConfigId::new(option.id.clone());
                 match self
-                    .reset_set_option(new_id, config_id, model, deadline)
+                    .reset_set_option(new_id, config_id, model, options, deadline)
                     .await
                 {
                     Some(Ok(options)) => effort_id = thought_level_config_id(&options),
@@ -458,7 +470,7 @@ impl Session {
                 continue;
             };
             if self
-                .reset_set_option(new_id, config_id, value, deadline)
+                .reset_set_option(new_id, config_id, value, None, deadline)
                 .await
                 .is_none()
             {
@@ -474,24 +486,25 @@ impl Session {
         new_id: &SessionId,
         config_id: SessionConfigId,
         value: &str,
+        advertised: Option<&[SessionConfigOption]>,
         deadline: tokio::time::Instant,
     ) -> Option<Result<Vec<SessionConfigOption>, String>> {
         let label = &self.shared.session_label;
         let request = || {
-            self.connection
-                .send_request(SetSessionConfigOptionRequest::new(
-                    new_id.clone(),
-                    config_id,
-                    SessionConfigValueId::new(value.to_string()),
-                ))
-                .block_task()
+            send_set_config_option(
+                &self.connection,
+                new_id.clone(),
+                config_id.0.to_string(),
+                value.to_string(),
+                advertised,
+            )
         };
         match await_reset_request(deadline, request).await {
-            Ok(resp) => {
-                if let Some(event) = config_options_event(Some(resp.config_options.clone())) {
+            Ok(options) => {
+                if let Some(event) = config_options_event(options.clone()) {
                     self.shared.emit(event).await;
                 }
-                Some(Ok(resp.config_options))
+                Some(Ok(options.unwrap_or_default()))
             }
             Err(ResetRequestError::Acp(e)) => {
                 warn!(

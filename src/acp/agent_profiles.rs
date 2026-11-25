@@ -181,6 +181,15 @@ pub const KIMI: AgentProfile = AgentProfile {
     ..DEFAULT
 };
 
+/// Kiro CLI via native `kiro-cli acp`, which runs slash commands sent as
+/// prompt text and clears its conversation in place.
+pub const KIRO: AgentProfile = AgentProfile {
+    key: "kiro",
+    clear_aliases: &["/clear"],
+    compact_aliases: &["/compact"],
+    ..DEFAULT
+};
+
 /// PrimeIntellect Prime Agent via native `prime-agent --mode acp`.
 pub const PRIME_AGENT: AgentProfile = AgentProfile {
     key: "prime-agent",
@@ -210,6 +219,7 @@ pub fn resolve(key: &str) -> &'static AgentProfile {
         "pi" => &PI,
         "omp" => &OMP,
         "kimi" => &KIMI,
+        "kiro" => &KIRO,
         "prime-agent" => &PRIME_AGENT,
         "aoe-agent" => &AOE_AGENT,
         _ => &DEFAULT,
