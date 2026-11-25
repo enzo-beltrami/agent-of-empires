@@ -1,0 +1,35 @@
+appearance = "dark"
+
+# Bee black with yellow stripes: warm near-black surfaces, bee yellow for
+# brand and titles, honey amber for the softer accents, cream body text.
+background = "#0c0b09"
+border = "#3b3320"
+terminal_border = "#f5c518"
+selection = "#2a2410"
+session_selection = "#3a3218"
+title = "#ffd21f"
+text = "#f2e8c9"
+dimmed = "#8a7f5f"
+hint = "#b3a57a"
+running = "#a3e635"
+# Waiting is the brightest yellow so it outranks fresh-idle honey on luminance.
+waiting = "#fff06a"
+fresh_idle = "#f0a500"
+idle = "#6b6248"
+unread = "#ffcf70"
+favorite = "#ff8c1a"
+error = "#ff4d3d"
+terminal_active = "#ffd21f"
+group = "#f2e8c9"
+search = "#ffd21f"
+accent = "#f5c518"
+diff_add = "#a3e635"
+diff_delete = "#ff4d3d"
+diff_modified = "#ffb000"
+diff_header = "#d4a017"
+help_key = "#f5c518"
+branch = "#d4a017"
+sandbox = "#b3a57a"
+
+[syntax]
+shiki_theme = "github-dark"

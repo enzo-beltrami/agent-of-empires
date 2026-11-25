@@ -58,6 +58,10 @@ pub const BUILTIN_THEMES: &[BuiltinTheme] = &[
         name: "deep-ocean",
         source: include_str!("../../themes/builtin/deep-ocean.toml"),
     },
+    BuiltinTheme {
+        name: "honeybee",
+        source: include_str!("../../themes/builtin/honeybee.toml"),
+    },
 ];
 
 pub fn builtin_theme_names() -> impl Iterator<Item = &'static str> {
@@ -297,6 +301,11 @@ mod tests {
             "deep-ocean",
             Color::Rgb(0x0f, 0x11, 0x1a),
             Color::Rgb(0x84, 0xff, 0xff),
+        ),
+        (
+            "honeybee",
+            Color::Rgb(0x0c, 0x0b, 0x09),
+            Color::Rgb(0xff, 0xd2, 0x1f),
         ),
     ];
 
