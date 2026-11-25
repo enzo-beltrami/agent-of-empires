@@ -867,21 +867,6 @@ pub async fn fire_wake_fired_push(
         return;
     }
 
-    let subs = push.store.snapshot().await;
-    if subs.is_empty() {
-        return;
-    }
-    let client = match super::push_send::build_client() {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!(
-                target: "push.wake_fired",
-                "failed to build reqwest client: {e}"
-            );
-            return;
-        }
-    };
-
     let body_suffix = if session_title.is_empty() {
         String::new()
     } else {
@@ -890,6 +875,75 @@ pub async fn fire_wake_fired_push(
     let body = match reason {
         Some(r) if !r.is_empty() => format!("Agent resumed{}: {}", body_suffix, r),
         _ => format!("Agent resumed{}", body_suffix),
+    };
+    send_one_off(
+        &state,
+        push,
+        "push.wake_fired",
+        "Scheduled wakeup fired",
+        &body,
+        session_id,
+    )
+    .await;
+}
+
+/// A push for a decision the coordinator left in the dashboard's Decisions tab, skipped while a
+/// dashboard window is in the foreground, since the tab already shows it there.
+pub async fn fire_decision_push(
+    state: std::sync::Arc<super::AppState>,
+    coordinator_id: &str,
+    question: &str,
+) {
+    let Some(push) = state.push.as_ref().cloned() else {
+        return;
+    };
+    if !state.web_config.notifications_enabled {
+        return;
+    }
+    if !matches!(
+        state.web_watch_within(std::time::Duration::from_secs(30)),
+        super::state::WebWatch::Nothing
+    ) {
+        tracing::debug!(target: "push.decision", "suppressed: web dashboard is active");
+        return;
+    }
+    let body: String = question
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .take(140)
+        .collect();
+    send_one_off(
+        &state,
+        push,
+        "push.decision",
+        "The coordinator needs a decision",
+        &body,
+        coordinator_id,
+    )
+    .await;
+}
+
+/// Sends one notification to every subscription, opening `session_id`.
+async fn send_one_off(
+    state: &super::AppState,
+    push: std::sync::Arc<PushState>,
+    target: &'static str,
+    title: &str,
+    body: &str,
+    session_id: &str,
+) {
+    let subs = push.store.snapshot().await;
+    if subs.is_empty() {
+        return;
+    }
+    let client = match super::push_send::build_client() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(target: "push.one_off", target, "failed to build reqwest client: {e}");
+            return;
+        }
     };
     let path = format!("/session/{}", session_id);
     let tag = format!("session-{}", session_id);
@@ -901,18 +955,18 @@ pub async fn fire_wake_fired_push(
         let client = client.clone();
         let push = push.clone();
         let permit_sem = push.send_semaphore.clone();
-        let payload_clone = super::push_send::PushPayload {
-            title: "Scheduled wakeup fired".to_string(),
-            body: body.clone(),
+        let payload = super::push_send::PushPayload {
+            title: title.to_string(),
+            body: body.to_string(),
             url,
             tag: tag.clone(),
             session_id: session_id.to_string(),
         };
-        state.runtime.work.spawn("server.wake_push", async move {
+        state.runtime.work.spawn("server.one_off_push", async move {
             let Ok(_permit) = permit_sem.acquire_owned().await else {
                 return;
             };
-            deliver(&push, &client, &sub, &payload_clone, PUSH_TTL_SECS).await;
+            deliver(&push, &client, &sub, &payload, PUSH_TTL_SECS).await;
         });
     }
 }

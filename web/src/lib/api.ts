@@ -20,7 +20,7 @@ import type {
   ImportableSession,
   SettingsFieldDescriptor,
 } from "./types";
-import type { ConfigOptionDescriptor, Elicitation, ElicitationResolution } from "./acpTypes";
+import type { ConfigOptionDescriptor, ElicitationResolution } from "./acpTypes";
 import { clearDeviceBindingSecret, getOrCreateDeviceBindingSecret } from "./deviceBinding";
 
 type Payload = Record<string, unknown>;
@@ -2618,19 +2618,38 @@ export function postElicitationResolution(
   );
 }
 
-/** The coordinator's unanswered questions; `session_id` is null before a coordinator exists. */
-export interface CoordinatorDecisions {
-  session_id: string | null;
-  decisions: Elicitation[];
+/** A decision the coordinator left for the user; it keeps working while this waits. */
+export interface CoordinatorDecision {
+  id: string;
+  /** Markdown. */
+  question: string;
+  /** Suggested answers, the recommended one first. */
+  options: string[];
+  session_id?: string;
+  /** Present while that session exists. */
+  session_title?: string;
+  asked_at: string;
 }
 
-export async function fetchCoordinatorDecisions(): Promise<CoordinatorDecisions | null> {
+export async function fetchCoordinatorDecisions(): Promise<CoordinatorDecision[] | null> {
   try {
     const res = await fetch("/api/coordinator/decisions", { headers: ACCEPT_JSON });
-    return res.ok ? ((await res.json()) as CoordinatorDecisions) : null;
+    return res.ok ? ((await res.json()) as CoordinatorDecision[]) : null;
   } catch {
     return null;
   }
+}
+
+/** Sends the coordinator the answer; the decision stays open if it could not take it. */
+export async function answerCoordinatorDecision(
+  id: string,
+  answer: string,
+): Promise<{ ok: boolean; message?: string }> {
+  return okWithMessage(`/api/coordinator/decisions/${encodeURIComponent(id)}`, jsonInit("POST", { answer }));
+}
+
+export async function dismissCoordinatorDecision(id: string): Promise<{ ok: boolean; message?: string }> {
+  return okWithMessage(`/api/coordinator/decisions/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export async function fetchCoordinatorSummary(): Promise<CoordinatorSummary | null> {

@@ -8,7 +8,6 @@ use super::{
     decode_logged, logged, query_strings, EventStore, NON_SUBSTANTIVE_EVENT_DISCRIMINANTS,
 };
 use crate::acp::approvals::{Approval, Nonce};
-use crate::acp::elicitations::Elicitation;
 use crate::acp::state::{BackgroundTaskLaunch, Event, Plan, WorkflowAgents};
 use crate::events;
 
@@ -381,34 +380,6 @@ impl EventStore {
         .filter_map(
             |json| match decode_logged(json, session_id, "pending_approval_requests")? {
                 Event::ApprovalRequested { approval } => Some(approval),
-                _ => None,
-            },
-        )
-        .collect()
-    }
-
-    /// Full payloads of unanswered questions, in request order.
-    pub fn pending_elicitation_requests(&self, session_id: &str) -> Vec<Elicitation> {
-        query_strings(
-            &self.conn(),
-            "SELECT event_json
-             FROM acp_events
-             WHERE session_id = ?1
-               AND discriminant = 'ElicitationRequested'
-               AND json_extract(event_json, '$.ElicitationRequested.elicitation.nonce') NOT IN (
-                   SELECT json_extract(event_json, '$.ElicitationResolved.nonce')
-                   FROM acp_events
-                   WHERE session_id = ?1
-                     AND discriminant = 'ElicitationResolved'
-               )
-             ORDER BY seq ASC",
-            "pending_elicitation_requests",
-            session_id,
-        )
-        .iter()
-        .filter_map(
-            |json| match decode_logged(json, session_id, "pending_elicitation_requests")? {
-                Event::ElicitationRequested { elicitation } => Some(elicitation),
                 _ => None,
             },
         )
@@ -1056,7 +1027,7 @@ mod tests {
 
     #[test]
     fn unresolved_requests_and_background_launches_per_session() {
-        use crate::acp::elicitations::ElicitationOutcome;
+        use crate::acp::elicitations::{Elicitation, ElicitationOutcome};
         let (_tmp, store) = open_store(1000);
         let approval = |nonce: &str| Event::ApprovalRequested {
             approval: Approval {
@@ -1114,12 +1085,6 @@ mod tests {
             .map(|a| a.nonce.0)
             .collect();
         assert_eq!(pending, ["bbbb", "cccc"]);
-        let asked: Vec<_> = store
-            .pending_elicitation_requests("s-1")
-            .into_iter()
-            .map(|e| (e.nonce, e.message))
-            .collect();
-        assert_eq!(asked, [(e_b.clone(), "Pick".to_string())]);
         assert_eq!(store.unresolved_elicitation_nonces("s-1"), [e_b]);
         assert!(store.unresolved_approval_nonces("s-2").is_empty());
         assert!(store.unresolved_elicitation_nonces("s-2").is_empty());

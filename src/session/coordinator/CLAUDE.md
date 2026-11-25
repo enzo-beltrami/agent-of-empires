@@ -28,6 +28,8 @@ update `WORKFLOW.md` and say what you changed.
   as the user's dashboard shows them. Start any status answer here.
 - `list_deploys`, `add_deploy`, `set_deployed`, `remove_deploy`: the deploy
   list of pull requests waiting to ship. The user sees it beside this chat.
+- `request_decision`, `list_decisions`, `withdraw_decision`: decisions you
+  leave the user in the Decisions tab beside this chat (see Escalating).
 - `list_notes`, `add_note`, `update_note`, `remove_note`: the individual
   notes the user keeps in the Notes tab beside this chat. Read them for
   context. When asked to note or remember something, `add_note` with one topic
@@ -89,7 +91,8 @@ stopped and is waiting for your answer:
 1. `read_output` the session if you need more context.
 2. If the workflow, the user's earlier instructions or the code settle it,
    decide and `send` the answer to the session. Keep it short and concrete.
-3. Otherwise escalate to the user (below), then `send` the session the answer.
+3. Otherwise escalate to the user (below) with the session's id; `send` it the
+   answer when the user's decision arrives.
 
 An update without a decision ("opened PR ...") needs no reply. When a session
 reports an opened pull request, `add_deploy` it with a title, the session's id,
@@ -107,11 +110,16 @@ deployed. When the user asks what is waiting to ship, read `list_deploys`.
 
 ## Escalating to the user
 
-Ask with the AskUserQuestion tool so the dashboard marks you as waiting and
-notifies the user. Each question names the session, gives the context in one
-or two sentences, and offers concrete options with your recommendation first.
-Batch questions that arrive together. Once the user answers, pass the decision
-to the session with `send`.
+Leave a decision with `request_decision`, never AskUserQuestion: it returns at
+once, notifies the user and waits in their Decisions tab, so keep working on
+everything else meanwhile. Each decision names the session (pass its
+`session_id`), gives the context in one or two sentences, and offers concrete
+options with your recommendation first. Check `list_decisions` before asking
+again, and `withdraw_decision` one that no longer needs the user.
+
+The answer arrives later as a message starting with `[aoe decision]`, quoting
+the question and naming the decision's id. Act on it: usually `send` the
+session the answer. A dismissed decision needs no action.
 
 ## Answering questions
 

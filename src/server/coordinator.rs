@@ -85,6 +85,35 @@ async fn deliver(state: &Arc<AppState>, pending: &[Pending]) {
     }
 }
 
+/// The turn that hands the coordinator the user's answer to one of its decisions, or `None`
+/// for a dismissed one.
+pub(crate) fn decision_message(
+    decision: &crate::session::coordinator::Decision,
+    session_title: Option<&str>,
+    answer: Option<&str>,
+) -> String {
+    let about = match (&decision.session_id, session_title) {
+        (Some(id), Some(title)) => format!(" for \"{title}\" (`{id}`)"),
+        (Some(id), None) => format!(" for session `{id}`"),
+        _ => String::new(),
+    };
+    let quoted: String = decision
+        .question
+        .lines()
+        .map(|line| format!("> {line}\n"))
+        .collect();
+    match answer {
+        Some(answer) => format!(
+            "[aoe decision] The user answered your decision `{}`{about}:\n\n{quoted}\nAnswer: {answer}\n\nAct on it; if a session is waiting on it, `send` it the answer.",
+            decision.id
+        ),
+        None => format!(
+            "[aoe decision] The user dismissed your decision `{}`{about}:\n\n{quoted}\nDo not act on it. Ask again only if it still matters.",
+            decision.id
+        ),
+    }
+}
+
 /// Sends the coordinator session an AoE-marked turn, returning its id, or why it could not.
 pub(crate) async fn tell_coordinator(
     state: &Arc<AppState>,
@@ -151,6 +180,27 @@ pub(super) fn spawn(state: Arc<AppState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decision_message_quotes_the_question_and_says_what_to_do() {
+        let decision = crate::session::coordinator::Decision {
+            id: "d1".into(),
+            question: "Ship PI-1921?\nIt touches billing.".into(),
+            options: vec!["Yes".into()],
+            session_id: Some("s1".into()),
+            asked_at: chrono::Utc::now(),
+        };
+        let answered = decision_message(&decision, Some("PI-1921"), Some("Yes, behind a flag"));
+        assert!(answered.starts_with(
+            "[aoe decision] The user answered your decision `d1` for \"PI-1921\" (`s1`):"
+        ));
+        assert!(answered.contains("> Ship PI-1921?\n> It touches billing.\n"));
+        assert!(answered.contains("Answer: Yes, behind a flag"));
+        let dismissed = decision_message(&decision, None, None);
+        assert!(dismissed
+            .starts_with("[aoe decision] The user dismissed your decision `d1` for session `s1`:"));
+        assert!(dismissed.contains("Do not act on it."));
+    }
 
     #[test]
     fn reports_waiting_finished_and_failed_turns_only() {

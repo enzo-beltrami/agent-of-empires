@@ -273,6 +273,7 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
             "add_note",
             "archive_session",
             "create_session",
+            "list_decisions",
             "list_deploys",
             "list_notes",
             "list_projects",
@@ -281,6 +282,7 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
             "read_output",
             "remove_deploy",
             "remove_note",
+            "request_decision",
             "restore_session",
             "send",
             "session_summary",
@@ -289,7 +291,8 @@ async fn tools_list_advertises_each_tool_with_an_output_schema() {
             "trash_session",
             "update_note",
             "watch_session",
-            "whoami"
+            "whoami",
+            "withdraw_decision"
         ]
     );
     for tool in tools.as_array().unwrap() {
@@ -645,6 +648,8 @@ async fn mutating_tools_refuse_while_read_only() {
         ("update_note", json!({"id": "n", "text": "x"})),
         ("remove_note", json!({"id": "n"})),
         ("message_coordinator", json!({"message": "hi"})),
+        ("request_decision", json!({"question": "x"})),
+        ("withdraw_decision", json!({"id": "d"})),
     ];
     for (tool, arguments) in refused {
         let result = call_result(&app, tool, arguments).await;
@@ -1200,4 +1205,51 @@ async fn create_session_refuses_an_empty_prompt() {
         );
     }
     assert!(state.instances.read().await.is_empty());
+}
+
+/// A decision waits in the list with its session's title; an answer the coordinator cannot take
+/// keeps it open, and withdrawing removes it.
+#[tokio::test]
+#[serial_test::serial]
+async fn decisions_wait_until_settled_or_withdrawn() {
+    let _guard = crate::session::test_support::isolate_app_dir();
+    let id = "mcp-decision";
+    let (app, _state) = seeded_app(vec![structured_session(id)], false).await;
+    let decision = call(
+        &app,
+        "request_decision",
+        json!({"question": "Ship behind a flag?", "options": ["Yes", "No"], "session_id": id}),
+    )
+    .await;
+    let decision_id = decision["id"].as_str().unwrap().to_string();
+    let listed = call(&app, "list_decisions", json!({})).await;
+    assert_eq!(listed["decisions"][0]["id"], decision_id);
+    assert_eq!(listed["decisions"][0]["options"], json!(["Yes", "No"]));
+    assert_eq!(listed["decisions"][0]["session_title"], json!(id));
+
+    let answer = Request::builder()
+        .method("POST")
+        .uri(format!("/api/coordinator/decisions/{decision_id}"))
+        .header(header::HOST, "localhost")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(axum::body::Body::from(r#"{"answer":"Yes"}"#))
+        .unwrap();
+    let response = send(&app, answer).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::CONFLICT,
+        "no coordinator takes it"
+    );
+    let listed = call(&app, "list_decisions", json!({})).await;
+    assert_eq!(
+        listed["decisions"].as_array().unwrap().len(),
+        1,
+        "still open"
+    );
+
+    let withdrawn = call(&app, "withdraw_decision", json!({"id": decision_id})).await;
+    assert_eq!(withdrawn["decisions"], json!([]));
+    let again = call_result(&app, "withdraw_decision", json!({"id": decision_id})).await;
+    assert_eq!(error_code(&again), Some("not_found"));
 }

@@ -159,36 +159,110 @@ pub async fn get_coordinator_summary(State(state): State<Arc<AppState>>) -> Resp
     Json(session_summary(&state).await).into_response()
 }
 
-/// The coordinator's unanswered questions, answered through the session's own elicitation route.
-#[derive(Serialize)]
-pub struct CoordinatorDecisions {
-    pub session_id: Option<String>,
-    pub decisions: Vec<crate::acp::elicitations::Elicitation>,
+/// An open decision with the title of the session it is for, while that session exists.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub(crate) struct DecisionView {
+    #[serde(flatten)]
+    pub decision: crate::session::coordinator::Decision,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_title: Option<String>,
+}
+
+pub(crate) async fn decision_views(state: &AppState) -> Option<Vec<DecisionView>> {
+    let decisions = tokio::task::spawn_blocking(crate::session::coordinator::decisions)
+        .await
+        .ok()?;
+    let instances = state.instances.read().await;
+    Some(
+        decisions
+            .into_iter()
+            .map(|decision| DecisionView {
+                session_title: decision.session_id.as_ref().and_then(|id| {
+                    instances
+                        .iter()
+                        .find(|inst| &inst.id == id)
+                        .map(|inst| inst.title.clone())
+                }),
+                decision,
+            })
+            .collect(),
+    )
 }
 
 pub async fn list_coordinator_decisions(State(state): State<Arc<AppState>>) -> Response {
-    let Some(session_id) = coordinator_session(&state).await else {
-        return Json(CoordinatorDecisions {
-            session_id: None,
-            decisions: Vec::new(),
-        })
-        .into_response();
+    match decision_views(&state).await {
+        Some(decisions) => Json(decisions).into_response(),
+        None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct DecisionAnswer {
+    answer: String,
+}
+
+pub async fn answer_coordinator_decision(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    body: Result<Json<DecisionAnswer>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(body) = match body {
+        Ok(body) => body,
+        Err(rejection) => return rejection.into_response(),
     };
-    // Only a live worker holds a question; a stale one could only 404 when answered.
-    let running = state.acp_supervisor.worker_state(&session_id).await
-        == crate::daemon::AcpWorkerState::Running;
-    let decisions = if running {
-        state
-            .acp_event_store
-            .pending_elicitation_requests(&session_id)
-    } else {
-        Vec::new()
+    let answer = body.answer.trim();
+    if answer.is_empty() {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "The answer is empty",
+        );
+    }
+    settle_decision(&state, &id, Some(answer)).await
+}
+
+pub async fn dismiss_coordinator_decision(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    settle_decision(&state, &id, None).await
+}
+
+/// Tells the coordinator the answer, or that the question was dismissed, and only then drops
+/// the decision, so one the coordinator could not take stays open.
+async fn settle_decision(state: &Arc<AppState>, id: &str, answer: Option<&str>) -> Response {
+    if state.read_only {
+        return super::read_only_response();
+    }
+    let Some(view) = decision_views(state)
+        .await
+        .and_then(|views| views.into_iter().find(|v| v.decision.id == id))
+    else {
+        return api_error(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            format!("No decision with id {id}"),
+        );
     };
-    Json(CoordinatorDecisions {
-        session_id: Some(session_id),
-        decisions,
-    })
-    .into_response()
+    let text = crate::server::coordinator::decision_message(
+        &view.decision,
+        view.session_title.as_deref(),
+        answer,
+    );
+    if let Err(reason) = crate::server::coordinator::tell_coordinator(state, &text).await {
+        return api_error(
+            StatusCode::CONFLICT,
+            reason,
+            "The coordinator could not take the answer right now. Try again in a moment.",
+        );
+    }
+    let id = id.to_string();
+    match tokio::task::spawn_blocking(move || crate::session::coordinator::remove_decision(&id))
+        .await
+    {
+        Ok(Ok(_)) => StatusCode::NO_CONTENT.into_response(),
+        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 /// A deploy with the title of the session that produced it, while that session exists.

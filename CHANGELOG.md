@@ -3,8 +3,10 @@
 ## 2026-11-25: Coordinator panel replaces the side panes
 
 The right side of a session is now only the Coordinator panel (Decisions,
-Sessions, Deploys, Notes), on every session. Decisions lists the coordinator's
-unanswered questions with a count, answerable there or in its chat. A header button and `Mod+Alt+B` collapse
+Sessions, Deploys, Notes), on every session. The coordinator no longer blocks
+on AskUserQuestion: it leaves decisions with `request_decision` and keeps
+working, and the Decisions tab lists them with a count. An answer or a
+dismissal goes back to it as an `[aoe decision]` message. A header button and `Mod+Alt+B` collapse
 and open it; there are no tabs or docks.
 
 Removed from the dashboard: the Diff pane and diff comments, the Files pane,
@@ -13,7 +15,15 @@ tab system, the `D` diff shortcut, and the Panels and Diff settings tabs. A
 local file path in a conversation renders as plain text. On mobile the view
 picker keeps the session and its paired terminal.
 
-The server API is unchanged.
+The server API is unchanged apart from `/api/coordinator/decisions`.
+
+On another machine, refresh the coordinator's instructions and settings,
+which are only written when missing, then restart its session:
+
+```sh
+cp ~/agent-of-empires/src/session/coordinator/CLAUDE.md ~/.config/agent-of-empires/coordinator/
+rm ~/.config/agent-of-empires/coordinator/.claude/settings.json  # rewritten on the next start
+```
 
 ## 2026-11-25: sidebar grouped by Group only
 

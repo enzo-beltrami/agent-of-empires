@@ -14,7 +14,7 @@ test("the Coordinator panel beside any session collapses and opens from the head
       json: route.request().url().endsWith("/summary")
         ? { wip: [], needs_action: [], idle: [] }
         : route.request().url().endsWith("/decisions")
-          ? { session_id: null, decisions: [] }
+          ? []
           : [],
     }),
   );

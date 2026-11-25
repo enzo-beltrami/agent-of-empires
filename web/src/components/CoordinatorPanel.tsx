@@ -11,17 +11,15 @@ import {
   removeDeploy,
   updateCoordinatorNote,
   updateDeploy,
-  postElicitationResolution,
-  type CoordinatorDecisions,
+  answerCoordinatorDecision,
+  dismissCoordinatorDecision,
+  type CoordinatorDecision,
   type CoordinatorNote,
   type CoordinatorSummary,
   type CoordinatorSummaryRow,
   type Deploy,
 } from "../lib/api";
 import { deployGroups, deployLabel, ticketLabel } from "../lib/coordinator";
-import type { ElicitationResolution } from "../lib/acpTypes";
-import { classifyResolveResponse } from "../hooks/acpSession/reducer";
-import { AskUserQuestionCard } from "./acp/AskUserQuestionCard";
 
 const REFRESH_MS = 5000;
 
@@ -50,7 +48,7 @@ interface Props {
 
 /** The panel beside every session: the coordinator's questions, what every session needs, the PRs waiting to ship. */
 export function CoordinatorPanel({ onOpenSession }: Props) {
-  const [decisions, setDecisions] = useState<CoordinatorDecisions | null>(null);
+  const [decisions, setDecisions] = useState<CoordinatorDecision[]>([]);
   const [summary, setSummary] = useState<CoordinatorSummary | null>(null);
   const [deploys, setDeploys] = useState<Deploy[]>([]);
   const [open, setOpen] = useState<BucketId | null>("needs_action");
@@ -61,16 +59,6 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
     void fetchCoordinatorSummary().then((s) => s && setSummary(s));
     void fetchDeploys().then((d) => d && setDeploys(d));
   }, []);
-
-  // Answered the same way as in the coordinator's chat, so either place resolves it for both.
-  const answer = async (sessionId: string, nonce: string, resolution: ElicitationResolution) => {
-    const res = await postElicitationResolution(sessionId, nonce, resolution);
-    const detail = res.ok ? "" : await res.text().catch(() => "");
-    const outcome = classifyResolveResponse("elicitation", res.ok, res.status, detail, nonce);
-    if (outcome.kind !== "resolved") throw new Error(outcome.message);
-    refresh();
-  };
-  const questions = decisions?.decisions ?? [];
 
   useEffect(() => {
     refresh();
@@ -115,12 +103,12 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
             }`}
           >
             {t.label}
-            {t.id === "decisions" && questions.length > 0 && (
+            {t.id === "decisions" && decisions.length > 0 && (
               <span
                 data-testid="decisions-pending-count"
                 className="rounded-full bg-status-waiting/20 px-1.5 font-mono text-[11px] leading-4 tabular-nums text-status-waiting"
               >
-                {questions.length}
+                {decisions.length}
               </span>
             )}
             {t.id === "deploys" && pending > 0 && (
@@ -142,20 +130,16 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
         hidden={tab !== "decisions"}
         className="flex-1 overflow-y-auto p-3"
       >
-        {questions.length === 0 ? (
+        {decisions.length === 0 ? (
           <p className="text-xs text-text-dim">
-            No open questions. The coordinator asks here when a session needs you.
+            No open decisions. The coordinator leaves them here and keeps working until you answer.
           </p>
         ) : (
-          <div className="flex flex-col gap-3">
-            {questions.map((elicitation) => (
-              <AskUserQuestionCard
-                key={elicitation.nonce}
-                elicitation={elicitation}
-                onResolve={(resolution) => answer(decisions!.session_id!, elicitation.nonce, resolution)}
-              />
+          <ul className="flex flex-col gap-2">
+            {decisions.map((decision) => (
+              <DecisionCard key={decision.id} decision={decision} onOpenSession={onOpenSession} onSettled={refresh} />
             ))}
-          </div>
+          </ul>
         )}
       </section>
 
@@ -534,3 +518,101 @@ function DeployCard({
 }
 
 /** Adds the panel beside a session's view when that session is the coordinator. */
+
+/** One open decision: pick an option or write an answer, which goes back to the coordinator, or dismiss it. */
+function DecisionCard({
+  decision,
+  onOpenSession,
+  onSettled,
+}: {
+  decision: CoordinatorDecision;
+  onOpenSession: (id: string) => void;
+  onSettled: () => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const settle = (send: () => Promise<{ ok: boolean; message?: string }>) => {
+    setBusy(true);
+    setError(null);
+    void send().then((result) => {
+      setBusy(false);
+      if (result.ok) onSettled();
+      else setError(result.message ?? "Could not reach the coordinator.");
+    });
+  };
+  const answer = (text: string) => settle(() => answerCoordinatorDecision(decision.id, text));
+  const submitDraft = () => {
+    if (draft.trim() && !busy) answer(draft.trim());
+  };
+  const sessionId = decision.session_id;
+
+  return (
+    <li data-testid="decision-card" className="rounded-md border border-status-waiting/40 bg-surface-900 px-2.5 py-2">
+      {sessionId && (
+        <button
+          type="button"
+          onClick={() => onOpenSession(sessionId)}
+          className="mb-1 block max-w-full truncate font-mono text-[11px] text-text-dim hover:text-text-secondary hover:underline cursor-pointer"
+        >
+          {decision.session_title ?? sessionId}
+        </button>
+      )}
+      <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-primary">
+        {decision.question}
+      </p>
+      {decision.options.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1">
+          {decision.options.map((option, i) => (
+            <button
+              key={option}
+              type="button"
+              disabled={busy}
+              onClick={() => answer(option)}
+              className={`${SMALL_BUTTON} h-auto min-h-7 py-1 text-left border ${
+                i === 0
+                  ? "border-brand-500/50 bg-brand-500/10 text-text-primary enabled:hover:bg-brand-500/20"
+                  : "border-surface-700 bg-surface-800 text-text-secondary enabled:hover:bg-surface-700/60"
+              }`}
+            >
+              {option}
+              {i === 0 && <span className="ml-1.5 text-[11px] text-text-dim">recommended</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      <textarea
+        aria-label="Your answer"
+        value={draft}
+        rows={2}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={noteKeys(submitDraft)}
+        placeholder="Or write your own answer"
+        className={`${FIELD} mt-2`}
+      />
+      {error && <p className="mt-1 text-xs text-status-error-text">{error}</p>}
+      <div className="mt-1.5 flex items-center gap-1">
+        <span className="flex-1 font-mono text-[11px] text-text-dim" title={decision.asked_at}>
+          {TIME.format(new Date(decision.asked_at))}
+        </span>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => settle(() => dismissCoordinatorDecision(decision.id))}
+          className={`${SMALL_BUTTON} text-text-dim enabled:hover:bg-surface-800 enabled:hover:text-text-secondary`}
+        >
+          Dismiss
+        </button>
+        <button
+          type="button"
+          disabled={busy || !draft.trim()}
+          onClick={submitDraft}
+          className={`${SMALL_BUTTON} border border-surface-700 bg-surface-800 text-text-secondary enabled:hover:bg-surface-700/60`}
+        >
+          Send answer
+        </button>
+      </div>
+    </li>
+  );
+}

@@ -14,7 +14,7 @@ beforeEach(() => {
     idle: [],
   });
   vi.spyOn(api, "fetchCoordinatorNotes").mockResolvedValue([]);
-  vi.spyOn(api, "fetchCoordinatorDecisions").mockResolvedValue({ session_id: "coord", decisions: [] });
+  vi.spyOn(api, "fetchCoordinatorDecisions").mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -154,34 +154,57 @@ describe("CoordinatorPanel", () => {
     expect(await screen.findByText("The note is empty")).toBeTruthy();
   });
 
-  it("opens on the coordinator's questions, counts them, and answers one on the coordinator's session", async () => {
+  it("opens on the coordinator's decisions and settles one by option, by typed answer, or by dismissing", async () => {
     vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
-    const question = {
-      nonce: "n-1",
-      message: "PI-2871: ship behind a flag?",
-      tool_call_id: null,
-      questions: [
-        { field_key: "q", title: null, description: null, required: false, kind: "free_text" as const, options: [] },
-      ],
-      requested_at: "2026-11-25T10:00:00Z",
-      resolved: null,
+    const decision: api.CoordinatorDecision = {
+      id: "d-1",
+      question: "PI-2871: ship behind a flag?",
+      options: ["Yes, behind a flag", "No"],
+      session_id: "s-9",
+      session_title: "PI-2871",
+      asked_at: "2026-11-25T10:00:00Z",
     };
-    const decisions = vi
-      .spyOn(api, "fetchCoordinatorDecisions")
-      .mockResolvedValueOnce({ session_id: "coord", decisions: [question] })
-      .mockResolvedValue({ session_id: "coord", decisions: [] });
-    const post = vi.spyOn(api, "postElicitationResolution").mockResolvedValue(new Response(null, { status: 204 }));
-    render(<CoordinatorPanel onOpenSession={vi.fn()} />);
+    vi.spyOn(api, "fetchCoordinatorDecisions").mockResolvedValue([decision]);
+    const answer = vi.spyOn(api, "answerCoordinatorDecision").mockResolvedValue({ ok: true });
+    const dismiss = vi.spyOn(api, "dismissCoordinatorDecision").mockResolvedValue({ ok: true });
+    const onOpen = vi.fn();
+    render(<CoordinatorPanel onOpenSession={onOpen} />);
 
     expect(await screen.findByText("PI-2871: ship behind a flag?")).toBeTruthy();
     expect(screen.getByTestId("decisions-pending-count").textContent).toBe("1");
-    fireEvent.change(screen.getByPlaceholderText("Type your answer"), { target: { value: "yes" } });
-    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    fireEvent.click(screen.getByText("PI-2871"));
+    expect(onOpen).toHaveBeenCalledWith("s-9");
 
-    await waitFor(() => expect(post).toHaveBeenCalledWith("coord", "n-1", { action: "accept", answers: { q: "yes" } }));
-    // The answer refreshes the list, which no longer holds the question.
-    await waitFor(() => expect(screen.getByText(/No open questions/)).toBeTruthy());
-    expect(decisions.mock.calls.length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(screen.getByRole("button", { name: /Yes, behind a flag/ }));
+    await waitFor(() => expect(answer).toHaveBeenLastCalledWith("d-1", "Yes, behind a flag"));
+
+    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "  only for EU  " } });
+    await waitFor(() => expect(send.disabled).toBe(false));
+    fireEvent.click(send);
+    await waitFor(() => expect(answer).toHaveBeenLastCalledWith("d-1", "only for EU"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(dismiss).toHaveBeenCalledWith("d-1"));
+  });
+
+  it("keeps a decision open with the reason when the coordinator could not take the answer", async () => {
+    vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
+    vi.spyOn(api, "fetchCoordinatorDecisions").mockResolvedValue([
+      { id: "d-2", question: "Merge?", options: ["Yes"], asked_at: "2026-11-25T10:00:00Z" },
+    ]);
+    vi.spyOn(api, "answerCoordinatorDecision").mockResolvedValue({ ok: false, message: "Try again in a moment." });
+    render(<CoordinatorPanel onOpenSession={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Yes/ }));
+    expect(await screen.findByText("Try again in a moment.")).toBeTruthy();
+    expect(screen.getByText("Merge?")).toBeTruthy();
+  });
+
+  it("shows an empty Decisions tab when nothing waits", async () => {
+    vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
+    render(<CoordinatorPanel onOpenSession={vi.fn()} />);
+    expect(await screen.findByText(/No open decisions/)).toBeTruthy();
     expect(screen.queryByTestId("decisions-pending-count")).toBeNull();
   });
 });

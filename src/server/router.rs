@@ -61,6 +61,12 @@ pub(super) fn build_router(state: Arc<AppState>) -> Router {
             get(api::list_coordinator_decisions),
         )
         .route(
+            "/api/coordinator/decisions/{id}",
+            post(api::answer_coordinator_decision)
+                .delete(api::dismiss_coordinator_decision)
+                .layer(read_only.clone()),
+        )
+        .route(
             "/api/coordinator/deploys",
             get(api::list_coordinator_deploys),
         )

@@ -8,8 +8,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{read_only_refusal, tool_error, McpServer};
-use crate::server::api::{deploy_views, session_summary, DeployView, SessionSummary};
-use crate::session::coordinator::{self, Deploy, NewDeploy, Note};
+use crate::server::api::{
+    decision_views, deploy_views, session_summary, DecisionView, DeployView, SessionSummary,
+};
+use crate::session::coordinator::{self, Decision, Deploy, NewDeploy, Note};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(super) struct AddDeployParams {
@@ -71,6 +73,29 @@ pub(super) struct MessageParams {
     /// True when you are blocked until someone decides.
     #[serde(default)]
     needs_decision: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(super) struct RequestDecisionParams {
+    /// Markdown: what needs deciding and the context to decide it, in a sentence or two. Name the
+    /// session it is for.
+    question: String,
+    /// Concrete answers to offer, your recommendation first. The user can also write their own.
+    #[serde(default)]
+    options: Vec<String>,
+    /// The session the decision is for.
+    session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(super) struct DecisionIdParams {
+    id: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub(super) struct DecisionList {
+    /// Oldest first.
+    decisions: Vec<DecisionView>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -236,6 +261,61 @@ impl McpServer {
     }
 
     #[rmcp::tool(
+        description = "Leave the user a decision in the dashboard's Decisions tab, then keep \
+            working: this returns at once and the user is notified. Their answer, or a \
+            dismissal, arrives later as an `[aoe decision]` message naming the decision's id. \
+            Use it instead of AskUserQuestion for anything the user must decide."
+    )]
+    async fn request_decision(
+        &self,
+        Parameters(p): Parameters<RequestDecisionParams>,
+    ) -> Result<Json<Decision>, CallToolResult> {
+        self.writable().map_err(|e| *e)?;
+        let decision =
+            blocking(move || coordinator::add_decision(&p.question, p.options, p.session_id))
+                .await
+                .map_err(|e| *e)?
+                .map_err(|e| tool_error("invalid_request", format!("{e:#}")))?;
+        if let Some(coordinator_id) = crate::server::api::coordinator_session(&self.state).await {
+            crate::server::push::fire_decision_push(
+                self.state.clone(),
+                &coordinator_id,
+                &decision.question,
+            )
+            .await;
+        }
+        Ok(Json(decision))
+    }
+
+    #[rmcp::tool(description = "Decisions still waiting for the user, oldest first.")]
+    async fn list_decisions(&self) -> Result<Json<DecisionList>, CallToolResult> {
+        decision_views(&self.state)
+            .await
+            .map(|decisions| Json(DecisionList { decisions }))
+            .ok_or_else(|| tool_error("internal", "Could not read the decisions"))
+    }
+
+    #[rmcp::tool(
+        description = "Remove a decision the user has not answered, once it no longer needs \
+            them."
+    )]
+    async fn withdraw_decision(
+        &self,
+        Parameters(p): Parameters<DecisionIdParams>,
+    ) -> Result<Json<DecisionList>, CallToolResult> {
+        self.writable().map_err(|e| *e)?;
+        let id = p.id.clone();
+        match blocking(move || coordinator::remove_decision(&p.id))
+            .await
+            .map_err(|e| *e)?
+        {
+            Ok(true) => self.list_decisions().await,
+            Ok(false) => Err(tool_error("not_found", format!("No decision with id {id}"))),
+            Err(e) => Err(tool_error("internal", format!("{e:#}"))),
+        }
+    }
+
+    #[rmcp::tool(
         description = "Message the coordinator, the agent that oversees every session for the \
             user. Use it when you need a decision you should not make alone (scope, behaviour, \
             trade-offs, anything destructive), when you are blocked, or to report a milestone \
@@ -279,7 +359,7 @@ impl McpServer {
         {
             return Err(tool_error(
                 "invalid_request",
-                "You are the coordinator; reach the user with AskUserQuestion instead.",
+                "You are the coordinator; reach the user with `request_decision` instead.",
             ));
         }
         let watched = caller.clone();

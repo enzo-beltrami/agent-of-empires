@@ -15,10 +15,12 @@ const INSTRUCTIONS: &str = include_str!("coordinator/CLAUDE.md");
 const WORKFLOW: &str = include_str!("coordinator/WORKFLOW.md");
 
 /// Claude Code permissions: every `aoe` tool, and edits to its own instructions and workflow, run
-/// without a prompt.
+/// without a prompt. AskUserQuestion would stop the coordinator until answered, so it asks with
+/// `request_decision` instead.
 const SETTINGS: &str = r#"{
   "permissions": {
-    "allow": ["mcp__aoe", "Edit(*.md)", "Write(*.md)"]
+    "allow": ["mcp__aoe", "Edit(*.md)", "Write(*.md)"],
+    "deny": ["AskUserQuestion"]
   }
 }
 "#;
@@ -259,6 +261,74 @@ pub fn remove_note(id: &str) -> Result<bool> {
     .map(|(_, removed)| removed)
 }
 
+const DECISIONS: &str = "decisions.json";
+
+/// A question the coordinator left for the user without stopping its work; answered from the
+/// dashboard's Decisions tab, which sends the answer back to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Decision {
+    pub id: String,
+    /// Markdown: what needs deciding, with the context to decide it.
+    pub question: String,
+    /// Suggested answers, the recommended one first.
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// The session the decision is for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    pub asked_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct DecisionList {
+    #[serde(default)]
+    decisions: Vec<Decision>,
+}
+
+/// Open decisions, oldest first.
+pub fn decisions() -> Vec<Decision> {
+    load::<DecisionList>(DECISIONS).decisions
+}
+
+pub fn add_decision(
+    question: &str,
+    options: Vec<String>,
+    session_id: Option<String>,
+) -> Result<Decision> {
+    let question = question.trim();
+    if question.is_empty() {
+        anyhow::bail!("The question is empty");
+    }
+    let decision = Decision {
+        id: uuid::Uuid::new_v4().simple().to_string()[..12].to_string(),
+        question: question.to_string(),
+        options: options
+            .into_iter()
+            .map(|o| o.trim().to_string())
+            .filter(|o| !o.is_empty())
+            .collect(),
+        session_id: session_id
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        asked_at: chrono::Utc::now(),
+    };
+    update(DECISIONS, |list: &mut DecisionList| {
+        list.decisions.push(decision.clone());
+        Ok(())
+    })?;
+    Ok(decision)
+}
+
+/// Removes a decision once settled; false when there is no such id.
+pub fn remove_decision(id: &str) -> Result<bool> {
+    update(DECISIONS, |list: &mut DecisionList| {
+        let before = list.decisions.len();
+        list.decisions.retain(|d| d.id != id);
+        Ok(list.decisions.len() != before)
+    })
+    .map(|(_, removed)| removed)
+}
+
 /// Serializes read-modify-write of the coordinator's files across dashboard and MCP callers.
 static FILES: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -355,6 +425,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&instructions).unwrap(), "mine");
         let settings = std::fs::read_to_string(dir.join(".claude/settings.json")).unwrap();
         assert!(settings.contains("mcp__aoe"));
+        assert!(settings.contains(r#""deny": ["AskUserQuestion"]"#));
         assert!(dir.join("WORKFLOW.md").is_file());
     }
 
@@ -465,5 +536,29 @@ mod tests {
         assert!(remove_deploy(&first.id).unwrap());
         assert!(!remove_deploy(&first.id).unwrap());
         assert_eq!(deploys().len(), 1);
+    }
+
+    #[test]
+    #[serial]
+    fn decisions_add_trimmed_and_remove_individually() {
+        let _home = crate::session::test_support::isolate_app_dir();
+        assert!(decisions().is_empty());
+        assert!(add_decision("  ", Vec::new(), None).is_err());
+        let first = add_decision(
+            " Ship PI-1921 behind a flag? ",
+            vec![" Yes, flag it ".into(), "  ".into(), "No".into()],
+            Some(" abc ".into()),
+        )
+        .unwrap();
+        assert_eq!(first.question, "Ship PI-1921 behind a flag?");
+        assert_eq!(first.options, ["Yes, flag it", "No"]);
+        assert_eq!(first.session_id.as_deref(), Some("abc"));
+        let second = add_decision("Merge now?", Vec::new(), Some(" ".into())).unwrap();
+        assert_eq!(second.session_id, None);
+        assert_eq!(decisions(), [first.clone(), second.clone()]);
+
+        assert!(remove_decision(&first.id).unwrap());
+        assert!(!remove_decision(&first.id).unwrap());
+        assert_eq!(decisions(), [second]);
     }
 }

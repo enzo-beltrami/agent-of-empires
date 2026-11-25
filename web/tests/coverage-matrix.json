@@ -2223,12 +2223,8 @@
       "kind": "vitest",
       "risk": "medium",
       "specs": ["src/components/__tests__/CoordinatorPanel.test.tsx", "tests/coordinator-pane.spec.ts"],
-      "components": [
-        "web/src/components/CoordinatorPanel.tsx",
-        "web/src/lib/api.ts",
-        "web/src/components/acp/AskUserQuestionCard.tsx"
-      ],
-      "notes": "The Coordinator panel opens on a Decisions tab listing the coordinator's unanswered questions with a count; each is answered through the session's elicitation route, so the chat and the tab agree. The server lists them only while the coordinator's worker runs."
+      "components": ["web/src/components/CoordinatorPanel.tsx", "web/src/lib/api.ts"],
+      "notes": "The coordinator leaves decisions with request_decision and keeps working; the Decisions tab lists them with a count and settles one by option, typed answer or dismissal, which reaches the coordinator as an [aoe decision] turn. An answer it cannot take keeps the decision open."
     },
     {
       "id": "sidebar.projects-section-listing",

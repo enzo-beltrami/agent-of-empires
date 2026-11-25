@@ -75,6 +75,9 @@ without a token. To connect an agent, see
 | `add_note` | `text` | The new note. Text is trimmed; an empty note is refused. |
 | `update_note` | `id`, `text` | The note with its new text; `updated_at` moves only when the text changes. |
 | `remove_note` | `id` | The remaining notes. |
+| `request_decision` | `question`, and optionally `options` (recommendation first), `session_id` | The decision, `{id, question, options, session_id?, asked_at}`. Leaves it in the dashboard's Decisions tab and returns at once; the user is notified. The answer, or a dismissal, reaches the coordinator later as an `[aoe decision]` turn naming the id. |
+| `list_decisions` | none | `{decisions}`: open decisions, oldest first, each with `session_title` while its session exists. |
+| `withdraw_decision` | `id` | The remaining decisions. |
 | `message_coordinator` | `message`, `needs_decision` (default `false`) | `{coordinator_session_id}`. Sends the coordinator session a turn naming the caller, and adds the caller to its watchlist. Only a caller that names its session, as the relay AoE injects does, can use it (`no_caller`); `no_coordinator` when there is no coordinator session. |
 
 Every tool declares an `outputSchema` and returns `structuredContent`. A refusal is a
