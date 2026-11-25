@@ -18,7 +18,6 @@ import { useAcpPrefs } from "../../lib/acpPrefs";
 import type { ActivityRow, ToolCall } from "../../lib/acpTypes";
 import { hasAnsi, parseAnsi, type AnsiSegment, type AnsiStyle } from "../../lib/ansi";
 import { highlightSnippet } from "../../lib/snippetHighlighter";
-import { useAcpFileRef } from "./AcpFileRefContext";
 import { useToolExpansionStore, useToolId, type ExpansionOverride } from "./ToolExpansion";
 import { useToolDisplayMode } from "./ToolDisplayMode";
 import { CopyMarkdownButton } from "./CopyMarkdownButton";
@@ -458,23 +457,7 @@ function ansiSegmentStyle(style: AnsiStyle): CSSProperties {
   };
 }
 
-/** Header file path; opens the in-app viewer when a handler exists, without toggling the card. */
+/** Header file path, with the full path on hover. */
 export function ClickableFilePath({ rawPath, display }: { rawPath: string; display: React.ReactNode }) {
-  const { onOpenFileRef } = useAcpFileRef();
-  if (!onOpenFileRef || rawPath === "(unknown file)") {
-    return <span title={rawPath}>{display}</span>;
-  }
-  return (
-    <button
-      type="button"
-      title={rawPath}
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpenFileRef({ path: rawPath });
-      }}
-      className="cursor-pointer text-left hover:text-text-primary hover:underline"
-    >
-      {display}
-    </button>
-  );
+  return <span title={rawPath}>{display}</span>;
 }

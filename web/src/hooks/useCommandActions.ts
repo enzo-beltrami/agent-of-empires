@@ -53,7 +53,6 @@ interface Args {
   activeSessionId: string | null;
   activeSession: SessionResponse | null;
   loginRequired: boolean;
-  hasActiveSession: boolean;
   readOnly: boolean;
   onNewSession: () => void;
   onNewScratch: () => void;
@@ -61,7 +60,6 @@ interface Args {
   onJumpToAttention: () => void;
   hasAttentionSession: boolean;
   onSessionStateAction: (sessionId: string, action: SessionStateAction) => void;
-  onToggleDiff: () => void;
   onOpenSettings: () => void;
   onOpenHelp: () => void;
   onOpenAbout: () => void;
@@ -82,7 +80,6 @@ export function useCommandActions({
   activeSessionId,
   activeSession,
   loginRequired,
-  hasActiveSession,
   readOnly,
   onNewSession,
   onNewScratch,
@@ -90,7 +87,6 @@ export function useCommandActions({
   onJumpToAttention,
   hasAttentionSession,
   onSessionStateAction,
-  onToggleDiff,
   onOpenSettings,
   onOpenHelp,
   onOpenAbout,
@@ -173,17 +169,6 @@ export function useCommandActions({
         keywords: ["attention", "waiting", "error", "next", "needs", "input", "urgent"],
         shortcut: "a",
         perform: onJumpToAttention,
-      });
-    }
-
-    if (hasActiveSession) {
-      actions.push({
-        id: "action:toggle-diff",
-        title: "Toggle diff pane",
-        group: "Actions",
-        keywords: ["changes", "files", "review"],
-        shortcut: "D",
-        perform: onToggleDiff,
       });
     }
 
@@ -285,7 +270,6 @@ export function useCommandActions({
     activeSessionId,
     activeSession,
     loginRequired,
-    hasActiveSession,
     readOnly,
     onNewSession,
     onNewScratch,
@@ -293,7 +277,6 @@ export function useCommandActions({
     onJumpToAttention,
     hasAttentionSession,
     onSessionStateAction,
-    onToggleDiff,
     onOpenSettings,
     onOpenHelp,
     onOpenAbout,

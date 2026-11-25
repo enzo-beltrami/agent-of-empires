@@ -15,7 +15,7 @@ import { isNewSessionStarting } from "./startupWait";
 import { AgentProfileProvider, useClearAliases, useCompactAliases } from "../../lib/agentProfileContext";
 import { queuedReason } from "./queuedReason";
 import { conversationFontSizeRem } from "../../lib/conversationFontSize";
-import type { FileRef, FileRefSession } from "../../lib/fileRef";
+import type { FileRefSession } from "../../lib/fileRef";
 import { ChromeCollapseHandle, CollapsibleRegion } from "../CollapsibleChrome";
 import { AcpFileRefContext } from "./AcpFileRefContext";
 import { AcpRuntime, type AcpContext } from "./AcpRuntime";
@@ -72,10 +72,8 @@ interface Props {
   trashedAt: string | null;
   /** Restore the trashed workspace; resolves false on failure. */
   onRestore?: () => Promise<boolean> | void;
-  onOpenFileRef?: (ref: FileRef) => void;
   fileRefSession?: FileRefSession | null;
   isSandboxed?: boolean;
-  onOpenAgentsPane?: () => void;
   /** Opens the switch-view confirmation; omitted on a read-only server. */
   onSwitchToTerminal?: () => void;
   /** Shows this Session's paired shell; omitted where the terminal can't be used. */
@@ -91,21 +89,12 @@ const STARTER_PROMPTS = [
 ];
 
 export function StructuredView(props: Props) {
-  const {
-    sessionId,
-    acpWorkerState,
-    tool,
-    clearAliases,
-    compactAliases,
-    archivedAt,
-    snoozedUntil,
-    onOpenFileRef,
-    fileRefSession,
-  } = props;
+  const { sessionId, acpWorkerState, tool, clearAliases, compactAliases, archivedAt, snoozedUntil, fileRefSession } =
+    props;
   const [showClearedTurns, setShowClearedTurns] = useState(false);
   const [toolDensity, toggleToolDensity] = useToolDensityPref();
   return (
-    <AcpFileRefContext.Provider value={{ onOpenFileRef, fileRefSession }}>
+    <AcpFileRefContext.Provider value={{ fileRefSession }}>
       <AgentProfileProvider toolKey={tool} clearAliases={clearAliases} compactAliases={compactAliases}>
         <ToolDisplayModeProvider density={toolDensity}>
           <ToolExpansionProvider>
@@ -122,7 +111,6 @@ export function StructuredView(props: Props) {
                     agents: ctx.state.backgroundAgents,
                     workflowRuns: ctx.state.workflowRuns,
                     backgroundTasks: ctx.state.backgroundTasks,
-                    openPane: props.onOpenAgentsPane,
                   }}
                 >
                   <AcpChrome

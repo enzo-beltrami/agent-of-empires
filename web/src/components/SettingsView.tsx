@@ -24,8 +24,6 @@ import { loadSettings, saveField, useProfileSettings } from "../lib/settingsStor
 import type { ProfileInfo, SettingsFieldDescriptor } from "../lib/types";
 import { SchemaSection } from "./settings/SchemaSection";
 import { SelectField } from "./settings/FormFields";
-import { DiffSettings } from "./settings/DiffSettings";
-import { PanelsSettings } from "./settings/PanelsSettings";
 import { CityHallSettings } from "./settings/CityHallSettings";
 import { PluginsSettings } from "./settings/PluginsSettings";
 import { SettingsIntro, SettingsIntroReopen } from "./settings/SettingsIntro";
@@ -52,12 +50,10 @@ export type TabId =
   | "sandbox"
   | "worktree"
   | "theme"
-  | "diff"
   | "sound"
   | "tmux"
   | "systemd"
   | "notifications"
-  | "panels"
   | "terminal"
   | "security"
   | "devices"
@@ -102,8 +98,6 @@ export function buildSidebar(readOnly = false): SidebarItem[] {
     { kind: "tab", id: "theme", label: "Theme" },
     { kind: "tab", id: "notifications", label: "Notifications" },
     { kind: "tab", id: "terminal", label: "Terminal" },
-    { kind: "tab", id: "panels", label: "Panels" },
-    { kind: "tab", id: "diff", label: "Diff" },
     { kind: "tab", id: "devices", label: "Devices" },
     { kind: "tab", id: "security", label: "Security" },
     { kind: "divider", label: "Sessions" },
@@ -193,12 +187,10 @@ const ALL_TAB_IDS = new Set<TabId>([
   "sandbox",
   "worktree",
   "theme",
-  "diff",
   "sound",
   "tmux",
   "systemd",
   "notifications",
-  "panels",
   "terminal",
   "security",
   "devices",
@@ -519,8 +511,7 @@ export function SettingsView({
       activeTab !== "skills" &&
       activeTab !== "plugins" &&
       activeTab !== "cityhall" &&
-      activeTab !== "logs" &&
-      activeTab !== "panels"
+      activeTab !== "logs"
     ) {
       return <div className="text-sm text-text-dim">Loading settings...</div>;
     }
@@ -644,10 +635,6 @@ export function SettingsView({
             hideFields={cityhall ? CITYHALL_THEME_HIDDEN : undefined}
           />
         );
-      case "diff":
-        return <DiffSettings />;
-      case "panels":
-        return <PanelsSettings />;
       case "sound":
         return (
           <SchemaSection

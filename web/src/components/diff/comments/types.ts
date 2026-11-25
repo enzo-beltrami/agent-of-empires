@@ -20,19 +20,3 @@ export interface DiffComment {
   createdAt: string;
   updatedAt?: string;
 }
-
-export type DiffCommentDraft = Omit<DiffComment, "id" | "createdAt">;
-
-/** Versioned localStorage envelope; other versions are dropped on load. */
-export interface DiffCommentsStorageV1 {
-  version: 1;
-  comments: DiffComment[];
-  clearAfterSend: boolean;
-  introDraft: string;
-  outroDraft: string;
-}
-
-export interface AnchoredComment {
-  comment: DiffComment;
-  status: "active" | "stale";
-}

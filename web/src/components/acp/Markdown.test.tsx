@@ -159,12 +159,11 @@ describe("anchor override", () => {
 
   it("opens external links in a new tab with a safe rel, preserving props", () => {
     const Anchor = override<React.ComponentPropsWithoutRef<"a">>("a");
-    const onOpenFileRef = vi.fn();
     const { container } = renderIn(
       <Anchor href="https://example.com/path" title="t">
         link text
       </Anchor>,
-      { onOpenFileRef, fileRefSession: session },
+      { fileRefSession: session },
     );
     const a = container.querySelector("a")!;
     expect(a.getAttribute("href")).toBe("https://example.com/path");
@@ -173,38 +172,17 @@ describe("anchor override", () => {
     expect(a.getAttribute("target")).toBe("_blank");
     expect(a.getAttribute("rel")).toBe("noopener noreferrer");
     expect(click(a).defaultPrevented).toBe(false);
-    expect(onOpenFileRef).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["without a session", undefined],
-    ["inside the session repo", session],
-  ])("routes a local file link to the viewer %s", (_label, fileRefSession) => {
+    ["in the repo without a session", IN_REPO, undefined],
+    ["in the session repo", IN_REPO, session],
+    ["outside the session repo", "/tmp/codex-agent-views/shot.png", session],
+  ])("renders a local file path %s as inert text", (_label, href, fileRefSession) => {
     const Anchor = override<React.ComponentPropsWithoutRef<"a">>("a");
-    const onOpenFileRef = vi.fn();
-    const { container } = renderIn(<Anchor href={IN_REPO}>app.ts</Anchor>, { onOpenFileRef, fileRefSession });
-    expect(click(container.querySelector("a")!).defaultPrevented).toBe(true);
-    expect(onOpenFileRef).toHaveBeenCalledWith({ path: "/Users/me/repo/src/app.ts", line: 42 });
-  });
-
-  it("falls through to a new-tab anchor for a local link with no handler", () => {
-    const Anchor = override<React.ComponentPropsWithoutRef<"a">>("a");
-    const { container } = renderIn(<Anchor href={IN_REPO}>app.ts</Anchor>);
-    const a = container.querySelector("a")!;
-    expect(click(a).defaultPrevented).toBe(false);
-    expect(a.getAttribute("target")).toBe("_blank");
-  });
-
-  // An out-of-repo file the agent touched is reachable from its tool card instead.
-  it("renders an out-of-repo path as inert text", () => {
-    const Anchor = override<React.ComponentPropsWithoutRef<"a">>("a");
-    const onOpenFileRef = vi.fn();
-    const { container } = renderIn(<Anchor href="/tmp/codex-agent-views/shot.png">shot.png</Anchor>, {
-      onOpenFileRef,
-      fileRefSession: session,
-    });
+    const { container } = renderIn(<Anchor href={href}>file</Anchor>, { fileRefSession });
     expect(container.querySelector("a")).toBeNull();
-    expect(container.querySelector("span.acp-inert-path")?.textContent).toBe("shot.png");
+    expect(container.querySelector("span.acp-inert-path")?.textContent).toBe("file");
   });
 
   it.each([
@@ -212,10 +190,7 @@ describe("anchor override", () => {
     ["/home/u/.aoe/artifacts/sess-1/sub/x.png", "/api/sessions/sess-1/artifacts/sub/x.png"],
   ])("maps artifact path %s to the authenticated route", (href, route) => {
     const Anchor = override<React.ComponentPropsWithoutRef<"a">>("a");
-    const { container } = renderIn(<Anchor href={href}>x</Anchor>, {
-      onOpenFileRef: vi.fn(),
-      fileRefSession: artSession,
-    });
+    const { container } = renderIn(<Anchor href={href}>x</Anchor>, { fileRefSession: artSession });
     expect(container.querySelector("a.acp-artifact-link")?.getAttribute("href")).toBe(route);
   });
 

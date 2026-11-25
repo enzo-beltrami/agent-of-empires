@@ -239,32 +239,20 @@ test("staged photo past the localStorage quota survives reload without a storage
   await expect(page.getByText(/storage full/i)).toHaveCount(0);
 });
 
-test("structured view transcript file links open in-app, scroll to cited line, and render out-of-repo paths as inert text", async ({
+test("structured view transcript file paths render as inert text, in or out of the repo", async ({
   page,
   spawnServe,
 }) => {
-  // #1718, #1809, #1810, #2587. Line 80 of a fully rewritten file is virtualized below the fold.
-  const sentinel = "TARGET_SENTINEL_424242";
-  const lines = Array.from({ length: 100 }, (_, i) => `export const v${i} = ${i};`);
+  // #1718: a local path is never a link the browser could follow away from the session.
   const serve = await spawnServe({
     acp: true,
     // Rewritten in seedFn once the project path is known.
     fakeAcpScript: script(),
     seedFn: ({ home, env }) => {
       const projectDir = initWorkingRepo(join(home, "project"), env).path;
-      writeFiles(projectDir, {
-        "src/a.ts": "export const a = 1;\n",
-        "src/b.ts": "export const unchangedConst = 42;\n",
-        "src/long.ts": lines.join("\n") + "\n",
-      });
+      writeFiles(projectDir, { "src/a.ts": "export const a = 1;\n" });
       commitAll(projectDir, "baseline", env);
-      writeFiles(projectDir, {
-        "src/a.ts": "export const a = 11;\n",
-        "src/long.ts":
-          lines.map((l, i) => (i === 79 ? `export const ${sentinel} = ${i};` : `${l} // edited`)).join("\n") + "\n",
-      });
-      // project_path is the working tree, so absolute links under it resolve to repo files.
-      const text = `See [a.ts](${projectDir}/src/a.ts:1), [b.ts](${projectDir}/src/b.ts:1), [deep](${projectDir}/src/long.ts:80) and [missing](/tmp/aoe-1718-not-a-repo/missing.ts:1).`;
+      const text = `See [a.ts](${projectDir}/src/a.ts:1) and [missing](/tmp/aoe-1718-not-a-repo/missing.ts:1).`;
       writeFileSync(fakeAcpScriptPath(home), JSON.stringify(script(endTurn(chunk(text)))));
       aoeAdd(env, projectDir, "acp-filelink");
     },
@@ -274,26 +262,11 @@ test("structured view transcript file links open in-app, scroll to cited line, a
   await openStructuredView(page, serve, sessionId);
   expect2xx(await postPrompt(serve.baseUrl, sessionId, "show me the file"));
 
-  const sessionUrl = new RegExp(`/session/${sessionId}`);
-  await expect(page.locator("span.acp-inert-path", { hasText: "missing" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("link", { name: "missing" })).toHaveCount(0);
-  await expect(page).toHaveURL(sessionUrl);
-
-  const links: [string, RegExp][] = [
-    ["a.ts", /export const a = 11/],
-    // Only visible if the viewer scrolled to the cited line.
-    ["deep", new RegExp(sentinel)],
-    // No diff against base, so the full-file fallback renders.
-    ["b.ts", /export const unchangedConst = 42/],
-  ];
-  for (const [name, content] of links) {
-    if (name !== "a.ts") await page.getByRole("button", { name: "Back to terminal" }).click();
-    const link = page.getByRole("link", { name });
-    await expect(link).toBeVisible();
-    await link.click();
-    await expect(page.getByText(content).first()).toBeVisible({ timeout: 10_000 });
-    await expect(page).toHaveURL(sessionUrl);
+  for (const name of ["a.ts", "missing"]) {
+    await expect(page.locator("span.acp-inert-path", { hasText: name })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("link", { name })).toHaveCount(0);
   }
+  await expect(page).toHaveURL(new RegExp(`/session/${sessionId}`));
 });
 
 test("back-to-back agent messages render as separate paragraphs, live and after reload", async ({

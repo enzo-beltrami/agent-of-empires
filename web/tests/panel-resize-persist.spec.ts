@@ -37,7 +37,7 @@ test("sidebar and right panel widths persist across reload after dragging their 
   const sidebar = await dragHandle(page, "sidebar-resize-handle", SIDEBAR_WIDTH_KEY, 60);
   expect(parseFloat(sidebar)).toBeGreaterThan(0);
   const split = await dragHandle(page, "content-split-resize-handle", SPLIT_STORAGE_KEY, -80);
-  // MIN_DIFF_WIDTH in ContentSplit.tsx; the drag widens from the 380px
+  // MIN_PANEL_WIDTH in ContentSplit.tsx; the drag widens from the 380px
   // default, so anything below the floor means the clamp regressed.
   expect(parseInt(split, 10)).toBeGreaterThanOrEqual(280);
 

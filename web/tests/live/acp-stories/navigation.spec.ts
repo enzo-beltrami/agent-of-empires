@@ -69,14 +69,15 @@ test("command palette switches sessions", async ({ page, spawnServe }) => {
   await expect(page).toHaveURL(new RegExp(`/session/${idOf("palette-target")}`), { timeout: 10_000 });
 });
 
-test("Cmd/Ctrl+` activates the paired terminal panel", async ({ page, spawnServe }) => {
+test("on a phone, Cmd/Ctrl+` promotes the paired terminal and focuses it", async ({ page, spawnServe }) => {
+  // Only the phone layout has a paired terminal; desktop shows the Coordinator panel beside the session.
+  await page.setViewportSize({ width: 390, height: 844 });
   const serve = await spawnServe({ seedFn: seedSessionViaAoeAdd({ title: "story-terminal-focus" }) });
   const [seeded] = await listSessions(serve.baseUrl);
   await page.goto(`${serve.baseUrl}/session/${encodeURIComponent(seeded!.id)}`);
-  await expect(page.locator('[data-testid="content-split-resize-handle"]')).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('[data-term="agent"]').first()).toBeVisible({ timeout: 15_000 });
 
-  // The chord activates the paired terminal tab and focuses it once its PTY is ready.
+  // The chord promotes the paired view and focuses its shell once its PTY is ready.
   await page.locator("body").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press(`${MOD}+Backquote`);
   await expect(page.locator('[data-term="paired"]').first()).toBeVisible({ timeout: 15_000 });

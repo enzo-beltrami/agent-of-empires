@@ -10,7 +10,6 @@ export interface ShortcutActions {
   onJumpToAttention: () => void;
   /** Opens the wizard on the Review step for a scratch session. */
   onNewScratch: () => void;
-  onDiff: () => void;
   onEscape: () => void;
   onHelp: () => void;
   onSettings: () => void;
@@ -31,7 +30,6 @@ export type ShortcutId =
   | "newScratch"
   | "coordinator"
   | "jumpAttention"
-  | "diff"
   | "settings"
   | "escape"
   | "help";
@@ -126,7 +124,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   {
     id: "rightPanel",
     action: "onToggleRightPanel",
-    description: "Toggle right panel",
+    description: "Toggle Coordinator panel",
     chord: { mod: true, alt: true, base: "B" },
     trigger: {
       scope: "global",
@@ -207,18 +205,6 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     trigger: {
       scope: "textless",
       key: "a",
-      preventDefault: true,
-      stopPropagation: false,
-    },
-  },
-  {
-    id: "diff",
-    action: "onDiff",
-    description: "Toggle diff pane",
-    chord: { base: "D" },
-    trigger: {
-      scope: "textless",
-      key: "D",
       preventDefault: true,
       stopPropagation: false,
     },

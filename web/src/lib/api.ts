@@ -3,8 +3,6 @@ import { notifySettingsChanged } from "./settingsEvents";
 import type { SchemaSettings } from "./generated/settingsKeys";
 import type {
   SessionResponse,
-  RichDiffFilesResponse,
-  RichFileContentsResponse,
   AgentInfo,
   ProfileInfo,
   ProfileSettingsResponse,
@@ -381,43 +379,6 @@ export async function pasteImage(id: string, file: File, canUpload: () => boolea
   } catch {
     return null;
   }
-}
-
-/** Kill an extra terminal tab's host + container shells (index >= 1). Index 0
- *  is the primary terminal shared with the native TUI and cannot be killed
- *  from the web UI (the server rejects it); closing that tab only hides it. */
-export async function killTerminal(id: string, index: number): Promise<boolean> {
-  try {
-    return await fetchOk(`/api/sessions/${id}/terminal?index=${index}`, { method: "DELETE" });
-  } catch {
-    return false;
-  }
-}
-
-export function getSessionDiffFiles(id: string): Promise<RichDiffFilesResponse | null> {
-  return fetchJson<RichDiffFilesResponse>(`/api/sessions/${id}/diff/files`);
-}
-
-/**
- * Fetch raw old/new contents plus a server-computed unified patch for a
- * file; the client renders the patch via `@pierre/diffs` without re-diffing.
- * See {@link RichFileContentsResponse}.
- */
-export function getSessionFileContents(
-  id: string,
-  filePath: string,
-  repoName?: string,
-): Promise<RichFileContentsResponse | null> {
-  const params = new URLSearchParams({ path: filePath });
-  if (repoName) params.set("repo", repoName);
-  return fetchJson<RichFileContentsResponse>(`/api/sessions/${id}/diff/file?${params.toString()}`);
-}
-
-/** URL of a diffed file's current worktree bytes, for opening in a new tab. */
-export function sessionDiffRawFileUrl(id: string, filePath: string, repoName?: string): string {
-  const params = new URLSearchParams({ path: filePath });
-  if (repoName) params.set("repo", repoName);
-  return `/api/sessions/${id}/diff/file/raw?${params.toString()}`;
 }
 
 export interface SessionFileResponse {
@@ -2147,23 +2108,6 @@ export async function setSessionNotifications(
     return await sessionSettingOutcome(res, id, expectedEpoch);
   } catch {
     return { outcome: "uncertain" };
-  }
-}
-
-/** Set or clear (`null`) one repo's diff base; omit `repo` for a single-repo session. */
-export async function setSessionDiffBase(
-  id: string,
-  baseBranch: string | null,
-  repo?: string | null,
-): Promise<SessionResponse | null> {
-  try {
-    return await sessionUpdate(
-      id,
-      "diff-base",
-      jsonInit("PATCH", repo ? { base_branch: baseBranch, repo } : { base_branch: baseBranch }),
-    );
-  } catch {
-    return null;
   }
 }
 

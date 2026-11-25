@@ -1,66 +1,12 @@
 // Keyboard shortcuts through useKeyboardShortcuts: Cmd/Ctrl+B toggles the
-// sidebar, Shift+D the diff pane, Cmd/Ctrl+Alt+B the whole right dock. The
-// chords bind on `e.code === "KeyB"` so Mac layouts emitting "∫" still match.
-// The dock toggle is observed via ContentSplit's drag handle, which exists only
-// with a session open and panes docked.
+// sidebar and Cmd/Ctrl+Alt+B the Coordinator panel. The chords bind on
+// `e.code === "KeyB"` so Mac layouts emitting "∫" still match.
 
 import { test, expect } from "./helpers/mockedTest";
-import type { Page } from "@playwright/test";
 import { installSidebarMocks, threeSessionsInOneRepo } from "./helpers/sidebarMocks";
 import { mockTerminalApis } from "./helpers/terminal-mocks";
 
 const SESSION = "pinch-test";
-const PANE_LAYOUT_KEY = "aoe-pane-layout-v2";
-
-async function rightDockState(page: Page): Promise<{ tabs: string[]; collapsed: boolean } | null> {
-  return page.evaluate(
-    ({ key, session }) => {
-      const raw = localStorage.getItem(key);
-      if (!raw) return null;
-      const store = JSON.parse(raw) as {
-        template?: { right?: { tabs?: string[] }[]; collapsed?: { right?: boolean } };
-        sessions?: Record<string, { right?: { tabs?: string[] }[]; collapsed?: { right?: boolean } }>;
-      };
-      const layout = store.sessions?.[session] ?? store.template;
-      if (!layout) return null;
-      return {
-        tabs: (layout.right ?? []).flatMap((g) => g.tabs ?? []),
-        collapsed: layout.collapsed?.right === true,
-      };
-    },
-    { key: PANE_LAYOUT_KEY, session: SESSION },
-  );
-}
-
-// Force focus onto <body> before pressing a single-key shortcut.
-// xterm.js's helper textarea steals focus when the terminal mounts or
-// re-layouts; a focused textarea makes the input-gated shortcuts
-// (Shift+D) no-ops and turns the keystroke into PTY bytes instead.
-// The blur runs INSIDE the poll: a single early blur loses to xterm's
-// asynchronous refocus on a slow runner, so re-blur on every attempt
-// until body actually holds focus.
-async function blurToBody(page: Page) {
-  // xterm autofocuses its textarea when the WS connects (async, after
-  // mount), so a blur that runs before that one-shot lands gets undone
-  // and the shortcut keystroke types into the terminal instead. Wait
-  // out the autofocus (soft timeout: it may have fired already), THEN
-  // blur until body holds focus.
-  const deadline = Date.now() + 1_500;
-  while (Date.now() < deadline) {
-    const tag = await page.evaluate(() => document.activeElement?.tagName ?? null);
-    if (tag === "TEXTAREA") break;
-    await page.waitForTimeout(50);
-  }
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const ae = document.activeElement as HTMLElement | null;
-        if (ae && ae !== document.body) ae.blur?.();
-        return document.activeElement?.tagName ?? null;
-      }),
-    )
-    .toBe("BODY");
-}
 
 test("Cmd/Ctrl+B toggles the workspace sidebar", async ({ page }) => {
   await installSidebarMocks(page, { sessions: threeSessionsInOneRepo() });
@@ -78,35 +24,21 @@ test("Cmd/Ctrl+B toggles the workspace sidebar", async ({ page }) => {
   await expect(sessionRow).toBeVisible();
 });
 
-test("Cmd/Ctrl+Alt+B toggles the right panel and Shift+D the diff pane on a session view", async ({ page }) => {
+test("Cmd/Ctrl+Alt+B toggles the Coordinator panel on a session view", async ({ page }) => {
   await mockTerminalApis(page);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`/session/${SESSION}`);
 
-  const handle = page.locator('[data-testid="content-split-resize-handle"]');
-  await expect(handle).toBeVisible();
-  await expect.poll(() => rightDockState(page)).toEqual({ tabs: ["diff", "terminal:0"], collapsed: false });
+  const panel = page.getByTestId("coordinator-panel");
+  const toggle = page.getByTestId("coordinator-panel-toggle");
+  await expect(panel).toBeVisible();
+
+  // Global chord: fires with the terminal focused too.
+  await page.keyboard.press("ControlOrMeta+Alt+b");
+  await expect(panel).toHaveCount(0);
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
 
   await page.keyboard.press("ControlOrMeta+Alt+b");
-  await expect(handle).toBeHidden();
-  await expect.poll(() => rightDockState(page)).toEqual({ tabs: ["diff", "terminal:0"], collapsed: true });
-
-  await page.keyboard.press("ControlOrMeta+Alt+b");
-  await expect(handle).toBeVisible();
-  await expect.poll(() => rightDockState(page)).toEqual({ tabs: ["diff", "terminal:0"], collapsed: false });
-
-  // Shift+D toggles the diff pane specifically (not the whole dock); the
-  // activity-bar toggle's pressed state reflects whether diff is open.
-  const diffToggle = page.locator('[data-testid="pane-toggle-diff"]');
-  await expect(diffToggle).toHaveAttribute("aria-pressed", "true");
-
-  await blurToBody(page);
-  await page.keyboard.press("Shift+D");
-  await expect(diffToggle).toHaveAttribute("aria-pressed", "false");
-
-  // Re-blur: collapsing re-layouts the split, which can hand focus back to
-  // the terminal via xterm's ResizeObserver focus-restore.
-  await blurToBody(page);
-  await page.keyboard.press("Shift+D");
-  await expect(diffToggle).toHaveAttribute("aria-pressed", "true");
+  await expect(panel).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
 });

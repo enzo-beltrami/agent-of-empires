@@ -22,14 +22,10 @@ export interface WebSettings {
   maxPersistentTerminals: number;
   persistentStructuredViews: boolean;
   maxPersistentStructuredViews: number;
-  diffViewMode: "flat" | "tree";
-  diffViewLayout: "unified" | "split";
   markdownPreview: "rendered" | "raw";
   collapsedDiffDirs: string[];
   sidebarSide: "left" | "right";
   sidebarCompact: boolean;
-  autoOpenDiffPane: boolean;
-  autoOpenTerminalPane: boolean;
   /** Ordered key row above the soft keyboard in the live terminal. */
   mobileToolbarKeys: ToolbarKeyId[];
   showArrowJoystick: boolean;
@@ -49,14 +45,10 @@ function getDefaults(): WebSettings {
     maxPersistentTerminals: DEFAULT_PERSISTENT_TERMINALS,
     persistentStructuredViews: false,
     maxPersistentStructuredViews: DEFAULT_PERSISTENT_STRUCTURED_VIEWS,
-    diffViewMode: window.innerWidth < 768 ? "flat" : "tree",
-    diffViewLayout: "unified",
     markdownPreview: "rendered",
     collapsedDiffDirs: [],
     sidebarSide: "left",
     sidebarCompact: false,
-    autoOpenDiffPane: true,
-    autoOpenTerminalPane: true,
     mobileToolbarKeys: [...DEFAULT_TOOLBAR_KEYS],
     showArrowJoystick: true,
     showForwardScrollbar: false,
@@ -78,8 +70,6 @@ function normalizeSnapshot(settings: WebSettings): WebSettings {
     structuredMobileFontSize: normalizeConversationFontSize(settings.structuredMobileFontSize),
     structuredDesktopFontSize: normalizeConversationFontSize(settings.structuredDesktopFontSize),
     sidebarCompact: normalizeBool(settings.sidebarCompact, defaults.sidebarCompact),
-    autoOpenDiffPane: normalizeBool(settings.autoOpenDiffPane, defaults.autoOpenDiffPane),
-    autoOpenTerminalPane: normalizeBool(settings.autoOpenTerminalPane, defaults.autoOpenTerminalPane),
     mobileToolbarKeys: normalizeToolbarKeys(settings.mobileToolbarKeys),
     showArrowJoystick: normalizeBool(settings.showArrowJoystick, defaults.showArrowJoystick),
     showForwardScrollbar: normalizeBool(settings.showForwardScrollbar, defaults.showForwardScrollbar),

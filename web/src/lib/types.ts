@@ -207,35 +207,6 @@ export interface TimingPongMessage {
   server_busy_us: number;
 }
 
-export interface RichDiffFile {
-  path: string;
-  old_path: string | null;
-  status: "added" | "modified" | "deleted" | "renamed" | "copied" | "untracked" | "conflicted" | "unchanged";
-  additions: number;
-  deletions: number;
-  /** Omitted for single-repo sessions. */
-  repo_name?: string;
-}
-
-export interface RepoBase {
-  /** Omitted for single-repo sessions. */
-  repo_name?: string;
-  /** Absent when `outside_repository`. */
-  base_branch?: string;
-  /** The Working directory is not a Repository, so there is nothing to diff. */
-  outside_repository?: boolean;
-  /** Worktree path this repo's diff was computed in. */
-  repo_path: string;
-  base_override?: string;
-}
-
-export interface RichDiffFilesResponse {
-  files: RichDiffFile[];
-  /** One entry per repo; workspace members can have different defaults. */
-  per_repo_bases: RepoBase[];
-  warning: string | null;
-}
-
 export interface RichDiffLine {
   type: "add" | "delete" | "equal";
   old_line_num: number | null;
@@ -249,17 +220,6 @@ export interface RichDiffHunk {
   new_start: number;
   new_lines: number;
   lines: RichDiffLine[];
-}
-
-export interface RichFileContentsResponse {
-  file: RichDiffFile;
-  old_content: string;
-  new_content: string;
-  /** Server-computed unified diff; empty for binary files. */
-  patch: string;
-  is_binary: boolean;
-  /** Too large to send inline; contents are empty. */
-  truncated: boolean;
 }
 
 export type WorkspaceStatus = "active" | "idle";

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-25: Coordinator panel replaces the side panes
+
+The right side of a session is now only the Coordinator panel (Sessions,
+Deploys, Notes), on every session. A header button and `Mod+Alt+B` collapse
+and open it; there are no tabs or docks.
+
+Removed from the dashboard: the Diff pane and diff comments, the Files pane,
+the Sub agents pane, desktop terminal panes (extra and paired), the dock and
+tab system, the `D` diff shortcut, and the Panels and Diff settings tabs. A
+local file path in a conversation renders as plain text. On mobile the view
+picker keeps the session and its paired terminal.
+
+The server API is unchanged.
+
 ## 2026-11-25: sidebar grouped by Group only
 
 The sidebar groups Sessions by their Group (theme) or by status; grouping by

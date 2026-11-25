@@ -3,9 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { safeGetItem, safeSetItem } from "../lib/safeStorage";
 
 const SPLIT_STORAGE_KEY = "aoe-split-ratio";
-const DEFAULT_DIFF_WIDTH = 380;
-const MIN_TERMINAL_WIDTH = 400;
-const MIN_DIFF_WIDTH = 280;
+const DEFAULT_PANEL_WIDTH = 380;
+const MIN_MAIN_WIDTH = 400;
+const MIN_PANEL_WIDTH = 280;
 
 interface Props {
   left: React.ReactNode;
@@ -18,18 +18,18 @@ function loadSavedWidth(): number {
   const saved = safeGetItem(SPLIT_STORAGE_KEY);
   if (saved) {
     const w = parseInt(saved, 10);
-    if (w >= MIN_DIFF_WIDTH) return w;
+    if (w >= MIN_PANEL_WIDTH) return w;
   }
-  return DEFAULT_DIFF_WIDTH;
+  return DEFAULT_PANEL_WIDTH;
 }
 
 export function ContentSplit({ left, right, collapsed, onToggleCollapse }: Props) {
-  const [diffWidth, setDiffWidth] = useState(loadSavedWidth);
+  const [panelWidth, setPanelWidth] = useState(loadSavedWidth);
   // Publish the live width so the TopBar's right zone can size itself to match the panel column and extend the
   // divider up through the header, mirroring the sidebar.
   useEffect(() => {
-    document.documentElement.style.setProperty("--aoe-right-panel-width", `${diffWidth}px`);
-  }, [diffWidth]);
+    document.documentElement.style.setProperty("--aoe-right-panel-width", `${panelWidth}px`);
+  }, [panelWidth]);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
@@ -44,11 +44,11 @@ export function ContentSplit({ left, right, collapsed, onToggleCollapse }: Props
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragging.current || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const newDiffWidth = rect.right - e.clientX;
-      const terminalWidth = rect.width - newDiffWidth;
+      const newPanelWidth = rect.right - e.clientX;
+      const mainWidth = rect.width - newPanelWidth;
 
-      if (newDiffWidth >= MIN_DIFF_WIDTH && terminalWidth >= MIN_TERMINAL_WIDTH) {
-        setDiffWidth(newDiffWidth);
+      if (newPanelWidth >= MIN_PANEL_WIDTH && mainWidth >= MIN_MAIN_WIDTH) {
+        setPanelWidth(newPanelWidth);
       }
     };
 
@@ -58,7 +58,7 @@ export function ContentSplit({ left, right, collapsed, onToggleCollapse }: Props
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       // Persist
-      setDiffWidth((w) => {
+      setPanelWidth((w) => {
         safeSetItem(SPLIT_STORAGE_KEY, String(w));
         return w;
       });
@@ -81,7 +81,7 @@ export function ContentSplit({ left, right, collapsed, onToggleCollapse }: Props
 
   return (
     <div ref={containerRef} className="flex-1 flex min-h-0 overflow-hidden relative">
-      {/* Terminal pane */}
+      {/* Session */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">{left}</div>
 
       {!collapsed && (
@@ -94,8 +94,8 @@ export function ContentSplit({ left, right, collapsed, onToggleCollapse }: Props
             className="hidden md:block w-1 cursor-col-resize shrink-0 hover:bg-brand-600/50 transition-colors duration-75"
           />
 
-          {/* Right pane (inline). */}
-          <div style={{ width: diffWidth }} className="flex shrink-0 flex-col min-h-0 overflow-hidden">
+          {/* Coordinator panel */}
+          <div style={{ width: panelWidth }} className="flex shrink-0 flex-col min-h-0 overflow-hidden">
             {right}
           </div>
         </>

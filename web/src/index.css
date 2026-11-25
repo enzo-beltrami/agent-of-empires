@@ -265,7 +265,7 @@ html[data-ios-standalone]:not([data-editing]) {
   }
 }
 /* Only the conversation renderer (Markdown.tsx) opts in. The other
-   `.acp-markdown` consumers (tool-card bodies, the diff pane's file viewer)
+   `.acp-markdown` consumers (tool-card bodies)
    keep their own explicit sizes, so the child typography below stays in `rem`
    for them and is re-expressed in `em` under `.acp-markdown-body` only. */
 .acp-markdown-body {

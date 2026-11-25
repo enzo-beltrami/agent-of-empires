@@ -33,7 +33,6 @@ import {
   isActiveAgent,
   useBackgroundAgentsFor,
   useBackgroundTaskIds,
-  useOpenBackgroundAgentsPane,
   useWorkflowRun,
   workflowPhases,
   workflowRunning,
@@ -179,7 +178,6 @@ export function WorkflowToolCard({ tool, result }: ToolCardProps) {
   const callStatus = statusFor(result);
   const run = useWorkflowRun(tool.id);
   const agents = useBackgroundAgentsFor(tool.id);
-  const openPane = useOpenBackgroundAgentsPane();
   const args = useToolArgs(tool);
   const script = pickStr(args, "script");
   const live = workflowRunning(run, useBackgroundTaskIds(), agents);
@@ -222,11 +220,6 @@ export function WorkflowToolCard({ tool, result }: ToolCardProps) {
                   </div>
                 );
               })}
-              {openPane && (
-                <button type="button" onClick={openPane} className="mt-1.5 text-accent-500 hover:underline">
-                  Open Sub agents
-                </button>
-              )}
             </div>
           )}
           {script && <RawBlock label="input" text={script} />}

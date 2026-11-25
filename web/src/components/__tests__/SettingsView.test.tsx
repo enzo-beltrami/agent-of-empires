@@ -12,8 +12,6 @@ describe("buildSidebar", () => {
       "theme",
       "notifications",
       "terminal",
-      "panels",
-      "diff",
       "devices",
       "security",
       "-- Sessions",

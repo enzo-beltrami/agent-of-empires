@@ -1,6 +1,6 @@
 # Structured View (Web Dashboard)
 
-The **structured view** renders agent state as plans, tool-call cards, diffs and approvals instead of terminal output. It is the web dashboard's default view and is also available in the native TUI, with mobile and multi-pane desktop layouts.
+The **structured view** renders agent state as plans, tool-call cards, diffs and approvals instead of terminal output. It is the web dashboard's default view and is also available in the native TUI, with mobile and desktop layouts.
 
 AoE is the client of the [Agent Client Protocol](https://agentclientprotocol.com/) (ACP), and the agent is the server. ACP-capable agents can use structured view or terminal view per session; agents without an adapter always use terminal view.
 
@@ -101,7 +101,7 @@ Features depend on the ACP adapter and its profile:
 | `/clear` boundary divider | `/clear` | `/new` | `/new` | none | none |
 | TodoWrite / Skill / ExitPlanMode / ScheduleWakeup cards | ✓ | — | — | — | — |
 | Subagent indentation | ✓ | — | unverified | — | — |
-| Workflow agents in the Sub agents pane | ✓ | — | — | — | — |
+| Workflow agent progress | ✓ | — | — | — | — |
 | Session resume across `aoe serve` restart | ✓ | depends | ✓ | depends | depends |
 
 In a sandboxed session a Claude `Workflow` run is not tracked, like a backgrounded command: the session can show idle while its agents still work.

@@ -60,11 +60,10 @@ export function Markdown({ text, smooth = false, breaks = false }: Props) {
   );
 }
 
-/** Session artifacts open through the authenticated route; local file references
- *  open the in-app viewer, or render inert when outside every repo root; other
- *  links open in a new tab so the session is never navigated away. */
-function TranscriptLink({ href, onClick, children, ...rest }: React.ComponentPropsWithoutRef<"a">) {
-  const { onOpenFileRef, fileRefSession } = useAcpFileRef();
+/** Session artifacts open through the authenticated route; local file references render
+ *  inert; other links open in a new tab so the session is never navigated away. */
+function TranscriptLink({ href, children, ...rest }: React.ComponentPropsWithoutRef<"a">) {
+  const { fileRefSession } = useAcpFileRef();
   const ref = href ? parseFileRef(href) : null;
   const artifactUrl = ref && fileRefSession ? resolveArtifactUrl(ref.path, fileRefSession) : null;
 
@@ -85,22 +84,10 @@ function TranscriptLink({ href, onClick, children, ...rest }: React.ComponentPro
     );
   }
 
-  // Out-of-repo paths may not be openable; files the agent touched open from their tool card.
-  if (ref && fileRefSession && !resolveToRepoRelative(ref.path, fileRefSession)) {
-    return <span className="acp-inert-path">{children}</span>;
-  }
-
-  function handleClick(e: React.MouseEvent<HTMLAnchorElement>) {
-    if (ref && onOpenFileRef) {
-      e.preventDefault();
-      onOpenFileRef(ref);
-      return;
-    }
-    onClick?.(e);
-  }
+  if (ref) return <span className="acp-inert-path">{children}</span>;
 
   return (
-    <a {...rest} href={href} onClick={handleClick} target="_blank" rel="noopener noreferrer">
+    <a {...rest} href={href} target="_blank" rel="noopener noreferrer">
       {children}
     </a>
   );

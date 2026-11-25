@@ -1,6 +1,7 @@
 import { test, expect } from "./helpers/mockedTest";
 import { mockAcpSession, openStructuredSession, stopped } from "./helpers/acpMock";
 import { mockTerminalApis } from "./helpers/terminal-mocks";
+import { iPhone13 } from "./helpers/viewports";
 
 const SHOTS = process.env.USER_ATTACHMENT_SHOTS;
 
@@ -63,38 +64,46 @@ test("a prompt's image and document share one bubble with the text and open on c
   expect(tab.isClosed()).toBe(false);
 });
 
-test("the lightbox holds back the terminal-focus shortcut while a paired terminal is mounted", async ({ page }) => {
-  // The ACP mock is registered last so its session list wins; the terminal mock only supplies the paired shell's routes.
-  await mockTerminalApis(page);
-  const mock = await mockAcpSession(page, {
-    title: "story-lightbox-shortcut",
-    initialEvents: [
-      {
-        UserPromptSent: {
-          text: "look",
-          attachments: [{ id: "att-img", kind: "image", mime_type: "image/png", name: "shot.png", size: PNG.length }],
+test.describe("on a phone", () => {
+  test.use(iPhone13);
+
+  test("the lightbox holds back the terminal-focus shortcut while a paired terminal is mounted", async ({ page }) => {
+    // The ACP mock is registered last so its session list wins; the terminal mock only supplies the paired shell's routes.
+    await mockTerminalApis(page);
+    const mock = await mockAcpSession(page, {
+      title: "story-lightbox-shortcut",
+      initialEvents: [
+        {
+          UserPromptSent: {
+            text: "look",
+            attachments: [{ id: "att-img", kind: "image", mime_type: "image/png", name: "shot.png", size: PNG.length }],
+          },
         },
-      },
-      stopped(),
-    ],
+        stopped(),
+      ],
+    });
+    await page.route("**/api/sessions/sess-1/acp/attachments/att-img", (route) =>
+      route.fulfill({ contentType: "image/png", body: PNG }),
+    );
+    await openStructuredSession(page, mock);
+
+    // Mount the paired shell, then return to the conversation; the shell stays mounted behind it.
+    await page.getByRole("button", { name: "Toggle panels" }).click();
+    await page.getByTestId("mobile-right-panel-pick-paired").click();
+    const pairedInput = page.locator('[data-term="paired"] textarea').first();
+    await expect(pairedInput).toBeAttached();
+    await page.getByTestId("mobile-back-to-agent").click();
+
+    await page.locator("img.acp-artifact-image").click();
+    const lightbox = page.getByTestId("image-lightbox");
+    await expect(lightbox).toBeVisible();
+    const close = lightbox.getByRole("button", { name: "Close image" });
+    await expect(close).toBeFocused();
+
+    await page.keyboard.press("ControlOrMeta+`");
+    await expect(lightbox).toBeVisible();
+    await expect(close).toBeFocused();
+    await expect(pairedInput).not.toBeFocused();
+    await expect(page.getByTestId("mobile-back-to-agent")).toHaveCount(0);
   });
-  await page.route("**/api/sessions/sess-1/acp/attachments/att-img", (route) =>
-    route.fulfill({ contentType: "image/png", body: PNG }),
-  );
-  await openStructuredSession(page, mock);
-
-  await page.locator('[data-testid^="pane-tab-terminal:"]').first().click();
-  const pairedInput = page.locator('[data-term="paired"]:visible textarea').first();
-  await expect(pairedInput).toBeAttached();
-
-  await page.locator("img.acp-artifact-image").click();
-  const lightbox = page.getByTestId("image-lightbox");
-  await expect(lightbox).toBeVisible();
-  const close = lightbox.getByRole("button", { name: "Close image" });
-  await expect(close).toBeFocused();
-
-  await page.keyboard.press("ControlOrMeta+`");
-  await expect(lightbox).toBeVisible();
-  await expect(close).toBeFocused();
-  await expect(pairedInput).not.toBeFocused();
 });

@@ -9,7 +9,6 @@ export interface ClientCapabilities {
    */
   readOnly: boolean;
   canUseTerminal: boolean;
-  canUseDiff: boolean;
   canManageProjects: boolean;
   nameOnlyWizard: boolean;
 }
@@ -20,7 +19,6 @@ export function getClientCapabilities(serverAbout: ServerAbout | null | undefine
     cityhall,
     readOnly: serverAbout ? !!serverAbout.read_only : true,
     canUseTerminal: !cityhall,
-    canUseDiff: !cityhall,
     canManageProjects: !cityhall,
     nameOnlyWizard: cityhall,
   };

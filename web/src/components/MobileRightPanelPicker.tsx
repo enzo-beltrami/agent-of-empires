@@ -2,10 +2,13 @@ import { useEffect, type ReactNode } from "react";
 import { Sparkles, SquareTerminal, type LucideIcon } from "lucide-react";
 import type { RightPanelView } from "../lib/rightPanelView";
 import { sessionRowChromeClass } from "../lib/sessionRowChrome";
-import type { PaneDisplay } from "./Dock";
 import { PaneIcon } from "./PaneIcon";
 
-// Mobile-only pseudo-views with no desktop dock equivalent; always offered.
+interface PaneDisplay {
+  title: string;
+  icon: LucideIcon;
+}
+
 const SESSION_VIEWS: { view: RightPanelView; title: string; icon: LucideIcon }[] = [
   { view: "agent", title: "Agent", icon: Sparkles },
   { view: "paired", title: "Paired terminal", icon: SquareTerminal },
@@ -15,10 +18,6 @@ interface Props {
   open: boolean;
   active: RightPanelView;
   sessionTitle: string;
-  // `allPaneIds` in `App.tsx` filtered for mobile, so mobile availability
-  // follows the desktop dock's capability and session gating.
-  availablePanes: string[];
-  describePane: (id: string) => PaneDisplay;
   onSelect: (view: RightPanelView) => void;
   onClose: () => void;
 }
@@ -63,15 +62,7 @@ function Row({
 /** Mobile-only right drawer, the workspace sidebar's counterpart, that
  *  promotes the chosen view into the single full-viewport main pane. Rows sit
  *  at the bottom, within thumb reach. */
-export function MobileRightPanelPicker({
-  open,
-  active,
-  sessionTitle,
-  availablePanes,
-  describePane,
-  onSelect,
-  onClose,
-}: Props) {
+export function MobileRightPanelPicker({ open, active, sessionTitle, onSelect, onClose }: Props) {
   // Close on Escape, matching the other dismissible overlays.
   useEffect(() => {
     if (!open) return;
@@ -113,19 +104,6 @@ export function MobileRightPanelPicker({
               <Row key={view} display={{ title, icon }} view={view} active={view === active} onSelect={onSelect} />
             ))}
           </Section>
-          {availablePanes.length > 0 && (
-            <Section label="Panes">
-              {availablePanes.map((id) => (
-                <Row
-                  key={id}
-                  display={describePane(id)}
-                  view={id as RightPanelView}
-                  active={id === active}
-                  onSelect={onSelect}
-                />
-              ))}
-            </Section>
-          )}
         </div>
       </div>
     </div>

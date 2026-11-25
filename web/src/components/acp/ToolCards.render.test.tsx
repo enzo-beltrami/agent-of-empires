@@ -34,7 +34,7 @@ import {
 import { writeClipboard } from "../../lib/clipboard";
 import { highlightSnippet } from "../../lib/snippetHighlighter";
 import { AgentProfileProvider } from "../../lib/agentProfileContext";
-import type { FileRef, FileRefSession } from "../../lib/fileRef";
+import type { FileRefSession } from "../../lib/fileRef";
 import { buildSkillIndex, type SkillIndex } from "../../lib/skillProvenance";
 import { AcpFileRefContext } from "./AcpFileRefContext";
 import { BackgroundAgentsContext } from "./backgroundAgentsContext";
@@ -53,13 +53,12 @@ afterEach(() => {
 interface RenderOpts {
   toolKey?: string | null;
   session?: FileRefSession | null;
-  onOpenFileRef?: (ref: FileRef) => void;
   nested?: boolean;
 }
 
-function wrap(node: React.ReactNode, { toolKey = null, session = null, onOpenFileRef }: RenderOpts = {}) {
+function wrap(node: React.ReactNode, { toolKey = null, session = null }: RenderOpts = {}) {
   return (
-    <AcpFileRefContext.Provider value={{ fileRefSession: session, onOpenFileRef }}>
+    <AcpFileRefContext.Provider value={{ fileRefSession: session }}>
       <AgentProfileProvider toolKey={toolKey}>{node}</AgentProfileProvider>
     </AcpFileRefContext.Provider>
   );
@@ -592,16 +591,11 @@ describe("repo-relative paths", () => {
     expect(container.querySelector('[title="/tmp/main.rs"]')!.textContent).toContain("main.rs");
   });
 
-  it("opens the file via onOpenFileRef, or renders plain text without a handler", () => {
+  it("shows the full file path on hover as plain text", () => {
     const path = "/tmp/main.rs";
-    const onOpenFileRef = vi.fn();
-    const { container } = renderCard(fixtures.read, undefined, { session, onOpenFileRef });
-    fireEvent.click(container.querySelector(`button[title="${path}"]`)!);
-    expect(onOpenFileRef).toHaveBeenCalledWith({ path });
-    cleanup();
-    const plain = renderCard(fixtures.read, undefined, { session });
-    expect(plain.container.querySelector(`button[title="${path}"]`)).toBeNull();
-    expect(plain.container.querySelector(`[title="${path}"]`)).not.toBeNull();
+    const { container } = renderCard(fixtures.read, undefined, { session });
+    expect(container.querySelector(`button[title="${path}"]`)).toBeNull();
+    expect(container.querySelector(`span[title="${path}"]`)).not.toBeNull();
   });
 });
 
@@ -816,17 +810,6 @@ describe("AsyncSubagentCard", () => {
     expect(container.textContent).toContain("3 tools · Read");
     expect(container.textContent).not.toContain("agentId");
   });
-
-  it("opens the Sub agents pane on click", () => {
-    const openPane = vi.fn();
-    const { getByRole } = render(
-      <BackgroundAgentsContext.Provider value={{ agents: [], openPane }}>
-        <AsyncSubagentCard tool={tool} />
-      </BackgroundAgentsContext.Provider>,
-    );
-    fireEvent.click(getByRole("button"));
-    expect(openPane).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("WorkflowToolCard", () => {
@@ -852,14 +835,12 @@ describe("WorkflowToolCard", () => {
   });
 
   it("follows the run's agents per phase, keeping the script folded", () => {
-    const openPane = vi.fn();
     const value = {
       agents: [member("d1", "Draft", "completed"), member("v1", "Verify", "running")],
       workflowRuns: { toolu_wf: { taskId: "wfx", name: "issue-drafts", summary: "Draft five issues" } },
       backgroundTasks: ["wfx"],
-      openPane,
     };
-    const { container, getByText } = render(
+    const { container } = render(
       wrap(
         <BackgroundAgentsContext.Provider value={value}>
           <ToolCard tool={tool} result={launched} />
@@ -878,8 +859,7 @@ describe("WorkflowToolCard", () => {
     expect(text()).toContain("Draft1 done");
     expect(text()).toContain("Verify1 running · 0 done");
     expect(text()).toContain("await agent");
-    fireEvent.click(getByText("Open Sub agents"));
-    expect(openPane).toHaveBeenCalledTimes(1);
+    expect(text()).not.toContain("Open Sub agents");
   });
 
   it.each([

@@ -5,11 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../lib/api", () => ({ fetchAllSessions: vi.fn() }));
 vi.mock("../../lib/acpDrafts", () => ({ sweepOrphanDrafts: vi.fn() }));
-vi.mock("../../components/diff/comments/storage", () => ({ sweepOrphanComments: vi.fn() }));
 
 import { fetchAllSessions, type SessionsEnvelope } from "../../lib/api";
 import { sweepOrphanDrafts } from "../../lib/acpDrafts";
-import { sweepOrphanComments } from "../../components/diff/comments/storage";
 import type { SessionResponse } from "../../lib/types";
 import { useOrphanSweep } from "../useOrphanSweep";
 
@@ -27,7 +25,6 @@ describe("useOrphanSweep", () => {
   it("sweeps with the live ids alone when the trash is empty", () => {
     renderHook(() => useOrphanSweep(rows("a", "b"), true, 0));
     expect(swept()).toEqual(["a", "b"]);
-    expect(sweepOrphanComments).toHaveBeenCalledWith(new Set(["a", "b"]));
     expect(fetchAllSessions).not.toHaveBeenCalled();
   });
 
@@ -49,9 +46,6 @@ describe("useOrphanSweep", () => {
     await act(async () => resolve(snapshot("a", "restored", "t")));
 
     expect(swept()).toEqual(["a", "created-meanwhile", "restored", "t"]);
-    expect(vi.mocked(sweepOrphanComments).mock.calls[0]![0]).toEqual(
-      new Set(["a", "created-meanwhile", "restored", "t"]),
-    );
     expect(fetchAllSessions).toHaveBeenCalledTimes(1);
   });
 

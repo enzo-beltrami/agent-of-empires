@@ -1,17 +1,6 @@
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { IDLE_DECAY_WINDOW_MS } from "./lib/session";
-import { diffSelectionStale } from "./lib/diffSelection";
 import { useSessions } from "./hooks/useSessions";
 import { useAttentionCounts } from "./hooks/useAttentionCounts";
 import { useStatusSounds } from "./hooks/useStatusSounds";
@@ -41,10 +30,6 @@ import { useResolvedTheme } from "./hooks/useResolvedTheme";
 import type { ResolvedTheme } from "./lib/theme";
 import { getAttentionBadgeColors } from "./lib/attentionBadgeColors";
 import { useWebSettings } from "./hooks/useWebSettings";
-import { useDiffFiles } from "./hooks/useDiffFiles";
-import { useDiffComments } from "./hooks/useDiffComments";
-import { clearStoredComments } from "./components/diff/comments/storage";
-import { SendCommentsDialog } from "./components/diff/comments/SendCommentsDialog";
 import { useCommandActions, buildConversationActions, type SessionStateAction } from "./hooks/useCommandActions";
 import { useSettingsCommands } from "./hooks/useSettingsCommands";
 import { useDrawerSwipe, type DrawerSwipeAction } from "./hooks/useDrawerSwipe";
@@ -52,7 +37,6 @@ import { useIsCoarsePointer } from "./hooks/useIsCoarsePointer";
 import { useMobileViewportLock } from "./hooks/useMobileViewportLock";
 import { useIsWideViewport } from "./hooks/useIsWideViewport";
 import type { RightPanelView } from "./lib/rightPanelView";
-import { usePaneLayout, dockTabs, dockGroups, dockOf, isDockCollapsed } from "./lib/paneLayout";
 import { TOUR_ANCHORS, tourAnchor } from "./lib/tourSteps";
 import {
   deleteWorkspaceSessions,
@@ -79,7 +63,6 @@ import {
   projectTarget,
   deleteProject,
   setSessionUnread,
-  killTerminal,
   setSessionPin,
   setSessionArchive,
   setSessionSnooze,
@@ -104,9 +87,9 @@ import { parseSystemHealthEnabled, SystemHealthEnabledContext } from "./lib/syst
 import { toastBus, reportError } from "./lib/toastBus";
 import { isCoordinatorPath, isCoordinatorWorkspace } from "./lib/coordinator";
 import { CoordinatorPanel } from "./components/CoordinatorPanel";
+import { usePersistedFlag } from "./components/usePersistedFlag";
 import { restartForUpdate } from "./lib/restartForUpdate";
 import { startPendingCreates } from "./lib/pendingCreates";
-import { isAbsolutePath, resolveToRepoRelative, type FileRef } from "./lib/fileRef";
 import { OPEN_SESSION_EVENT, openFocusWindow, replaceDocument } from "./lib/sessionRoute";
 import { dispatchFocusTerminal, requestSessionInputFocus, setPendingTerminalFocus } from "./lib/terminalFocus";
 import {
@@ -136,31 +119,12 @@ const StructuredView = lazy(() =>
     default: m.StructuredView,
   })),
 );
-import { type PaneDisplay } from "./components/Dock";
-import { DockGroups, type DockGroupView } from "./components/DockGroups";
-import { BottomDock } from "./components/BottomDock";
-import { PaneDndController } from "./components/PaneDndController";
-import type { DropTarget } from "./components/paneDnd";
-import { BackgroundAgentsPanel } from "./components/acp/BackgroundAgentsPanel";
 import { hasStartedBefore } from "./components/acp/startupWait";
-import { DiffPane } from "./components/DiffPane";
-import { FilesPane } from "./components/FilesPane";
-import { FileContentViewer } from "./components/diff/FileContentViewer";
-import { PairedShellPane } from "./components/PairedTerminal";
 import { usePairedShellModes } from "./hooks/usePairedShellModes";
 import { useOpenPairedTerminal, usePairedTerminalReveal } from "./hooks/usePairedTerminalReveal";
-import {
-  BUILTIN_PANES,
-  isTerminalTabId,
-  terminalIndexOf,
-  terminalTabId,
-  type BuiltinPaneId,
-  type DockLocation,
-} from "./lib/panes";
 import { MobileRightPanelPicker } from "./components/MobileRightPanelPicker";
 import { MobileMainPane } from "./components/MobileMainPane";
 import { ChromeCollapseHandle, CollapsibleRegion } from "./components/CollapsibleChrome";
-import { DiffFileViewer } from "./components/diff/DiffFileViewer";
 import { SettingsView } from "./components/SettingsView";
 import { ProjectFormModal } from "./components/ProjectFormModal";
 import { ScratchOverridesModal } from "./components/ScratchOverridesModal";
@@ -309,22 +273,6 @@ export default function App() {
       </UnreadIndicatorContext.Provider>
     </IdleDecayWindowContext.Provider>
   );
-}
-
-/** Walk from the event target up to the document root looking for any
- *  text-input surface, so global hotkeys don't fire when the user is
- *  typing in an `<input>`, `<textarea>`, or contenteditable element
- *  (or any contenteditable ancestor of a deeper rich-text widget). */
-function isInsideEditable(target: EventTarget | null): boolean {
-  let el: HTMLElement | null = target instanceof HTMLElement ? target : null;
-  while (el) {
-    const tag = el.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable) {
-      return true;
-    }
-    el = el.parentElement;
-  }
-  return false;
 }
 
 const noop = (): void => {};
@@ -530,159 +478,11 @@ function AppContent({
     [carryGroupPrefs],
   );
 
-  // Selected diff-file identity. `repoName` is undefined for single-repo
-  // sessions and the workspace member name for multi-repo workspaces.
-  // Kept as one state so the path + repo always update together; with
-  // two parallel states we'd briefly fetch the wrong repo when only
-  // one side changed (workspace path collisions across repos make this
-  // a real bug, not theoretical). See #1047.
-  const [selectedFile, setSelectedFile] = useState<{
-    path: string;
-    repoName?: string;
-    /** 1-based source line to scroll into view, when the file was opened from a
-     *  transcript `path:line` link. Undefined for plain file-list clicks. */
-    line?: number;
-    /** Opened from a transcript file-ref rather than the diff list. Such a
-     *  file may have no diff against the base (full-file fallback, #1810), so
-     *  it must not be auto-cleared for being absent from the diff list. */
-    cited?: boolean;
-    /** An absolute path OUTSIDE the session's repo roots that the agent
-     *  touched this session (a cited `/tmp/plan.md`, `~/.claude/x.md`). Read
-     *  via the provenance-confined `/file` endpoint and rendered by
-     *  FileContentViewer instead of the git-diff viewer. See #3088. */
-    external?: boolean;
-  } | null>(null);
-  const selectedFilePath = selectedFile?.path ?? null;
-  const selectedFileExternal = selectedFile?.external ?? false;
-  const selectedRepoName = selectedFile?.repoName;
-  const selectedFileLine = selectedFile?.line;
-  // Dock panes render as tabbed groups (#2437): each dock holds an ordered set
-  // of tabs (diff, one-or-more terminals) with one active body.
-  // The tab membership + active tab + terminal count are persisted per session;
-  // dock sizes stay global (Dock/BottomDock own those localStorage keys).
-  // Null until the active Session's row loads, so nothing is seeded from a guess.
-  const activeRow = sessions.find((s) => s.id === activeSessionId);
-  const activeOutsideRepository = activeRow ? Boolean(activeRow.outside_repository) : null;
-  const {
-    layout: paneLayout,
-    openTab,
-    addTerminal,
-    closeTab,
-    activateTab,
-    moveTab,
-    placeTab,
-    toggleKind,
-    pinSeed,
-    setDockCollapsed,
-  } = usePaneLayout(activeSessionId, activeOutsideRepository);
-  // Pin the seeded diff/terminal defaults once the Session row loads, so a
-  // non-git seed never keeps Diff (#4574).
-  useEffect(() => {
-    if (activeOutsideRepository === null) return;
-    pinSeed();
-  }, [pinSeed, activeOutsideRepository]);
-
-  const paneDescriptor = useCallback((id: string): PaneDisplay => {
-    if (isTerminalTabId(id)) {
-      const idx = terminalIndexOf(id);
-      const term = BUILTIN_PANES.find((p) => p.id === "terminal")!;
-      return { title: idx === 0 ? term.title : `${term.title} ${idx + 1}`, icon: term.icon };
-    }
-    const d = BUILTIN_PANES.find((p) => p.id === id)!;
-    return { title: d.title, icon: d.icon };
-  }, []);
-
-  // A dock's groups as rendered: each keeps its persisted index, so a drop
-  // addresses the right group.
-  const renderGroups = useCallback(
-    (dock: DockLocation): DockGroupView[] =>
-      dockGroups(paneLayout, dock).map((g, group) => ({
-        group,
-        tabs: g.tabs,
-        active: g.active && g.tabs.includes(g.active) ? g.active : (g.tabs[0] ?? null),
-      })),
-    [paneLayout],
-  );
-
-  const availableRightGroups = useMemo(() => renderGroups("right"), [renderGroups]);
-  const rightDockExplicitlyCollapsed = isDockCollapsed(paneLayout, "right");
-  const rightDockCollapsed = rightDockExplicitlyCollapsed || availableRightGroups.length === 0;
-  const rightGroups = useMemo(
-    () => (rightDockExplicitlyCollapsed ? [] : availableRightGroups),
-    [rightDockExplicitlyCollapsed, availableRightGroups],
-  );
-  const bottomGroups = useMemo(() => renderGroups("bottom"), [renderGroups]);
-  const groupsByDock = useMemo(
-    () => ({
-      right: rightGroups.map((g) => ({ group: g.group, tabs: g.tabs })),
-      bottom: bottomGroups.map((g) => ({ group: g.group, tabs: g.tabs })),
-    }),
-    [rightGroups, bottomGroups],
-  );
-  const terminalOpen = (["right", "bottom"] as DockLocation[]).some(
-    (d) => !isDockCollapsed(paneLayout, d) && dockTabs(paneLayout, d).some(isTerminalTabId),
-  );
-
-  // Activity-bar entries are pane KINDS (diff, terminal, ...), not
-  // individual tabs; the strip's +/x manage terminal instances.
-  const isPaneOpen = (kind: string): boolean => {
-    if (kind === "terminal") return terminalOpen;
-    const dock = dockOf(paneLayout, kind);
-    return dock !== null && !isDockCollapsed(paneLayout, dock);
-  };
-  const togglePaneAny = useCallback(
-    (kind: string) => {
-      const defaultDock: DockLocation = BUILTIN_PANES.find((p) => p.id === kind)?.defaultDock ?? "right";
-      toggleKind(kind as BuiltinPaneId, defaultDock);
-    },
-    [toggleKind],
-  );
-  // Open (or focus) the Sub agents pane. Used by an inline async
-  // sub-agent card to jump to its panel entry.
-  const openAgentsPane = useCallback(() => {
-    const dock = dockOf(paneLayout, "agents");
-    if (dock) activateTab(dock, "agents");
-    else toggleKind("agents", "right");
-  }, [paneLayout, activateTab, toggleKind]);
-  const closePaneAny = useCallback(
-    (id: string) => {
-      // Closing an extra terminal tab kills its tmux shell so it does not leak;
-      // terminal 0 (shared with the native TUI) only hides. Diff tabs
-      // have no backend shell to reap.
-      if (isTerminalTabId(id)) {
-        const idx = terminalIndexOf(id);
-        if (idx >= 1) {
-          // Remove the tab only once the shell is actually killed; if the
-          // DELETE fails, keep the tab so the user can retry instead of
-          // silently leaking the shell with no way to close it.
-          if (activeSessionId) {
-            void killTerminal(activeSessionId, idx).then((ok) => {
-              if (ok) closeTab(id);
-            });
-          }
-          return;
-        }
-      }
-      closeTab(id);
-    },
-    [closeTab, activeSessionId],
-  );
-  const movePaneAny = useCallback((id: string, dock: DockLocation) => moveTab(id, dock), [moveTab]);
-  // A split target carries no index (the new group starts with just the dragged tab).
-  const placeVisibleTab = useCallback(
-    (id: string, target: DropTarget) => {
-      if (target.newGroup) {
-        placeTab(id, { dock: target.dock, group: target.group, newGroup: true });
-        return;
-      }
-      placeTab(id, { dock: target.dock, group: target.group, index: target.index });
-    },
-    [placeTab],
-  );
+  // The Coordinator panel beside the session on desktop, opened and collapsed from the top bar.
+  const [coordinatorPanelOpen, toggleCoordinatorPanel] = usePersistedFlag("aoe-coordinator-panel-open", true);
   // Layout topology is width-driven so it stays aligned with the `md:`
-  // Tailwind classes the rest of the layout uses. At md and up the
-  // side-by-side ContentSplit renders; below md a single full-viewport
-  // pane shows one of agent / diff / paired, chosen via the picker (#1452).
+  // Tailwind classes the rest of the layout uses. Below md a single
+  // full-viewport pane shows the agent or its paired terminal, chosen via the picker (#1452).
   const isMdUp = useIsWideViewport();
   const singlePane = !isMdUp;
   const [rightPanelView, setRightPanelView] = useState<RightPanelView>("agent");
@@ -722,7 +522,7 @@ function AppContent({
 
   const [serverAbout, setServerAbout] = useState<ServerAbout | null>(null);
   // CityHall client mode collapses the dashboard to a locked-down end-user
-  // client; the capability flags gate the terminal/diff panes, project
+  // client; the capability flags gate the terminal, project
   // management, the wizard, and settings from one place. See #7.
   const caps = useMemo(() => getClientCapabilities(serverAbout), [serverAbout]);
 
@@ -732,73 +532,6 @@ function AppContent({
   }, [workspaces, activeSessionId]);
   const activeSession = activeWorkspace?.sessions.find((s) => s.id === activeSessionId);
   const focusSession = useFocusSession(focusSessionId, activeSession, openedSessionSettled);
-  const allPaneIds: string[] = [
-    // CityHall client mode hides the code-inspection panes (diff, files) and
-    // the terminal so only the composer + structured
-    // view remain. See #7.
-    ...(caps.canUseDiff ? ["diff", "files"] : []),
-    ...(caps.canUseTerminal ? ["terminal"] : []),
-    // The background-agents panel only applies to structured-view (ACP)
-    // sessions; a plain terminal session never launches sub-agents.
-    ...(activeSession?.view === "structured" ? ["agents"] : []),
-    ...(isCoordinatorPath(activeSession?.project_path) ? ["coordinator"] : []),
-  ];
-  // The mobile picker/single-pane view reuses this exact list (minus
-  // "terminal", desktop's multi-instance extra-terminal dock, which has no
-  // single-pane mobile equivalent) so its available views can't drift from
-  // desktop's capability/session gating the way the sub-agents and Files
-  // panes previously did.
-  // The coordinator pane has no single-pane mobile view.
-  const mobilePaneIds = allPaneIds.filter((id) => id !== "terminal" && id !== "coordinator");
-
-  // Fetch the diff when the panel is actually showing: on desktop when the
-  // split is expanded, on mobile when the diff view is the active pane.
-  const diffPanelActive = isMdUp ? dockOf(paneLayout, "diff") !== null : rightPanelView === "diff";
-  const {
-    files: diffFiles,
-    perRepoBases,
-    warning,
-    loading: diffFilesLoading,
-    revision,
-    refresh: refreshDiffFiles,
-  } = useDiffFiles(activeSessionId, diffPanelActive);
-
-  // Diff-viewer comments (#928). Session-scoped. The
-  // banner lives in the diff pane while the inline UI lives inside
-  // DiffFileViewer, so the store is lifted here and threaded to both.
-  const diffComments = useDiffComments(activeSessionId);
-  const commentsEnabled = !!activeSession;
-  // A dormant structured worker wakes on send; archived and trashed sessions cannot start.
-  const commentSendEnabled =
-    commentsEnabled &&
-    !activeSession?.trashed_at &&
-    !activeSession?.archived_at &&
-    (activeSession?.view === "structured" || !caps.readOnly);
-  const commentSendDisabledReason = !activeSession
-    ? "Select a session to send comments to the agent."
-    : activeSession?.trashed_at
-      ? "This session is in the trash. Restore it to send comments to the agent."
-      : activeSession?.archived_at
-        ? "This session is archived. Unarchive it to send comments to the agent."
-        : "Terminal input is blocked in read-only mode.";
-  const commentsIsMultiRepo = (activeSession?.workspace_repos.length ?? 0) > 0;
-  const [sendDialogOpen, setSendDialogOpen] = useState(false);
-
-  useEffect(() => {
-    if (!commentSendEnabled) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (!((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s")) {
-        return;
-      }
-      if (isInsideEditable(e.target)) return;
-      if (diffComments.count === 0) return;
-      e.preventDefault();
-      setSendDialogOpen(true);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [commentSendEnabled, diffComments.count]);
-
   // Clear-on-view: opening a session (or having it open when its turn
   // finishes) reads it, clearing the unread marker. Mirrors the TUI, where
   // engaging with a session (open / live-send / dwell) clears it. The sidebar
@@ -811,7 +544,7 @@ function AppContent({
     }
   }, [unreadIndicatorEnabled, activeSessionId, activeSession?.unread]);
 
-  // Derive selectedFile/rightPanelView/pickerOpen/pairedMounted resets
+  // Derive rightPanelView/pickerOpen/pairedMounted resets
   // during render to satisfy
   // react-you-might-not-need-an-effect/no-adjust-state-on-prop-change
   // and react-hooks/set-state-in-effect.
@@ -821,30 +554,11 @@ function AppContent({
     setRightPanelView("agent");
     setPickerOpen(false);
     setPairedMounted(false);
-    setSelectedFile(null);
-  }
-
-  // Inline derivation for diffFiles validation: clear a stale diff-list
-  // selection. The staleness rule (cited exemption, path+repo match) lives in
-  // diffSelectionStale so it can be unit-tested. See #1810.
-  if (activeSessionId && diffSelectionStale(selectedFile, diffFilesLoading, diffFiles)) {
-    setSelectedFile(null);
   }
 
   // Mount the paired shell on first activation and keep it mounted after.
   if (rightPanelView === "paired" && !pairedMounted) {
     setPairedMounted(true);
-  }
-
-  // A gated mobile view (diff/files/agents) can vanish out from under the
-  // current selection: a capability change, or the session's structured-view
-  // state changed. Fall
-  // back to the agent view so the user is never stranded on a blank pane.
-  // Mirrors the paired guard above; render-phase derivation per the block at
-  // the top.
-  const isGatedBuiltinView = rightPanelView === "diff" || rightPanelView === "files" || rightPanelView === "agents";
-  if (isGatedBuiltinView && !mobilePaneIds.includes(rightPanelView)) {
-    setRightPanelView("agent");
   }
 
   // Refit the newly active terminal after a single-pane view switch: the
@@ -1097,7 +811,6 @@ function AppContent({
       purgeLocal: (id) => {
         clearAcpCache(id);
         clearDraft(id);
-        clearStoredComments(id);
       },
       navigateHome: leaveActiveSession,
       notify: toastBus.handler,
@@ -1129,7 +842,6 @@ function AppContent({
               purgeLocal: (id) => {
                 clearAcpCache(id);
                 clearDraft(id);
-                clearStoredComments(id);
               },
               navigateHome: leaveActiveSession,
               notify: null,
@@ -1325,34 +1037,11 @@ function AppContent({
     [projects, refreshProjects, requireProjectProfile],
   );
 
-  // The right-panel control toggles the desktop split, but on mobile there
-  // is no split to collapse: it opens the view picker instead (#1452).
-  const toggleDiff = useCallback(() => {
-    if (isMdUp) {
-      toggleKind("diff", "right");
-    } else {
-      setPickerOpen((o) => !o);
-    }
-  }, [isMdUp, toggleKind]);
-
-  // Collapse or restore the whole right dock (the "toggle right panel"
-  // shortcut). Collapse hides the dock without removing its tabs so expanding
-  // restores the active session's previous pane set.
-  const toggleRightDock = useCallback(() => {
-    if (!isMdUp) {
-      setPickerOpen((o) => !o);
-      return;
-    }
-    if (rightDockCollapsed) {
-      setDockCollapsed("right", false);
-      if (availableRightGroups.length === 0) {
-        openTab("diff", "right");
-        openTab(terminalTabId(0), "right");
-      }
-    } else {
-      setDockCollapsed("right", true);
-    }
-  }, [isMdUp, rightDockCollapsed, setDockCollapsed, availableRightGroups.length, openTab]);
+  // The "toggle right panel" shortcut: the Coordinator panel on desktop, the view picker on mobile (#1452).
+  const toggleRightPanel = useCallback(() => {
+    if (isMdUp) toggleCoordinatorPanel();
+    else setPickerOpen((o) => !o);
+  }, [isMdUp, toggleCoordinatorPanel]);
 
   const handlePickView = useCallback(
     (view: RightPanelView) => {
@@ -1363,55 +1052,8 @@ function AppContent({
     [activeSessionId, transitionKeyboardProxy],
   );
 
-  const handleSelectFile = useCallback((path: string, repoName?: string, line?: number) => {
-    setSelectedFile({ path, repoName, line });
-  }, []);
-
-  // Open a local file reference cited in an acp transcript (Codex
-  // `path:line` markdown links). Resolve the absolute path back to a
-  // repo-relative path for the active session and open it in the in-app
-  // diff/file viewer, keeping the current session route. A path outside
-  // the session's known repo roots surfaces a non-destructive toast
-  // rather than navigating away. The parsed line is threaded through so the
-  // viewer scrolls it into view. See #1718, #1809.
-  const handleOpenFileRef = useCallback(
-    (ref: FileRef) => {
-      if (!activeSession) return;
-      const resolved = resolveToRepoRelative(ref.path, activeSession);
-      // A git session with an in-repo path uses the diff viewer (#1718). A
-      // scratch (non-git) session has no diff endpoint, so it always uses the
-      // provenance-confined /file viewer, as does any out-of-repo absolute path
-      // the agent touched this session (a plan in /tmp, ~/.claude, etc.). #3088.
-      if (resolved && !activeSession.scratch) {
-        setSelectedFile({
-          path: resolved.relativePath,
-          repoName: resolved.repoName,
-          line: ref.line,
-          cited: true,
-        });
-        return;
-      }
-      if (resolved || isAbsolutePath(ref.path)) {
-        setSelectedFile({
-          path: resolved?.relativePath ?? ref.path,
-          line: ref.line,
-          cited: true,
-          external: true,
-        });
-        return;
-      }
-      toastBus.handler?.error(`Could not open ${ref.path}: not inside this session's repo`);
-    },
-    [activeSession],
-  );
-
-  const handleCloseFile = useCallback(() => {
-    setSelectedFile(null);
-  }, []);
-
   const handleGoDashboard = useCallback(() => {
     navigate("/");
-    setSelectedFile(null);
   }, [navigate]);
 
   // The coordinator opens as the main view; toggling again returns to the session it replaced.
@@ -1516,13 +1158,7 @@ function AppContent({
     setShowSessionWizard(true);
   }, []);
 
-  const showPairedTerminal = usePairedTerminalReveal({
-    singlePane,
-    layout: paneLayout,
-    openTab,
-    activateTab,
-    setRightPanelView,
-  });
+  const showPairedTerminal = usePairedTerminalReveal(setRightPanelView);
 
   // PairedTerminal shows Host whatever the stored mode while the Session isn't sandboxed.
   const shownShellMode = useCallback(
@@ -1559,25 +1195,18 @@ function AppContent({
     }
     const target = inPaired ? "agent" : "paired";
 
+    // Only mobile has a paired shell; desktop just focuses the agent terminal.
+    if (!singlePane) {
+      dispatchFocusTerminal("agent");
+      return;
+    }
     if (target === "paired") {
       showPairedTerminal();
       return;
     }
-    if (singlePane) {
-      setRightPanelView("agent");
-      requestAnimationFrame(() => dispatchFocusTerminal("agent"));
-      return;
-    }
-    if (target === "agent" && selectedFilePath) {
-      // Agent terminal is hidden under the diff viewer; close the diff first
-      // so the wrapper un-hides, then dispatch on the next frame because
-      // focus() on a display:none element is a no-op.
-      setSelectedFile(null);
-      requestAnimationFrame(() => dispatchFocusTerminal("agent"));
-      return;
-    }
-    dispatchFocusTerminal(target);
-  }, [activeSessionId, singlePane, selectedFilePath, showPairedTerminal]);
+    setRightPanelView("agent");
+    requestAnimationFrame(() => dispatchFocusTerminal("agent"));
+  }, [activeSessionId, singlePane, showPairedTerminal]);
 
   // Flattened, display-ordered session ids plus the subset needing attention,
   // sourced from the same sidebar model the user sees so jump-to-next follows
@@ -1612,7 +1241,6 @@ function AppContent({
         onFocusSidebar: focusMode ? noop : handleFocusSidebar,
         onNewScratch: focusMode ? noop : handleNewScratch,
         onToggleCoordinator: focusMode || caps.cityhall || caps.readOnly ? noop : handleToggleCoordinator,
-        onDiff: () => toggleDiff(),
         // Escape closes local UI surfaces only (dialogs, palette,
         // wizard, settings, help, file viewer). Never wire this to
         // acp.cancelPrompt; Claude Code CLI does that and stray
@@ -1638,7 +1266,6 @@ function AppContent({
           // Settings dialogs handle Escape after this capture-phase shortcut.
           if (showSettings && !document.querySelector('[aria-modal="true"]')) handleCloseSettings();
           setShowAbout(false);
-          setSelectedFile(null);
         },
         onHelp: () => setShowHelp((h) => !h),
         onSettings: () => (showSettings ? handleCloseSettings() : handleOpenSettings()),
@@ -1647,12 +1274,11 @@ function AppContent({
           setShowPalette((p) => !p);
         },
         onToggleSidebar: focusMode ? noop : () => setSidebarOpen((o) => !o),
-        onToggleRightPanel: () => toggleRightDock(),
+        onToggleRightPanel: toggleRightPanel,
         onToggleTerminalFocus: handleToggleTerminalFocus,
       }),
       [
-        toggleDiff,
-        toggleRightDock,
+        toggleRightPanel,
         showPalette,
         deletingSessions,
         stoppingSessionId,
@@ -1705,7 +1331,6 @@ function AppContent({
     activeSessionId,
     activeSession: activeSession ?? null,
     loginRequired,
-    hasActiveSession: !!activeSession,
     readOnly: caps.readOnly,
     onNewSession: handleNewSession,
     onNewScratch: handleNewScratch,
@@ -1713,7 +1338,6 @@ function AppContent({
     onJumpToAttention: handleJumpToAttention,
     hasAttentionSession: attentionJump.attention.size > 0,
     onSessionStateAction: handleSessionStateAction,
-    onToggleDiff: toggleDiff,
     onOpenSettings: handleOpenSettings,
     onOpenHelp: handleOpenHelp,
     onOpenAbout: handleOpenAbout,
@@ -1754,205 +1378,72 @@ function AppContent({
     [conversationHits, sessions, activeSessionId, handleSelectSession, focusMode],
   );
 
-  /** The routed session with its docks. */
-  const renderSessionLayout = () => {
-    // Render a pane body by id. Passed to the docks as a callback (rather than
-    // building an array of {icon, body} objects here) so the per-session JSX is
-    // constructed inside the dock, not threaded through a prop object.
-    const renderPaneBody = (id: string): ReactNode => {
-      if (id === "agents") {
-        return <BackgroundAgentsPanel sessionId={activeSessionId} />;
-      }
-      if (id === "coordinator") {
-        return <CoordinatorPanel onOpenSession={handleSelectSession} />;
-      }
-      if (id === "files") {
-        // Remount on session switch so the selected file (and any in-flight
-        // read) resets instead of requesting the old path from the new
-        // session. See #3088 review.
-        return <FilesPane key={activeSessionId ?? "none"} sessionId={activeSessionId} />;
-      }
-      if (id === "diff") {
-        return (
-          <DiffPane
-            session={activeSession ?? null}
-            sessionId={activeSessionId}
-            files={diffFiles}
-            perRepoBases={perRepoBases}
-            warning={warning}
-            filesLoading={diffFilesLoading}
-            selectedFilePath={selectedFilePath}
-            selectedRepoName={selectedRepoName}
-            onSelectFile={handleSelectFile}
-            onDiffRefresh={refreshDiffFiles}
-            commentsEnabled={commentsEnabled}
-            commentsCount={diffComments.count}
-            commentsSendEnabled={commentSendEnabled}
-            commentsSendDisabledReason={commentSendDisabledReason}
-            onOpenSendDialog={() => setSendDialogOpen(true)}
-            onDiscardAllComments={diffComments.clearComments}
-          />
-        );
-      }
-      const terminalIndex = isTerminalTabId(id) ? terminalIndexOf(id) : 0;
-      return (
-        <PairedShellPane
-          readOnly={caps.readOnly}
-          session={activeSession ?? null}
-          sessionId={activeSessionId}
-          terminalIndex={terminalIndex}
-          mode={shellModeFor(activeSessionId, terminalIndex)}
-          onModeChange={(mode) => activeSessionId && setShellMode(activeSessionId, terminalIndex, mode)}
-        />
-      );
-    };
-    return (
-      <div className="flex-1 flex flex-col min-h-0">
-        <PaneDndController groupsByDock={groupsByDock} descriptorFor={paneDescriptor} onPlaceTab={placeVisibleTab}>
-          <ContentSplit
-            collapsed={rightDockCollapsed}
-            onToggleCollapse={toggleRightDock}
-            left={
-              <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-                <div className={selectedFilePath ? "hidden" : "flex-1 flex flex-col min-h-0 overflow-hidden"}>
-                  {activeSession?.view === "structured" ? (
-                    <StructuredSessionStack
-                      active={!selectedFilePath}
-                      activeSessionId={activeSessionId!}
-                      sessions={sessions.filter((session) => session.view === "structured")}
-                      persistent={webSettings.persistentStructuredViews}
-                      maxPersistentViews={webSettings.maxPersistentStructuredViews}
-                      renderSession={(session, active, selected) => (
-                        <Suspense fallback={<AcpLoadingFallback />}>
-                          <StructuredView
-                            active={active}
-                            selected={selected}
-                            sessionId={session.id}
-                            acpWorkerState={session.acp_worker_state ?? "absent"}
-                            rateLimitAutoResume={session.rate_limit_auto_resume}
-                            settingsHref={autoResumeSettingsHref(session.profile, serverAbout)}
-                            tool={session.tool}
-                            acpAgent={session.acp_agent ?? null}
-                            startedBefore={hasStartedBefore(session)}
-                            acpProvider={session.acp_provider ?? null}
-                            clearAliases={session.clear_aliases}
-                            compactAliases={session.compact_aliases}
-                            onStartSession={() => void handleStartSession(session.id)}
-                            archivedAt={session.archived_at ?? null}
-                            snoozedUntil={session.snoozed_until ?? null}
-                            trashedAt={session.trashed_at ?? null}
-                            onRestore={
-                              session.trashed_at
-                                ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, session.id))
-                                : undefined
-                            }
-                            onOpenFileRef={handleOpenFileRef}
-                            fileRefSession={session}
-                            onOpenAgentsPane={openAgentsPane}
-                            isSandboxed={session.is_sandboxed}
-                            onSwitchToTerminal={
-                              canSwitchToTerminal ? () => handleSwitchView(session.id, false) : undefined
-                            }
-                            onOpenTerminal={
-                              canSwitchToTerminal ? (mode) => handleOpenPairedTerminal(session.id, mode) : undefined
-                            }
-                            canRestartAgent={canRestartAgent}
-                          />
-                        </Suspense>
-                      )}
+  /** The routed session, with the Coordinator panel beside it. */
+  const renderSessionLayout = () => (
+    <div className="flex-1 flex flex-col min-h-0">
+      <ContentSplit
+        collapsed={!coordinatorPanelOpen}
+        onToggleCollapse={toggleCoordinatorPanel}
+        left={
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {activeSession?.view === "structured" ? (
+              <StructuredSessionStack
+                active
+                activeSessionId={activeSessionId!}
+                sessions={sessions.filter((session) => session.view === "structured")}
+                persistent={webSettings.persistentStructuredViews}
+                maxPersistentViews={webSettings.maxPersistentStructuredViews}
+                renderSession={(session, active, selected) => (
+                  <Suspense fallback={<AcpLoadingFallback />}>
+                    <StructuredView
+                      active={active}
+                      selected={selected}
+                      sessionId={session.id}
+                      acpWorkerState={session.acp_worker_state ?? "absent"}
+                      rateLimitAutoResume={session.rate_limit_auto_resume}
+                      settingsHref={autoResumeSettingsHref(session.profile, serverAbout)}
+                      tool={session.tool}
+                      acpAgent={session.acp_agent ?? null}
+                      startedBefore={hasStartedBefore(session)}
+                      acpProvider={session.acp_provider ?? null}
+                      clearAliases={session.clear_aliases}
+                      compactAliases={session.compact_aliases}
+                      onStartSession={() => void handleStartSession(session.id)}
+                      archivedAt={session.archived_at ?? null}
+                      snoozedUntil={session.snoozed_until ?? null}
+                      trashedAt={session.trashed_at ?? null}
+                      onRestore={
+                        session.trashed_at
+                          ? () => handleRestoreSession(trashedWorkspaceRestoreIds(workspaces, session.id))
+                          : undefined
+                      }
+                      fileRefSession={session}
+                      isSandboxed={session.is_sandboxed}
+                      onSwitchToTerminal={canSwitchToTerminal ? () => handleSwitchView(session.id, false) : undefined}
+                      canRestartAgent={canRestartAgent}
                     />
-                  ) : (
-                    <TerminalSessionStack
-                      readOnly={caps.readOnly}
-                      activeSessionId={activeSessionId!}
-                      sessions={sessions.filter((session) => session.view !== "structured")}
-                      persistent={webSettings.persistentTerminals}
-                      maxPersistentTerminals={webSettings.maxPersistentTerminals}
-                    />
-                  )}
-                </div>
-
-                {selectedFilePath &&
-                  activeSessionId &&
-                  (selectedFileExternal ? (
-                    <FileContentViewer
-                      sessionId={activeSessionId}
-                      filePath={selectedFilePath}
-                      onBack={handleCloseFile}
-                    />
-                  ) : (
-                    <DiffFileViewer
-                      sessionId={activeSessionId}
-                      filePath={selectedFilePath}
-                      repoName={selectedRepoName}
-                      targetLine={selectedFileLine}
-                      revision={revision}
-                      onClose={handleCloseFile}
-                      commentsEnabled={commentsEnabled}
-                      commentsStore={diffComments}
-                    />
-                  ))}
-              </div>
-            }
-            right={
-              <div {...tourAnchor(TOUR_ANCHORS.rightPanel)} className="flex min-h-0 min-w-0 flex-1">
-                <DockGroups
-                  location="right"
-                  groups={rightGroups}
-                  descriptorFor={paneDescriptor}
-                  renderBody={renderPaneBody}
-                  onActivate={(id) => activateTab("right", id)}
-                  onMove={movePaneAny}
-                  onClose={closePaneAny}
-                  onNewTerminal={caps.readOnly ? undefined : () => addTerminal("right")}
-                />
-              </div>
-            }
-          />
-          {bottomGroups.length > 0 && (
-            <BottomDock
-              groups={bottomGroups}
-              descriptorFor={paneDescriptor}
-              renderBody={renderPaneBody}
-              onActivate={(id) => activateTab("bottom", id)}
-              onMove={movePaneAny}
-              onClose={closePaneAny}
-              onNewTerminal={caps.readOnly ? undefined : () => addTerminal("bottom")}
-            />
-          )}
-        </PaneDndController>
-        {sendDialogOpen && commentsEnabled && activeSessionId && (
-          <SendCommentsDialog
-            sessionId={activeSessionId}
-            delivery={activeSession?.view === "structured" ? "structured" : "terminal"}
-            comments={diffComments.comments}
-            isMultiRepo={commentsIsMultiRepo}
-            sendEnabled={commentSendEnabled}
-            sendDisabledReason={commentSendDisabledReason}
-            introDraft={diffComments.introDraft}
-            outroDraft={diffComments.outroDraft}
-            clearAfterSend={diffComments.clearAfterSend}
-            onChangeIntro={diffComments.setIntroDraft}
-            onChangeOutro={diffComments.setOutroDraft}
-            onChangeClearAfterSend={diffComments.setClearAfterSend}
-            onClose={() => setSendDialogOpen(false)}
-            onSent={() => {
-              if (diffComments.clearAfterSend) {
-                diffComments.clearComments();
-                diffComments.setIntroDraft("");
-                diffComments.setOutroDraft("");
-              }
-              setSendDialogOpen(false);
-              // Close the diff viewer to show the agent transcript or terminal
-              // after dispatching feedback. The file remains in the diff list.
-              setSelectedFile(null);
-              toastBus.handler?.info("Comments sent to agent");
-            }}
-          />
-        )}
-      </div>
-    );
-  };
+                  </Suspense>
+                )}
+              />
+            ) : (
+              <TerminalSessionStack
+                readOnly={caps.readOnly}
+                activeSessionId={activeSessionId!}
+                sessions={sessions.filter((session) => session.view !== "structured")}
+                persistent={webSettings.persistentTerminals}
+                maxPersistentTerminals={webSettings.maxPersistentTerminals}
+              />
+            )}
+          </div>
+        }
+        right={
+          <div {...tourAnchor(TOUR_ANCHORS.rightPanel)} className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <CoordinatorPanel onOpenSession={handleSelectSession} />
+          </div>
+        }
+      />
+    </div>
+  );
 
   const renderContent = () => {
     if (showSettings) {
@@ -2036,10 +1527,8 @@ function AppContent({
     // Render one full-viewport pane and let the picker choose which view
     // occupies it (#1452). The agent terminal (and the paired shell, once
     // first opened) stay mounted but hidden so their PTY, scrollback, and
-    // focus survive view switches; the diff view has no xterm so it mounts
-    // on demand. Inactive layers use visibility, never display:none, which
-    // would collapse xterm's measured geometry to zero. The desktop branch
-    // below is left exactly as it was; only this mobile branch is new.
+    // focus survive view switches. Inactive layers use visibility, never
+    // display:none, which would collapse xterm's measured geometry to zero.
     if (singlePane) {
       return (
         <MobileMainPane
@@ -2047,7 +1536,6 @@ function AppContent({
           readOnly={caps.readOnly}
           view={rightPanelView}
           onBackToAgent={() => handlePickView("agent")}
-          onOpenAgentsPane={() => handlePickView("agents")}
           onSwitchToTerminal={canSwitchToTerminal ? (id) => handleSwitchView(id, false) : undefined}
           onOpenTerminal={canSwitchToTerminal ? handleOpenPairedTerminal : undefined}
           canRestartAgent={canRestartAgent}
@@ -2058,27 +1546,6 @@ function AppContent({
           activeSessionId={activeSessionId}
           sessions={sessions}
           webSettings={webSettings}
-          selectedFilePath={selectedFilePath}
-          selectedRepoName={selectedRepoName}
-          selectedFileLine={selectedFileLine}
-          revision={revision}
-          diffFiles={diffFiles}
-          perRepoBases={perRepoBases}
-          warning={warning}
-          diffFilesLoading={diffFilesLoading}
-          onSelectFile={handleSelectFile}
-          onOpenFileRef={handleOpenFileRef}
-          onCloseFile={handleCloseFile}
-          onDiffRefresh={refreshDiffFiles}
-          commentsEnabled={commentsEnabled}
-          commentSendEnabled={commentSendEnabled}
-          commentSendDisabledReason={commentSendDisabledReason}
-          diffComments={diffComments}
-          commentsIsMultiRepo={commentsIsMultiRepo}
-          sendDialogOpen={sendDialogOpen}
-          onOpenSendDialog={() => setSendDialogOpen(true)}
-          onCloseSendDialog={() => setSendDialogOpen(false)}
-          onClearSelectedFile={() => setSelectedFile(null)}
           serverAbout={serverAbout}
         />
       );
@@ -2200,7 +1667,7 @@ function AppContent({
 
   // The header collapse is a phone affordance for the conversation view only:
   // at md and up there is room for both the bar and the transcript, and on the
-  // dashboard / settings / diff panes the bar is the only navigation there is.
+  // dashboard and settings the bar is the only navigation there is.
   const headerCollapsible =
     singlePane &&
     !fullPageView &&
@@ -2231,11 +1698,8 @@ function AppContent({
               activeSession={activeSession ?? null}
               onToggleSidebar={handleToggleSidebar}
               onOpenPalette={() => setShowPalette(true)}
-              onToggleDiff={toggleDiff}
-              paneIds={allPaneIds}
-              paneDescriptor={paneDescriptor}
-              isPaneOpen={isPaneOpen}
-              onTogglePane={togglePaneAny}
+              onToggleRightPanel={toggleRightPanel}
+              coordinatorPanelOpen={coordinatorPanelOpen}
               onOpenHelp={handleOpenHelp}
               onOpenAbout={handleOpenAbout}
               onStartTutorial={tour.startTour}
@@ -2250,7 +1714,7 @@ function AppContent({
               onExitFocusMode={focusMode ? exitFocusMode : undefined}
               sidebarColumnVisible={!focusMode && !fullPageView && sidebarOpen}
               rightColumnVisible={
-                isMdUp && !fullPageView && !!activeWorkspace && !!activeSession && !rightDockCollapsed
+                isMdUp && !fullPageView && !!activeWorkspace && !!activeSession && coordinatorPanelOpen
               }
               onToggleCoordinator={caps.cityhall || caps.readOnly ? undefined : handleToggleCoordinator}
               coordinatorOpen={coordinatorActive}
@@ -2465,8 +1929,6 @@ function AppContent({
               open={pickerOpen}
               active={rightPanelView}
               sessionTitle={activeSession.title}
-              availablePanes={mobilePaneIds}
-              describePane={paneDescriptor}
               onSelect={handlePickView}
               onClose={closePicker}
             />

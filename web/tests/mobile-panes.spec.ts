@@ -203,7 +203,7 @@ test.describe("Mobile right panel picker (#1452)", () => {
   });
 });
 
-test.describe("Desktop right panel split is unchanged (#1452)", () => {
+test.describe("Desktop keeps the side-by-side Coordinator panel (#1452)", () => {
   test.use({ viewport: { width: 1400, height: 900 }, hasTouch: false });
 
   // The mobile touch toolbar is gated on (pointer: coarse) in useMobileKeyboard,
@@ -213,7 +213,7 @@ test.describe("Desktop right panel split is unchanged (#1452)", () => {
     await expect(page).toHaveURL(/\/session\/pinch-test/, { timeout: 10_000 });
 
     await expect(page.getByTestId("content-split-resize-handle")).toBeVisible();
-    await expect(page.getByTestId("activity-bar")).toBeVisible();
+    await expect(page.getByTestId("coordinator-panel-toggle")).toBeVisible();
     await expect(page.getByRole("button", { name: "Toggle panels" })).toHaveCount(0);
     await expect(picker(page)).toBeHidden();
     await expect(page.getByRole("button", { name: "Compose", exact: true })).toHaveCount(0);

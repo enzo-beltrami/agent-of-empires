@@ -1,4 +1,4 @@
-// Background agents and the pane opener, so an inline async Task or Workflow card can show its live entries.
+// Background agents, so an inline async Task or Workflow card can show its live entries.
 
 import { createContext, useContext, useMemo } from "react";
 
@@ -8,7 +8,6 @@ export interface BackgroundAgentsContextValue {
   agents: BackgroundAgent[];
   workflowRuns?: Record<string, WorkflowRun>;
   backgroundTasks?: string[];
-  openPane?: () => void;
 }
 
 export const BackgroundAgentsContext = createContext<BackgroundAgentsContextValue>({ agents: [] });
@@ -44,10 +43,6 @@ export function workflowRunning(
   agents: BackgroundAgent[],
 ): boolean {
   return run ? !run.finished && backgroundTasks.includes(run.taskId) : agents.some(isActiveAgent);
-}
-
-export function useOpenBackgroundAgentsPane(): (() => void) | undefined {
-  return useContext(BackgroundAgentsContext).openPane;
 }
 
 export function isActiveAgent(agent: BackgroundAgent): boolean {

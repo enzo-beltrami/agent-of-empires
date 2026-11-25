@@ -9,7 +9,7 @@ import { mockStaticApis } from "./helpers/apiMocks";
 import type { Page } from "@playwright/test";
 
 const SIDEBAR_WIDTH_KEY = "aoe-sidebar-width";
-const RIGHT_PANEL_KEY = "aoe-pane-layout";
+const RIGHT_PANEL_KEY = "aoe-coordinator-panel-open";
 
 async function stubQuotaForKey(page: Page, key: string) {
   await page.addInitScript(
@@ -85,8 +85,8 @@ test.describe("#1345 localStorage QuotaExceeded crash regression", () => {
 
     await enableThrow(page, RIGHT_PANEL_KEY);
 
-    // ControlOrMeta+Alt+B toggles the diff pane, which runs the guarded
-    // useEffect that calls safeSetItem for the pane-layout key.
+    // ControlOrMeta+Alt+B toggles the Coordinator panel, whose state updater
+    // writes its open flag through safeSetItem.
     await page.locator("body").click();
     await page.keyboard.press("ControlOrMeta+Alt+B");
     await expect(page.locator("header")).toBeVisible();

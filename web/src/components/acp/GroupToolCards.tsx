@@ -6,7 +6,7 @@ import { Layers, Sparkles } from "lucide-react";
 
 import { pickStr } from "../../lib/acpArgs";
 import type { BackgroundAgentStatus, ToolCall } from "../../lib/acpTypes";
-import { useBackgroundAgentFor, useOpenBackgroundAgentsPane } from "./backgroundAgentsContext";
+import { useBackgroundAgentFor } from "./backgroundAgentsContext";
 import {
   CardChrome,
   HighlightedBlock,
@@ -118,7 +118,6 @@ const ASYNC_STATUS: Record<BackgroundAgentStatus, [Status, string]> = {
 export function AsyncSubagentCard({ tool }: { tool: ToolCall }) {
   const { description } = useTaskDescription(tool);
   const agent = useBackgroundAgentFor(tool.id);
-  const openPane = useOpenBackgroundAgentsPane();
 
   const [status, fallbackMeta] = agent ? ASYNC_STATUS[agent.status] : (["ok", "runs in background"] as const);
   let metaText = fallbackMeta;
@@ -140,8 +139,6 @@ export function AsyncSubagentCard({ tool }: { tool: ToolCall }) {
       primary={<span className="truncate">{description}</span>}
       meta={<span className="text-[11px] text-text-dim">{metaText}</span>}
       expanded={false}
-      onToggle={openPane}
-      navigate={openPane !== undefined}
     />
   );
 }

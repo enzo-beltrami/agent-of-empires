@@ -1,5 +1,4 @@
 import type { DiffComment } from "./types";
-import { isWellFormed } from "./storage";
 
 interface BuildOpts {
   /** Prefix each heading with `[repoName]`. */
@@ -106,4 +105,20 @@ export function compareComments(a: DiffComment, b: DiffComment): number {
   if (a.startLine !== b.startLine) return a.startLine - b.startLine;
   if (a.side !== b.side) return a.side === "old" ? -1 : 1;
   return a.createdAt.localeCompare(b.createdAt);
+}
+
+/** A comment from a parsed prompt card, which carries whatever the agent echoed back. */
+function isWellFormed(c: unknown): c is DiffComment {
+  if (!c || typeof c !== "object") return false;
+  const o = c as Record<string, unknown>;
+  return (
+    typeof o.id === "string" &&
+    typeof o.filePath === "string" &&
+    (o.side === "old" || o.side === "new") &&
+    typeof o.startLine === "number" &&
+    typeof o.endLine === "number" &&
+    typeof o.body === "string" &&
+    typeof o.capturedSnippet === "string" &&
+    typeof o.createdAt === "string"
+  );
 }

@@ -91,12 +91,9 @@ export const TOUR_STEPS: readonly TourStep[] = [
     id: "right-panel",
     anchor: TOUR_ANCHORS.rightPanel,
     scopes: ["session", "structured-view"],
-    title: "Diff and review",
-    body: "Review the agent's file changes and send comments back without leaving the session.",
-    shortcutHints: [
-      { id: "diff", verb: "toggles the diff" },
-      { id: "rightPanel", verb: "toggles the panel" },
-    ],
+    title: "Coordinator panel",
+    body: "What every session needs, the pull requests waiting to ship, and your notes for the coordinator.",
+    shortcutHints: [{ id: "rightPanel", verb: "toggles the panel" }],
     desktopOnly: true,
   },
   {

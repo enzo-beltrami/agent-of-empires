@@ -1,11 +1,9 @@
 import { useMemo } from "react";
-import { Sparkles } from "lucide-react";
+import { PanelRight, Sparkles } from "lucide-react";
 import type { SessionResponse, Workspace } from "../lib/types";
 import { PaletteTriggerPill } from "./PaletteTriggerPill";
 import { OverflowMenu, type OverflowItem } from "./OverflowMenu";
 import { TOUR_ANCHORS, tourAnchor } from "../lib/tourSteps";
-import { ActivityBar } from "./ActivityBar";
-import type { PaneDisplay } from "./Dock";
 import { useWebSettings } from "../hooks/useWebSettings";
 import type { AttentionBadgeColors } from "../lib/attentionBadgeColors";
 import { StrokeIcon } from "./icons";
@@ -16,14 +14,9 @@ interface Props {
   activeSession: SessionResponse | null;
   onToggleSidebar: () => void;
   onOpenPalette: () => void;
-  /** Mobile (below md): opens the view picker. The desktop activity bar uses
-   *  `onTogglePane` instead. */
-  onToggleDiff: () => void;
-  /** All dockable pane ids for the active session. */
-  paneIds: string[];
-  paneDescriptor: (id: string) => PaneDisplay;
-  isPaneOpen: (id: string) => boolean;
-  onTogglePane: (id: string) => void;
+  /** Desktop: opens or collapses the Coordinator panel. Mobile (below md): opens the view picker. */
+  onToggleRightPanel: () => void;
+  coordinatorPanelOpen: boolean;
   onOpenHelp: () => void;
   onOpenAbout: () => void;
   onStartTutorial: () => void;
@@ -62,11 +55,8 @@ export function TopBar({
   activeSession,
   onToggleSidebar,
   onOpenPalette,
-  onToggleDiff,
-  paneIds,
-  paneDescriptor,
-  isPaneOpen,
-  onTogglePane,
+  onToggleRightPanel,
+  coordinatorPanelOpen,
   onOpenHelp,
   onOpenAbout,
   onStartTutorial,
@@ -242,10 +232,20 @@ export function TopBar({
 
         {activeWorkspace && activeSession && (
           <>
-            {/* Desktop: per-pane toggles. */}
-            <ActivityBar paneIds={paneIds} descriptorFor={paneDescriptor} isOpen={isPaneOpen} onToggle={onTogglePane} />
             <button
-              onClick={onToggleDiff}
+              onClick={onToggleRightPanel}
+              aria-pressed={coordinatorPanelOpen}
+              data-testid="coordinator-panel-toggle"
+              title={`${coordinatorPanelOpen ? "Hide" : "Show"} Coordinator panel`}
+              aria-label="Toggle Coordinator panel"
+              className={`hidden md:flex w-8 h-8 items-center justify-center cursor-pointer rounded-md transition-colors hover:bg-surface-700/50 ${
+                coordinatorPanelOpen ? "text-text-primary bg-surface-700/40" : "text-text-dim hover:text-text-secondary"
+              }`}
+            >
+              <PanelRight className="size-4" aria-hidden="true" />
+            </button>
+            <button
+              onClick={onToggleRightPanel}
               className="md:hidden w-8 h-8 flex items-center justify-center cursor-pointer rounded-md transition-colors text-text-secondary hover:text-text-primary hover:bg-surface-700/50"
               title="Toggle panels"
               aria-label="Toggle panels"
