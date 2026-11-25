@@ -159,6 +159,38 @@ pub async fn get_coordinator_summary(State(state): State<Arc<AppState>>) -> Resp
     Json(session_summary(&state).await).into_response()
 }
 
+/// The coordinator's unanswered questions, answered through the session's own elicitation route.
+#[derive(Serialize)]
+pub struct CoordinatorDecisions {
+    pub session_id: Option<String>,
+    pub decisions: Vec<crate::acp::elicitations::Elicitation>,
+}
+
+pub async fn list_coordinator_decisions(State(state): State<Arc<AppState>>) -> Response {
+    let Some(session_id) = coordinator_session(&state).await else {
+        return Json(CoordinatorDecisions {
+            session_id: None,
+            decisions: Vec::new(),
+        })
+        .into_response();
+    };
+    // Only a live worker holds a question; a stale one could only 404 when answered.
+    let running = state.acp_supervisor.worker_state(&session_id).await
+        == crate::daemon::AcpWorkerState::Running;
+    let decisions = if running {
+        state
+            .acp_event_store
+            .pending_elicitation_requests(&session_id)
+    } else {
+        Vec::new()
+    };
+    Json(CoordinatorDecisions {
+        session_id: Some(session_id),
+        decisions,
+    })
+    .into_response()
+}
+
 /// A deploy with the title of the session that produced it, while that session exists.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub(crate) struct DeployView {

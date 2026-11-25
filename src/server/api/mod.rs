@@ -39,8 +39,8 @@ pub use queue::{queue_clear, queue_edit, queue_enqueue, queue_list, queue_remove
 pub use client_log::post_client_log;
 pub use coordinator::{
     add_coordinator_note, delete_coordinator_deploy, delete_coordinator_note, ensure_coordinator,
-    get_coordinator_summary, list_coordinator_deploys, list_coordinator_notes,
-    update_coordinator_deploy, update_coordinator_note,
+    get_coordinator_summary, list_coordinator_decisions, list_coordinator_deploys,
+    list_coordinator_notes, update_coordinator_deploy, update_coordinator_note,
 };
 pub(crate) use coordinator::{
     coordinator_session, deploy_views, session_summary, DeployView, SessionSummary,

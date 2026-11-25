@@ -3,6 +3,7 @@ import { ExternalLink, X } from "lucide-react";
 
 import {
   addCoordinatorNote,
+  fetchCoordinatorDecisions,
   fetchCoordinatorNotes,
   fetchCoordinatorSummary,
   fetchDeploys,
@@ -10,18 +11,24 @@ import {
   removeDeploy,
   updateCoordinatorNote,
   updateDeploy,
+  postElicitationResolution,
+  type CoordinatorDecisions,
   type CoordinatorNote,
   type CoordinatorSummary,
   type CoordinatorSummaryRow,
   type Deploy,
 } from "../lib/api";
 import { deployGroups, deployLabel, ticketLabel } from "../lib/coordinator";
+import type { ElicitationResolution } from "../lib/acpTypes";
+import { classifyResolveResponse } from "../hooks/acpSession/reducer";
+import { AskUserQuestionCard } from "./acp/AskUserQuestionCard";
 
 const REFRESH_MS = 5000;
 
-type Tab = "sessions" | "deploys" | "notes";
+type Tab = "decisions" | "sessions" | "deploys" | "notes";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "decisions", label: "Decisions" },
   { id: "sessions", label: "Sessions" },
   { id: "deploys", label: "Deploys" },
   { id: "notes", label: "Notes" },
@@ -41,17 +48,29 @@ interface Props {
   onOpenSession: (id: string) => void;
 }
 
-/** The coordinator session's pane: what every session needs, and the PRs waiting to ship. */
+/** The panel beside every session: the coordinator's questions, what every session needs, the PRs waiting to ship. */
 export function CoordinatorPanel({ onOpenSession }: Props) {
+  const [decisions, setDecisions] = useState<CoordinatorDecisions | null>(null);
   const [summary, setSummary] = useState<CoordinatorSummary | null>(null);
   const [deploys, setDeploys] = useState<Deploy[]>([]);
   const [open, setOpen] = useState<BucketId | null>("needs_action");
-  const [tab, setTab] = useState<Tab>("sessions");
+  const [tab, setTab] = useState<Tab>("decisions");
 
   const refresh = useCallback(() => {
+    void fetchCoordinatorDecisions().then((d) => d && setDecisions(d));
     void fetchCoordinatorSummary().then((s) => s && setSummary(s));
     void fetchDeploys().then((d) => d && setDeploys(d));
   }, []);
+
+  // Answered the same way as in the coordinator's chat, so either place resolves it for both.
+  const answer = async (sessionId: string, nonce: string, resolution: ElicitationResolution) => {
+    const res = await postElicitationResolution(sessionId, nonce, resolution);
+    const detail = res.ok ? "" : await res.text().catch(() => "");
+    const outcome = classifyResolveResponse("elicitation", res.ok, res.status, detail, nonce);
+    if (outcome.kind !== "resolved") throw new Error(outcome.message);
+    refresh();
+  };
+  const questions = decisions?.decisions ?? [];
 
   useEffect(() => {
     refresh();
@@ -96,6 +115,14 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
             }`}
           >
             {t.label}
+            {t.id === "decisions" && questions.length > 0 && (
+              <span
+                data-testid="decisions-pending-count"
+                className="rounded-full bg-status-waiting/20 px-1.5 font-mono text-[11px] leading-4 tabular-nums text-status-waiting"
+              >
+                {questions.length}
+              </span>
+            )}
             {t.id === "deploys" && pending > 0 && (
               <span
                 data-testid="deploys-pending-count"
@@ -107,6 +134,30 @@ export function CoordinatorPanel({ onOpenSession }: Props) {
           </button>
         ))}
       </div>
+
+      <section
+        role="tabpanel"
+        id="coordinator-panel-decisions"
+        aria-labelledby="coordinator-tab-decisions"
+        hidden={tab !== "decisions"}
+        className="flex-1 overflow-y-auto p-3"
+      >
+        {questions.length === 0 ? (
+          <p className="text-xs text-text-dim">
+            No open questions. The coordinator asks here when a session needs you.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {questions.map((elicitation) => (
+              <AskUserQuestionCard
+                key={elicitation.nonce}
+                elicitation={elicitation}
+                onResolve={(resolution) => answer(decisions!.session_id!, elicitation.nonce, resolution)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       <section
         role="tabpanel"

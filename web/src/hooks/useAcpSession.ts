@@ -16,6 +16,7 @@ import {
   editServerQueuedPrompt,
   enqueueServerPrompt,
   listServerQueue,
+  postElicitationResolution,
   removeServerQueuedPrompt,
   setSessionSnooze,
 } from "../lib/api";
@@ -150,7 +151,7 @@ export function useAcpSession(
       if (!sessionId) return;
       let res: Response;
       try {
-        res = await fetch(acpUrl(sessionId, `elicitations/${encodeURIComponent(nonce)}`), jsonPost(resolution));
+        res = await postElicitationResolution(sessionId, nonce, resolution);
       } catch (e) {
         dispatch({ kind: "error", message: `Network error resolving question: ${describeError(e)}` });
         throw e;

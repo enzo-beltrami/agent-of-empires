@@ -14,6 +14,7 @@ beforeEach(() => {
     idle: [],
   });
   vi.spyOn(api, "fetchCoordinatorNotes").mockResolvedValue([]);
+  vi.spyOn(api, "fetchCoordinatorDecisions").mockResolvedValue({ session_id: "coord", decisions: [] });
 });
 
 afterEach(() => {
@@ -52,9 +53,11 @@ describe("CoordinatorPanel", () => {
   it("switches tabs by click and arrow key, with the pending count on the Deploys tab", async () => {
     vi.spyOn(api, "fetchDeploys").mockResolvedValue([pending]);
     render(<CoordinatorPanel onOpenSession={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: "Decisions" }).getAttribute("aria-selected")).toBe("true");
+    expect(await screen.findByTestId("deploys-pending-count")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Sessions" }));
     const sessions = screen.getByRole("tab", { name: "Sessions" });
     expect(sessions.getAttribute("aria-selected")).toBe("true");
-    expect(await screen.findByTestId("deploys-pending-count")).toBeTruthy();
 
     fireEvent.keyDown(sessions, { key: "ArrowRight" });
     const deploys = screen.getByRole("tab", { name: /Deploys/ });
@@ -149,5 +152,36 @@ describe("CoordinatorPanel", () => {
     fireEvent.change(screen.getByLabelText("New note"), { target: { value: "x" } });
     fireEvent.click(screen.getByText("Add note"));
     expect(await screen.findByText("The note is empty")).toBeTruthy();
+  });
+
+  it("opens on the coordinator's questions, counts them, and answers one on the coordinator's session", async () => {
+    vi.spyOn(api, "fetchDeploys").mockResolvedValue([]);
+    const question = {
+      nonce: "n-1",
+      message: "PI-2871: ship behind a flag?",
+      tool_call_id: null,
+      questions: [
+        { field_key: "q", title: null, description: null, required: false, kind: "free_text" as const, options: [] },
+      ],
+      requested_at: "2026-11-25T10:00:00Z",
+      resolved: null,
+    };
+    const decisions = vi
+      .spyOn(api, "fetchCoordinatorDecisions")
+      .mockResolvedValueOnce({ session_id: "coord", decisions: [question] })
+      .mockResolvedValue({ session_id: "coord", decisions: [] });
+    const post = vi.spyOn(api, "postElicitationResolution").mockResolvedValue(new Response(null, { status: 204 }));
+    render(<CoordinatorPanel onOpenSession={vi.fn()} />);
+
+    expect(await screen.findByText("PI-2871: ship behind a flag?")).toBeTruthy();
+    expect(screen.getByTestId("decisions-pending-count").textContent).toBe("1");
+    fireEvent.change(screen.getByPlaceholderText("Type your answer"), { target: { value: "yes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith("coord", "n-1", { action: "accept", answers: { q: "yes" } }));
+    // The answer refreshes the list, which no longer holds the question.
+    await waitFor(() => expect(screen.getByText(/No open questions/)).toBeTruthy());
+    expect(decisions.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByTestId("decisions-pending-count")).toBeNull();
   });
 });

@@ -11,7 +11,11 @@ test("the Coordinator panel beside any session collapses and opens from the head
   });
   await page.route("**/api/coordinator/**", (route) =>
     route.fulfill({
-      json: route.request().url().endsWith("/summary") ? { wip: [], needs_action: [], idle: [] } : [],
+      json: route.request().url().endsWith("/summary")
+        ? { wip: [], needs_action: [], idle: [] }
+        : route.request().url().endsWith("/decisions")
+          ? { session_id: null, decisions: [] }
+          : [],
     }),
   );
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -22,7 +26,7 @@ test("the Coordinator panel beside any session collapses and opens from the head
   // No other pane toggles and no tab strip: the panel is the only right-hand surface.
   await expect(page.locator("[data-testid^='pane-toggle-']")).toHaveCount(0);
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await expect(panel.getByRole("tab", { name: /Sessions/ })).toBeVisible();
+  await expect(panel.getByRole("tab", { name: /Decisions/ })).toHaveAttribute("aria-selected", "true");
 
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");

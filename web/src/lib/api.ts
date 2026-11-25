@@ -20,7 +20,7 @@ import type {
   ImportableSession,
   SettingsFieldDescriptor,
 } from "./types";
-import type { ConfigOptionDescriptor } from "./acpTypes";
+import type { ConfigOptionDescriptor, Elicitation, ElicitationResolution } from "./acpTypes";
 import { clearDeviceBindingSecret, getOrCreateDeviceBindingSecret } from "./deviceBinding";
 
 type Payload = Record<string, unknown>;
@@ -2604,6 +2604,33 @@ export interface Deploy {
   tested: boolean;
   added_at: string;
   deployed_at?: string;
+}
+
+/** Answers a Session's pending question; the caller classifies the response. */
+export function postElicitationResolution(
+  sessionId: string,
+  nonce: string,
+  resolution: ElicitationResolution,
+): Promise<Response> {
+  return fetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/acp/elicitations/${encodeURIComponent(nonce)}`,
+    jsonInit("POST", resolution),
+  );
+}
+
+/** The coordinator's unanswered questions; `session_id` is null before a coordinator exists. */
+export interface CoordinatorDecisions {
+  session_id: string | null;
+  decisions: Elicitation[];
+}
+
+export async function fetchCoordinatorDecisions(): Promise<CoordinatorDecisions | null> {
+  try {
+    const res = await fetch("/api/coordinator/decisions", { headers: ACCEPT_JSON });
+    return res.ok ? ((await res.json()) as CoordinatorDecisions) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchCoordinatorSummary(): Promise<CoordinatorSummary | null> {

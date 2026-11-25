@@ -2,8 +2,9 @@
 
 ## 2026-11-25: Coordinator panel replaces the side panes
 
-The right side of a session is now only the Coordinator panel (Sessions,
-Deploys, Notes), on every session. A header button and `Mod+Alt+B` collapse
+The right side of a session is now only the Coordinator panel (Decisions,
+Sessions, Deploys, Notes), on every session. Decisions lists the coordinator's
+unanswered questions with a count, answerable there or in its chat. A header button and `Mod+Alt+B` collapse
 and open it; there are no tabs or docks.
 
 Removed from the dashboard: the Diff pane and diff comments, the Files pane,
