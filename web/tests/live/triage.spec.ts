@@ -131,7 +131,7 @@ test("archive sinks the row into the collapsible footer and persists", async ({ 
     .not.toContain(sessionId.slice(0, 8));
 
   await expect(sunkSection).toBeVisible({ timeout: 5_000 });
-  // #1600: a repo group whose only workspace sank loses its header.
+  // #1600: a Group whose only workspace sank loses its header.
   await expect(page.locator("[data-testid='sidebar-group-header']")).toHaveCount(0);
   // Collapsed by default.
   await expect(sunkRow).toHaveCount(0);

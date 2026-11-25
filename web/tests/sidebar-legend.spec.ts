@@ -23,17 +23,11 @@ test.describe("sidebar legend on desktop", () => {
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     // Every status row, generated from the glyph tables, plus the other marks.
     await expect(legend.getByTestId("sidebar-legend-status")).toHaveCount(10);
-    for (const text of [
-      "Waiting · the Agent needs your input",
-      "Dormant",
-      "Unread",
-      "Pinned project",
-      "Project · a registered Project",
-      "Group dot",
-    ]) {
+    for (const text of ["Waiting · the Agent needs your input", "Dormant", "Unread", "Group dot"]) {
       await expect(legend).toContainText(text);
     }
     await expect(legend).not.toContainText("Worker");
+    await expect(legend).not.toContainText("Pinned project");
 
     await page.keyboard.press("Escape");
     await expect(legend).toBeHidden();

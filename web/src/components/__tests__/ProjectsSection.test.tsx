@@ -5,28 +5,14 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 
 import { ProjectsSection } from "../ProjectsSection";
 import { SidebarCompactContext } from "../../lib/sidebarCompact";
-import { MARK_MEANING, meaningText } from "../../lib/sidebarMarks";
-import type { ProjectInfo, RepoGroup } from "../../lib/types";
+import type { ProjectInfo, SavedProject } from "../../lib/types";
 
 afterEach(cleanup);
 
-function emptyProject(repoPath: string, over: Partial<RepoGroup> = {}): RepoGroup {
-  const name = repoPath.split("/").pop() ?? repoPath;
-  const registration: ProjectInfo = { name, path: repoPath, scope: "global" };
-  return {
-    id: repoPath,
-    repoPath,
-    displayName: name,
-    defaultDisplayName: name,
-    alias: null,
-    color: null,
-    remoteOwner: null,
-    workspaces: [],
-    status: "idle",
-    collapsed: false,
-    registeredProjects: [registration],
-    ...over,
-  };
+function emptyProject(path: string, over: Partial<SavedProject> = {}): SavedProject {
+  const name = path.split("/").pop() ?? path;
+  const registration: ProjectInfo = { name, path, scope: "global" };
+  return { path, displayName: name, registrations: [registration], ...over };
 }
 
 function renderSection(props: Partial<Parameters<typeof ProjectsSection>[0]> = {}) {
@@ -64,7 +50,7 @@ describe("ProjectsSection", () => {
     const h = renderSection({
       projects: [
         emptyProject("/work/alpha", {
-          registeredProjects: [{ name: "alpha", path: "/work/alpha", scope: "global", default_base_branch: "develop" }],
+          registrations: [{ name: "alpha", path: "/work/alpha", scope: "global", default_base_branch: "develop" }],
         }),
       ],
     });
@@ -74,25 +60,6 @@ describe("ProjectsSection", () => {
     expect(h.onAddProject).toHaveBeenCalled();
     fireEvent.click(screen.getByTitle("New session in alpha"));
     expect(h.onCreateSession).toHaveBeenCalledWith("/work/alpha");
-  });
-
-  it("explains the row's marker with the shared tooltip, not a native title", () => {
-    const pinned: ProjectInfo = { name: "alpha", path: "/work/alpha", scope: "global", pinned: true };
-    // (registrations, marker, meaning); a pinned Project is listed here when the axis draws no ◆ header (#5065).
-    const cases: [ProjectInfo[] | undefined, string, (typeof MARK_MEANING)[keyof typeof MARK_MEANING]][] = [
-      [undefined, "◇", MARK_MEANING.project],
-      [[pinned], "◆", MARK_MEANING.pinnedProject],
-    ];
-    for (const [registeredProjects, marker, meaning] of cases) {
-      renderSection({
-        projects: [emptyProject("/work/alpha", registeredProjects ? { registeredProjects } : {})],
-      });
-      const mark = screen.getByText(marker);
-      expect(mark.hasAttribute("title"), marker).toBe(false);
-      fireEvent.mouseEnter(mark.parentElement!);
-      expect(screen.getByRole("tooltip").textContent, marker).toBe(meaningText(meaning));
-      cleanup();
-    }
   });
 
   it("hides add and disables create for read-only viewers", () => {
@@ -110,7 +77,7 @@ describe("ProjectsSection", () => {
 
     fireEvent.keyDown(screen.getByTestId("sidebar-project-row"), { key: "F10", shiftKey: true });
     fireEvent.click(screen.getByTestId("sidebar-project-context-menu-remove"));
-    expect(h.onRemoveProject).toHaveBeenCalledWith(expect.objectContaining({ repoPath: "/work/alpha" }));
+    expect(h.onRemoveProject).toHaveBeenCalledWith(expect.objectContaining({ path: "/work/alpha" }));
   });
 
   it("opens the context menu on a long-press unless the gesture ends or moves first", () => {
@@ -131,17 +98,18 @@ describe("ProjectsSection", () => {
     expect(menu.className).toContain("overflow-y-auto");
   });
 
-  it("names what it lists, with a count that matches the rows, and stays short in the rail", () => {
+  it("counts the rows it lists, except in the rail", () => {
     for (const paths of [[], ["/work/alpha"], ["/work/alpha", "/work/beta"]]) {
       renderSection({ projects: paths.map((p) => emptyProject(p)) });
       const toggle = screen.getByTestId("sidebar-projects-toggle");
       expect(Array.from(toggle.querySelectorAll("span"), (span) => span.textContent)).toEqual([
-        "Projects, no sessions",
+        "Projects",
         `(${paths.length})`,
       ]);
       expect(screen.queryAllByTestId("sidebar-project-row")).toHaveLength(paths.length);
       cleanup();
     }
+    // The rail has no room for the count.
     render(
       <SidebarCompactContext.Provider value={true}>
         <ProjectsSection
@@ -155,38 +123,27 @@ describe("ProjectsSection", () => {
         />
       </SidebarCompactContext.Provider>,
     );
-    const label = screen.getByTestId("sidebar-projects-toggle").querySelector("span[title]")!;
-    expect([label.textContent, label.getAttribute("title")]).toEqual(["Projects", "Projects, no sessions"]);
+    const toggle = screen.getByTestId("sidebar-projects-toggle");
+    expect(Array.from(toggle.querySelectorAll("span"), (span) => span.textContent)).toEqual(["Projects"]);
   });
 
-  // #5065: an axis without repository headers lists every Project, so the label drops "no sessions".
-  it("labels the section by whether the axis draws repository headers; compact stays Projects", () => {
-    // (draws repository headers, compact, label, title)
-    const cases: [boolean, boolean, string, string][] = [
-      [true, false, "Projects, no sessions", "Projects, no sessions"],
-      [false, false, "Projects", "Projects"],
-      [true, true, "Projects", "Projects, no sessions"],
-      [false, true, "Projects", "Projects"],
-    ];
-    for (const [drawsRepoHeaders, compact, text, title] of cases) {
-      render(
-        <SidebarCompactContext.Provider value={compact}>
-          <ProjectsSection
-            projects={[emptyProject("/work/alpha")]}
-            query=""
-            offline={false}
-            drawsRepoHeaders={drawsRepoHeaders}
-            onCreateSession={vi.fn()}
-            onAddProject={vi.fn()}
-            onEditProject={vi.fn()}
-            onRemoveProject={vi.fn()}
-          />
-        </SidebarCompactContext.Provider>,
-      );
-      const label = screen.getByTestId("sidebar-projects-toggle").querySelector("span[title]")!;
-      expect([label.textContent, label.getAttribute("title")], `${drawsRepoHeaders} ${compact}`).toEqual([text, title]);
-      cleanup();
-    }
+  it("lists Scratch, which starts a scratch session and opens its settings, and filters it by name", () => {
+    const onNewScratch = vi.fn();
+    const onScratchSettings = vi.fn();
+    renderSection({ onNewScratch, onScratchSettings });
+    fireEvent.click(screen.getByTitle("New scratch session"));
+    expect(onNewScratch).toHaveBeenCalled();
+    fireEvent.contextMenu(screen.getByTestId("sidebar-scratch-row"));
+    fireEvent.click(screen.getByTestId("sidebar-scratch-context-menu-settings"));
+    expect(onScratchSettings).toHaveBeenCalled();
+    cleanup();
+    renderSection({ onNewScratch, query: "alpha" });
+    expect(screen.queryByTestId("sidebar-scratch-row")).toBeNull();
+    cleanup();
+    renderSection({ onNewScratch, onScratchSettings, readOnly: true });
+    fireEvent.click(screen.getByTitle("New scratch session"));
+    expect(onNewScratch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText("New scratch session")).toBeNull();
   });
 
   it("shows the no-match and empty hints, and nothing when there is no way to add", () => {

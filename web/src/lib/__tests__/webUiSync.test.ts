@@ -33,14 +33,12 @@ describe("isSyncedKey", () => {
       "aoe-sidebar-sort-mode",
       "aoe-sidebar-axis",
       "aoe-sidebar-sunk-expanded",
-      "aoe-repo-appearance-v1",
-      "aoe-repo-group-order-v1",
+      "aoe-group-color-v1",
+      "aoe-group-order-v1",
       "aoe-acp-last-tool",
       "aoe-last-browse-dir",
       "aoe-web-settings",
-      "aoe-repo-collapsed-/home/me/repo",
       "aoe-group-collapsed-feature",
-      "aoe-nested-group-collapsed-x",
       "aoe-status-collapsed-Waiting",
       "aoe-settings-intro-worktree", // folded Settings tab intro
     ]) {

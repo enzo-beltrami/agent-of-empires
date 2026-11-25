@@ -145,7 +145,9 @@ test.describe("scratch sessions", () => {
     expect(created[0]?.tool).toBe("claude");
   });
 
-  test("scratch sessions render in a single synthetic Scratch group", async ({ page }) => {
+  test("scratch sessions sit with the other Sessions of their Group, and the Scratch row starts one", async ({
+    page,
+  }) => {
     const scratch = (id: string, title: string) =>
       sessionStub({
         id,
@@ -156,27 +158,22 @@ test.describe("scratch sessions", () => {
       });
     await mockWizardApis(page, {
       sessions: [
-        sessionStub({
-          id: "alpha",
-          title: "alpha-session",
-          project_path: "/home/user/repo-alpha",
-          group_path: "/home/user",
-        }),
+        sessionStub({ id: "alpha", title: "alpha-session", project_path: "/home/user/repo-alpha", group_path: "" }),
         scratch("scr-1", "scratch-one"),
         scratch("scr-2", "scratch-two"),
       ],
     });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/");
-    // Each scratch session has its own directory; without the synthetic group each would get a header.
-    await expect(page.locator("[data-testid='sidebar-group-header']")).toHaveCount(2);
-    await expect(page.getByText("repo-alpha")).toBeVisible();
-    await expect(page.locator("[data-testid='sidebar-group-header'][data-group-id='__scratch__']")).toContainText(
-      "Scratch",
-    );
+    // Each scratch session has its own directory, but Groups ignore directories: one Ungrouped header.
+    await expect(page.locator("[data-testid='sidebar-group-header']")).toHaveCount(1);
+    await expect(page.locator("[data-testid='sidebar-group-header'][data-group-id='__ungrouped__']")).toBeVisible();
     await expect(page.locator("[data-testid='sidebar-session-row']")).toHaveCount(3);
     for (const title of ["alpha-session", "scratch-one", "scratch-two"])
       await expect(page.getByText(title)).toBeVisible();
+
+    await page.getByTestId("sidebar-scratch-row").getByTitle("New scratch session").click();
+    await expect(wizard(page).getByTestId("wizard-project-row")).toContainText("Scratch folder");
   });
 });
 

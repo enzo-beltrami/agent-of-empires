@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Activity, Building2, Check, Folder, FolderTree, Layers } from "lucide-react";
+import { Activity, Check, Layers } from "lucide-react";
 import type { SidebarAxis } from "../lib/sidebarAxis";
 import { Tooltip } from "./Tooltip";
 import { useOutsideDismiss } from "./useOutsideDismiss";
@@ -12,18 +12,12 @@ interface AxisSpec {
 }
 
 const AXES: readonly AxisSpec[] = [
-  { axis: "repo", label: "Repository", Icon: Folder },
-  { axis: "org", label: "Organization", Icon: Building2 },
   { axis: "group", label: "Group", Icon: Layers },
-  { axis: "repo+group", label: "Repository, then group", Icon: FolderTree },
   { axis: "status", label: "Session status", Icon: Activity },
 ];
 
 const TOOLTIP: Record<SidebarAxis, string> = {
-  repo: "Grouping: by repository",
-  org: "Grouping: by organization",
   group: "Grouping: by group",
-  "repo+group": "Grouping: by repository, then group",
   status: "Grouping: by session status",
 };
 
@@ -114,7 +108,7 @@ export function SidebarAxisPicker({
           aria-label={`Group sessions, current: ${AXES[activeIndex]!.label}`}
           data-testid="sidebar-axis-toggle"
           data-axis={axis}
-          className={`${TOOLBAR_BUTTON} ${TOOLBAR_TINT(axis !== "repo")}`}
+          className={`${TOOLBAR_BUTTON} ${TOOLBAR_TINT(axis !== "group")}`}
         >
           <Layers className="h-3.5 w-3.5" />
         </button>

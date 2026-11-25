@@ -52,7 +52,7 @@ test("arrow keys skip deleting session rows", async ({ page }) => {
   await expect(page).toHaveURL("/");
 });
 
-// Two repos that are also two Groups, so both axes show two headers of two rows each.
+// Two Groups of two rows each.
 const twoByTwo: MockSessionInput[] = [
   { id: "s-a1", title: "a-one", project_path: "/tmp/repo-a", branch: "a/one", group: "g-a" },
   { id: "s-a2", title: "a-two", project_path: "/tmp/repo-a", branch: "a/two", group: "g-a" },
@@ -60,25 +60,13 @@ const twoByTwo: MockSessionInput[] = [
   { id: "s-b2", title: "b-two", project_path: "/tmp/repo-b", branch: "b/two", group: "g-b" },
 ];
 
-async function showAxis(page: Page, axis: string) {
-  const toggle = page.getByTestId("sidebar-axis-toggle");
-  await toggle.click();
-  await page.getByTestId(`sidebar-axis-option-${axis}`).click();
-  await expect(toggle).toHaveAttribute("data-axis", axis);
-}
-
-for (const [axis, compact] of [
-  ["repo", false],
-  ["group", false],
-  ["repo", true],
-] as const) {
-  test(`headers are one tab stop each and share the arrow keys with rows (${axis} axis${compact ? ", compact" : ""})`, async ({
+for (const compact of [false, true]) {
+  test(`headers are one tab stop each and share the arrow keys with rows${compact ? " (compact)" : ""}`, async ({
     page,
   }) => {
     await installSidebarMocks(page, { sessions: twoByTwo });
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
-    await showAxis(page, axis);
     if (compact) {
       await page.getByRole("button", { name: "Compact sidebar" }).click();
       await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
@@ -148,48 +136,6 @@ for (const [axis, compact] of [
   });
 }
 
-// Nested lists put a Group's rows inside its parent's. Repo "/tmp/a" with Group "b" and repo
-// "/tmp/a::b" would share a rows id if "::" weren't only ever the separator.
-const nested: MockSessionInput[] = [
-  { id: "s-n1", title: "n-one", project_path: "/tmp/a", branch: "n/one", group: "b", remote_owner: "acme" },
-  { id: "s-n2", title: "n-two", project_path: "/tmp/a::b", branch: "n/two", group: "g", remote_owner: "acme" },
-];
-
-for (const axis of ["repo+group", "org"] as const) {
-  test(`arrow keys reach a nested header and its rows (${axis} axis)`, async ({ page }) => {
-    await installSidebarMocks(page, { sessions: nested });
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto("/");
-    await showAxis(page, axis);
-
-    const ids = await page
-      .locator("[data-testid='sidebar-group-header'] button[aria-controls]")
-      .evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-controls")));
-    expect(ids.length).toBeGreaterThan(2);
-    expect(new Set(ids).size, ids.join(" ")).toBe(ids.length);
-
-    const press = async (key: string, focused: Locator) => {
-      await page.keyboard.press(key);
-      await expect(focused, key).toBeFocused();
-    };
-    const parent = page.locator("[data-testid='sidebar-group-header'] button[aria-expanded]").first();
-    const child = page.locator(`[id="${await parent.getAttribute("aria-controls")}"] button[aria-expanded]`).first();
-    const childRows = page.locator(
-      `[id="${await child.getAttribute("aria-controls")}"] [data-testid="sidebar-session-row"]`,
-    );
-
-    // Parent header, Right to its child header, Right to the first row, Left back to the child.
-    await parent.focus();
-    await press("ArrowRight", child);
-    await press("ArrowRight", childRows.first());
-    await press("ArrowLeft", child);
-    // Left collapses the child, then Left again on the collapsed child goes up to its parent.
-    await press("ArrowLeft", child);
-    await expect(child).toHaveAttribute("aria-expanded", "false");
-    await press("ArrowLeft", parent);
-  });
-}
-
 test("the Snoozed & archived toggle is a header for the arrow keys", async ({ page }) => {
   // The live session's Group is named like the section, so a shared rows id would send Right into it.
   const sessions: MockSessionInput[] = [
@@ -205,7 +151,6 @@ test("the Snoozed & archived toggle is a header for the arrow keys", async ({ pa
   await installSidebarMocks(page, { sessions });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/");
-  await showAxis(page, "group");
 
   const press = async (key: string, focused: Locator) => {
     await page.keyboard.press(key);
@@ -256,51 +201,36 @@ test.describe("Archive all that empties a Group", () => {
     await item.focus();
     await Promise.all([page.waitForRequest(`**/api/sessions/${sessionId}/archive`), page.keyboard.press("Enter")]);
   }
-  const one = (id: string, repo: string, fields: Record<string, unknown> = {}): MockSessionInput => ({
+  const one = (id: string, group: string, fields: Record<string, unknown> = {}): MockSessionInput => ({
     id,
-    title: `${repo}-only`,
-    project_path: `/tmp/${repo}`,
-    branch: `${repo}/only`,
+    title: `${group}-only`,
+    project_path: `/tmp/${group}`,
+    branch: `${group}/only`,
+    group,
     fields,
   });
 
   test("moves focus to the next Group header, then from the last Group to the previous one", async ({ page }) => {
-    await setup(page, [one("s-a", "repo-a"), one("s-b", "repo-b"), one("s-c", "repo-c")]);
-    await archiveAll(page, header(page, "/tmp/repo-a"), "s-a");
-    await expect(header(page, "/tmp/repo-a")).toHaveCount(0);
-    await expect(header(page, "/tmp/repo-b")).toBeFocused();
+    await setup(page, [one("s-a", "group-a"), one("s-b", "group-b"), one("s-c", "group-c")]);
+    await archiveAll(page, header(page, "group-a"), "s-a");
+    await expect(header(page, "group-a")).toHaveCount(0);
+    await expect(header(page, "group-b")).toBeFocused();
     // Snoozed & archived now exists below the last Group; it isn't a Group, so focus goes up instead.
     await expect(page.getByTestId("sidebar-sunk-toggle")).toBeVisible();
-    await archiveAll(page, header(page, "/tmp/repo-c"), "s-c");
-    await expect(header(page, "/tmp/repo-c")).toHaveCount(0);
-    await expect(header(page, "/tmp/repo-b")).toBeFocused();
-  });
-
-  test("goes past a parent header that leaves with its last subgroup", async ({ page }) => {
-    await setup(page, [
-      { ...one("s-w", "repo-w"), group: "g-w" },
-      { ...one("s-x", "repo-x"), group: "g-x" },
-    ]);
-    await showAxis(page, "repo+group");
-    const parentX = header(page, "/tmp/repo-x");
-    const childX = page.locator(`[id="${await parentX.getAttribute("aria-controls")}"] button[aria-expanded]`).first();
-    const parentW = header(page, "/tmp/repo-w");
-    const childW = page.locator(`[id="${await parentW.getAttribute("aria-controls")}"] button[aria-expanded]`).first();
-    await archiveAll(page, childX, "s-x");
-    // repo-x's header goes with its only subgroup; focus lands on the nearest Group header above.
-    await expect(parentX).toHaveCount(0);
-    await expect(childW).toBeFocused();
+    await archiveAll(page, header(page, "group-c"), "s-c");
+    await expect(header(page, "group-c")).toHaveCount(0);
+    await expect(header(page, "group-b")).toBeFocused();
   });
 
   test("leaves focus alone when it moved before the Group emptied", async ({ page }) => {
     let release: () => void = () => {};
     const hold = new Promise<void>((resolve) => (release = resolve));
-    await setup(page, [one("s-a", "repo-a"), one("s-b", "repo-b")], hold);
-    await archiveAll(page, header(page, "/tmp/repo-a"), "s-a");
+    await setup(page, [one("s-a", "group-a"), one("s-b", "group-b")], hold);
+    await archiveAll(page, header(page, "group-a"), "s-a");
     // A click on nothing focusable moves focus to the page while the archive is still out.
     await page.mouse.click(900, 650);
     release();
-    await expect(header(page, "/tmp/repo-a")).toHaveCount(0);
-    await expect(header(page, "/tmp/repo-b")).not.toBeFocused();
+    await expect(header(page, "group-a")).toHaveCount(0);
+    await expect(header(page, "group-b")).not.toBeFocused();
   });
 });

@@ -1,4 +1,4 @@
-// Sidebar chrome: compact mode, empty state, project headers, new-session tooltips, and row chips and actions.
+// Sidebar chrome: compact mode, empty state, Group headers, new-session tooltips, and row chips and actions.
 
 import type { Page } from "@playwright/test";
 import { test, expect } from "./helpers/mockedTest";
@@ -18,8 +18,8 @@ const ROW = "[data-testid='sidebar-session-row']";
 
 test.describe("compact mode (#2288)", () => {
   const SESSIONS = [
-    { id: "s-a", title: "alpha-session", project_path: "/tmp/repo-alpha", branch: "feat/a" },
-    { id: "s-b", title: "beta-session", project_path: "/tmp/repo-alpha", branch: "feat/b" },
+    { id: "s-a", title: "alpha-session", project_path: "/tmp/repo-alpha", branch: "feat/a", group: "team-alpha" },
+    { id: "s-b", title: "beta-session", project_path: "/tmp/repo-alpha", branch: "feat/b", group: "team-alpha" },
   ];
 
   test("compact toggle slims the sidebar, hides extras and an open filter, stays tappable, and persists", async ({
@@ -31,12 +31,12 @@ test.describe("compact mode (#2288)", () => {
     await expect(panel).toBeVisible();
     expect(await width()).toBeGreaterThan(200);
     await expect(page.locator(COUNT).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "New session in repo-alpha" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "New session in team-alpha" })).toBeVisible();
 
     await page.getByRole("button", { name: "Compact sidebar" }).click();
     await expect.poll(width).toBeLessThan(120);
     await expect(page.locator(COUNT)).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "New session in repo-alpha" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "New session in team-alpha" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
     await page.getByText("alpha-session").click();
     // Wide uppercase footer labels used to spill past the rail.
@@ -57,7 +57,7 @@ test.describe("compact mode (#2288)", () => {
     // Entering compact hides an open filter and stops its query narrowing the list.
     await page.getByRole("button", { name: "Filter sessions" }).click();
     const filterInput = page.getByTestId("sidebar-filter-input");
-    // "beta" matches a title only; "alpha" would also match the project name.
+    // "beta" matches a title only; "alpha" would also match the Group name.
     await filterInput.fill("beta");
     await expect(page.getByText("alpha-session")).toHaveCount(0);
     await expect(page.getByText("beta-session")).toBeVisible();
@@ -88,11 +88,13 @@ test("empty sidebar shows a hint that opens the wizard, and hides it once a sess
 
 test("the two new-session buttons have distinct tooltips and labels", async ({ page }) => {
   // #2205. Tooltips portal on hover only (#2214).
-  await openSidebar(page, [{ id: "s-a", title: "alpha-session", project_path: "/tmp/repo-alpha", branch: "feat/a" }]);
+  await openSidebar(page, [
+    { id: "s-a", title: "alpha-session", project_path: "/tmp/repo-alpha", branch: "feat/a", group: "work/payto" },
+  ]);
   for (const [name, tooltip] of [
     ["New project session", "New project session"],
-    // The project name stays out of the tooltip text.
-    ["New session in repo-alpha", "New session"],
+    // The Group name stays out of the tooltip text.
+    ["New session in work / payto", "New session"],
   ]) {
     const button = page.getByRole("button", { name });
     await expect(button).toBeVisible();
@@ -102,7 +104,7 @@ test("the two new-session buttons have distinct tooltips and labels", async ({ p
 });
 
 // #2207: no grip; the icon and fold chevron swap on hover (group-hover opacity); the count always shows.
-test.describe("project header row (#2207)", () => {
+test.describe("Group header row (#2207)", () => {
   test("icon swaps for the fold chevron on hover, with no grab bar; the session count survives collapse", async ({
     page,
   }) => {

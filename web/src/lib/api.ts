@@ -1383,6 +1383,11 @@ export async function fetchGroups(profile?: string): Promise<GroupInfo[]> {
   return (await fetchJson<GroupInfo[]>(`/api/groups${query}`)) ?? [];
 }
 
+/** Rename a Group in one profile, merging into `to` if it exists; its sessions and subgroups move with it. */
+export async function renameGroup(profile: string, from: string, to: string): Promise<boolean> {
+  return fetchOk("/api/groups", jsonInit("PATCH", { source: { profile, path: from }, target: { profile, path: to } }));
+}
+
 export type ProjectTarget = { scope: "global" } | { scope: "profile"; profile: string };
 export type ProjectReadContext = ProjectTarget | { scope?: never; profile?: string };
 

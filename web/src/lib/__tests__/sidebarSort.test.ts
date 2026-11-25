@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it } from "vitest";
-import type { RepoGroup, SessionResponse, SessionStatus, Workspace } from "../types";
+import type { SessionResponse, SessionStatus, Workspace } from "../types";
 import {
   SIDEBAR_SORT_MODE_KEY,
   compareWorkspacesByAttention,
@@ -9,10 +9,6 @@ import {
   compareWorkspacesForComputedSortMode,
   loadSidebarSortMode,
   nextAttentionSessionId,
-  repoGroupAttentionRank,
-  repoGroupHasLiveWorkspace,
-  repoGroupIsUrgent,
-  repoGroupLastActivityMs,
   saveSidebarSortMode,
   sessionAttentionRank,
   sessionNeedsAttention,
@@ -77,21 +73,6 @@ function workspace(id: string, sessions: SessionResponse[]): Workspace {
 /** A single-session workspace whose session id is derived from `id`. */
 const ws1 = (id: string, over: Partial<SessionResponse> = {}) => workspace(id, [session({ id: `${id}-s`, ...over })]);
 
-function repoGroup(workspaces: Workspace[]): RepoGroup {
-  return {
-    id: "repo",
-    repoPath: "repo",
-    displayName: "repo",
-    defaultDisplayName: "repo",
-    alias: null,
-    color: null,
-    remoteOwner: null,
-    workspaces,
-    status: "idle",
-    collapsed: false,
-  };
-}
-
 const TS = "2025-06-01T00:00:00Z";
 const archived = { archived_at: TS };
 const snoozed = { snoozed_until: "2099-01-01T00:00:00Z" };
@@ -128,13 +109,6 @@ describe("activity timestamps", () => {
     ["no usable timestamp", [noTimestamp], Number.NEGATIVE_INFINITY],
   ])("workspaceLastActivityMs: %s", (_name, sessions, expected) => {
     expect(workspaceLastActivityMs(workspace("w", sessions.map(session)))).toBe(expected);
-  });
-
-  it("repoGroupLastActivityMs takes the max, or -Infinity for an empty group", () => {
-    expect(repoGroupLastActivityMs([ws1("a"), ws1("b", { created_at: "2025-07-01T00:00:00Z" })])).toBe(
-      Date.parse("2025-07-01T00:00:00Z"),
-    );
-    expect(repoGroupLastActivityMs([])).toBe(Number.NEGATIVE_INFINITY);
   });
 });
 
@@ -181,14 +155,6 @@ describe("triage", () => {
     ["2099-01-01T00:00:00Z", "not-a-date", false],
   ])("snoozeTimestampCloseEnough(%s, %s) is %s", (a, b, expected) => {
     expect(snoozeTimestampCloseEnough(a, b)).toBe(expected);
-  });
-
-  it.each<[string, Workspace[], boolean]>([
-    ["one live workspace", [ws1("live"), ws1("arch", archived)], true],
-    ["all sunk", [ws1("arch", archived), ws1("snz", snoozed)], false],
-    ["no workspaces", [], false],
-  ])("repoGroupHasLiveWorkspace with %s is %s", (_name, workspaces, expected) => {
-    expect(repoGroupHasLiveWorkspace(repoGroup(workspaces))).toBe(expected);
   });
 });
 
@@ -238,16 +204,13 @@ describe("attention sort (#1640)", () => {
       );
     expect(workspaceAttentionRank(statuses([["Running"], ["Waiting"], ["Idle"]]))).toBe(0);
     expect(workspaceAttentionRank(statuses([["Running"], ["Waiting", snoozed]]))).toBe(4);
-    expect(repoGroupAttentionRank([ws1("a", { status: "Running" }), ws1("b", { status: "Waiting" })])).toBe(0);
   });
 
-  it("urgent and favorited flags aggregate across sessions and workspaces", () => {
+  it("urgent and favorited flags aggregate across sessions", () => {
     expect(workspaceIsUrgent(workspace("w", [session({ id: "a" }), session({ id: "b", urgent: true })]))).toBe(true);
     expect(workspaceIsUrgent(ws1("w"))).toBe(false);
     expect(workspaceIsFavorited(ws1("w", { favorited: true }))).toBe(true);
     expect(workspaceIsFavorited(ws1("w"))).toBe(false);
-    expect(repoGroupIsUrgent([ws1("a"), ws1("b", { urgent: true })])).toBe(true);
-    expect(repoGroupIsUrgent([ws1("a")])).toBe(false);
   });
 
   const status = (id: string, s: SessionStatus, over: Partial<SessionResponse> = {}) =>

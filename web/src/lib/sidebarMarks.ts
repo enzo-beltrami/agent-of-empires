@@ -5,9 +5,6 @@ export const MARK_MEANING = {
   unread: { label: "Unread", description: "activity you haven't opened yet; replaces the status glyph" },
   pinned: { label: "Pinned Session", description: "its title is bold too" },
   favorite: { label: "Favorite", description: "a Session you marked as a favorite" },
-  // The ◆ wording is the Project marker's own; the legend repeats it rather than redefining it.
-  pinnedProject: { label: "Pinned project", description: "persists without sessions" },
-  project: { label: "Project", description: "a registered Project, listed under Projects when it has no sessions" },
   groupDot: {
     label: "Group dot",
     description: "green if any Session is Running, Waiting, Starting or just finished; grey otherwise",

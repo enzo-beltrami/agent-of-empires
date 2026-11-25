@@ -2,13 +2,24 @@
 
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { repoGroupToSidebarGroup } from "../../lib/sidebarGroups";
+import type { SidebarGroup } from "../../lib/sidebarGroups";
 import { nextAttentionSessionId } from "../../lib/sidebarSort";
-import { repoGroup, session, workspace } from "./fixtures";
+import { session, workspace } from "./fixtures";
 import { useAttentionJump } from "../useAttentionJump";
 
 const ws = (id: string, over = {}) => workspace(`w-${id}`, "/repo", [session({ id, ...over })]);
-const groupsOf = (...workspaces: ReturnType<typeof ws>[]) => [repoGroupToSidebarGroup(repoGroup({ workspaces }))];
+const groupsOf = (...workspaces: ReturnType<typeof ws>[]): SidebarGroup[] => [
+  {
+    id: "g",
+    kind: "sessionGroup",
+    displayName: "g",
+    color: null,
+    workspaces: workspaces.map((workspace) => ({ key: workspace.id, workspace })),
+    status: "idle",
+    collapsed: false,
+    groupPath: "g",
+  },
+];
 
 describe("useAttentionJump (#4446)", () => {
   it("lists sessions in display order and leaves calm sessions out of the attention set", () => {

@@ -36,7 +36,7 @@ pub struct AddArgs {
     #[arg(short = 'i', long)]
     interactive: bool,
 
-    /// Group path (defaults to parent folder)
+    /// Group path, `/` for nesting (none by default)
     #[arg(short = 'g', long)]
     group: Option<String>,
 

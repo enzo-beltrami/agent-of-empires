@@ -11,21 +11,15 @@ const EXACT_KEYS = new Set<string>([
   "aoe-sidebar-sort-mode",
   "aoe-sidebar-axis",
   "aoe-sidebar-sunk-expanded",
-  "aoe-repo-appearance-v1", // repo colors/aliases
-  "aoe-repo-group-order-v1", // manual repo-group order
+  "aoe-group-color-v1", // Group header colors
+  "aoe-group-order-v1", // manual Group order
   "aoe-acp-last-tool", // last agent picked in the wizard
   "aoe-last-browse-dir", // last dir browsed (paths are identical across devices)
   "aoe-web-settings", // dashboard prefs (persistent terminals, auto-open keyboard, fonts)
 ]);
 
-// Group-collapse keys are per repo/group and Settings intro folds per tab, so match by prefix.
-const KEY_PREFIXES = [
-  "aoe-repo-collapsed-",
-  "aoe-nested-group-collapsed-",
-  "aoe-group-collapsed-",
-  "aoe-status-collapsed-",
-  SETTINGS_INTRO_KEY_PREFIX,
-];
+// Group-collapse keys are per Group and Settings intro folds per tab, so match by prefix.
+const KEY_PREFIXES = ["aoe-group-collapsed-", "aoe-status-collapsed-", SETTINGS_INTRO_KEY_PREFIX];
 
 export function isSyncedKey(key: string): boolean {
   return EXACT_KEYS.has(key) || KEY_PREFIXES.some((p) => key.startsWith(p));

@@ -1,16 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { ProjectInfo, RepoGroup, Workspace } from "../lib/types";
+import type { ProjectInfo, SavedProject, Workspace } from "../lib/types";
 import type { RuntimeCursor, SessionMutation } from "../lib/api";
 import { SidebarSystemHealth } from "./SystemHealthStrip";
-import { axisDrawsRepoHeaders, type SidebarAxis } from "../lib/sidebarAxis";
-import {
-  archivableWorkspaces,
-  type NestedSidebarGroup,
-  type OrgNestedGroup,
-  type SidebarGroup,
-  type SidebarWorkspaceView,
-} from "../lib/sidebarGroups";
-import type { RepoAppearanceUpdate } from "../lib/repoAppearance";
+import type { SidebarAxis } from "../lib/sidebarAxis";
+import { archivableWorkspaces, type SidebarGroup, type SidebarWorkspaceView } from "../lib/sidebarGroups";
+import type { GroupColor } from "../lib/groupColor";
 import { useWebSettings } from "../hooks/useWebSettings";
 import { SidebarCompactContext } from "../lib/sidebarCompact";
 import { TOUR_ANCHORS, tourAnchor } from "../lib/tourSteps";
@@ -23,17 +17,8 @@ import { FoldChevron, PlusIcon, StrokeIcon } from "./icons";
 import { usePersistedFlag } from "./usePersistedFlag";
 import { NAV_ITEM, ROWS, onSidebarArrowKey } from "./sidebar/keyboardNav";
 import { newDragClickGuard, useSuppressClickAfterDrag, type DragClickGuard } from "./sidebar/dnd";
-import {
-  filterFlat,
-  filterNested,
-  filterOrg,
-  makeRowFilter,
-  renderedOrder,
-  sunkViews,
-  visibleOrgRepos,
-  visibleSubgroups,
-} from "./sidebar/filterGroups";
-import { FlatGroupList, NestedGroupList, OrgGroupList, type ListContext } from "./sidebar/GroupLists";
+import { filterGroups, makeRowFilter, renderedOrder, sunkViews } from "./sidebar/filterGroups";
+import { GroupList, type ListContext } from "./sidebar/GroupLists";
 import { SessionRow } from "./sidebar/SessionRow";
 import { SidebarToolbar } from "./sidebar/SidebarToolbar";
 import { TrashMenu } from "./sidebar/TrashMenu";
@@ -49,21 +34,15 @@ interface Props {
   runtimeEpoch: string | null;
   onSessionMutation: (mutation: SessionMutation) => void;
   groups: SidebarGroup[];
-  /** Used only when `axis === "repo+group"`. */
-  nestedGroups: NestedSidebarGroup[];
-  /** Used only when `axis === "org"`. */
-  orgGroups: OrgNestedGroup[];
   /** Workspaces whose every session is trashed, computed by the parent from the unsliced list. */
   trashedWorkspaces?: Workspace[];
   /** Trashed sessions the daemon holds; the rows load on demand, so this keeps the Trash control visible before then. */
   trashedCount?: number;
   trashLoaded?: boolean;
   onLoadTrash?: () => void;
-  onToggleSubgroup: (repoId: string, groupPath: string) => void;
-  onToggleOrg: (orgId: string) => void;
-  onToggleOrgRepo: (orgId: string, repoId: string) => void;
   onReorderWorkspaces: (newOrder: string[]) => void;
   onReorderGroups: (orderedGroupIds: string[]) => void;
+  onMoveToGroup: (workspace: Workspace, groupPath: string, newOrder: string[]) => void;
   activeId: string | null;
   /** The session the URL currently points at; lets an expanded sibling row tell it apart from the rest of its group. */
   activeSessionId: string | null;
@@ -71,18 +50,18 @@ interface Props {
   onToggle: () => void;
   onSelect: (workspaceId: string, sessionId: string | null) => void;
   onToggleGroup: (groupId: string) => void;
-  onUpdateRepoAppearance: (repoId: string, update: RepoAppearanceUpdate) => void;
+  onSetGroupColor: (groupId: string, color: GroupColor | null) => void;
+  onRenameGroup: (group: SidebarGroup, to: string) => void;
   onNew: () => void;
+  /** Opens the wizard with the Group prefilled; "" for Ungrouped. */
+  onNewInGroup: (groupPath: string) => void;
   onCreateSession: (repoPath: string) => void;
-  onPinProject?: (repoPath: string) => void;
-  onUnpinProject?: (group: SidebarGroup) => void;
-  /** Opens project settings, registering the repo first if needed. */
-  onEditProjectSettings?: (group: SidebarGroup) => void;
-  /** Saved projects with no live session. */
-  savedProjects: RepoGroup[];
+  onNewScratch: () => void;
+  onScratchSettings: () => void;
+  savedProjects: SavedProject[];
   onAddProject: () => void;
   onEditProject: (project: ProjectInfo) => void;
-  onRemoveProject: (group: RepoGroup) => void;
+  onRemoveProject: (project: SavedProject) => void;
   onSettings: () => void;
   onDeleteSession?: (sessionIds: string[]) => void;
   /** Receives every session id of the trashed workspace. */
@@ -102,27 +81,16 @@ interface Props {
 }
 
 export function WorkspaceSidebar(props: Props) {
-  const {
-    groups,
-    nestedGroups,
-    orgGroups,
-    trashedWorkspaces = [],
-    activeId,
-    activeSessionId,
-    open,
-    readOnly,
-    axis,
-  } = props;
+  const { groups, trashedWorkspaces = [], activeId, activeSessionId, open, readOnly, axis } = props;
   const { settings: webSettings, update: updateWebSettings } = useWebSettings();
   const rightSide = webSettings.sidebarSide === "right";
   const compact = webSettings.sidebarCompact;
   const offline = useServerDown();
   const { effectiveWidth, startResize } = useSidebarWidth(compact);
 
-  // Reorder rebuilds order from the full list, so it is off whenever the visible order is computed or filtered,
-  // and on axes (the user-group axis) whose groups cannot persist an order.
-  const reorderDisabled =
-    !!readOnly || props.sortMode === "lastActivity" || groups.some((g) => !g.capabilities.reorder);
+  // Reorder rebuilds order from the full list, so it is off whenever the visible order is computed, and
+  // status buckets have no order or path to drop into.
+  const reorderDisabled = !!readOnly || props.sortMode !== "manual" || axis === "status";
   const dragClickGuard = useRef<DragClickGuard>(newDragClickGuard());
   useSuppressClickAfterDrag(dragClickGuard);
 
@@ -135,56 +103,25 @@ export function WorkspaceSidebar(props: Props) {
   const q = activeFilterQuery.trim().toLowerCase();
   const hasFilter = !!q;
 
-  const [filteredGroups, filteredNested, filteredOrgGroups] = useMemo(() => {
-    if (!hasFilter) return [groups, nestedGroups, orgGroups] as const;
-    const keep = makeRowFilter(q);
-    return [filterFlat(groups, keep), filterNested(nestedGroups, keep), filterOrg(orgGroups, keep)] as const;
-  }, [hasFilter, q, groups, nestedGroups, orgGroups]);
-  const isNested = axis === "repo+group";
-  const isOrgAxis = axis === "org";
+  const filteredGroups = useMemo(
+    () => (hasFilter ? filterGroups(groups, makeRowFilter(q)) : groups),
+    [hasFilter, q, groups],
+  );
 
   // An expanded sibling keeps its own optimistic override, which has to reconcile against its one session,
   // also after its siblings are gone. The status axis repeats a workspace per bucket, so the records come
-  // from every slice of every axis plus their session children.
+  // from every slice plus their session children.
   const triageWorkspaces = useMemo(() => {
-    const slices = [groups, ...nestedGroups.map((n) => n.subgroups), ...orgGroups.map((o) => o.repos)]
-      .flat()
-      .flatMap((g) => g.workspaces.map((v) => v.workspace));
+    const slices = groups.flatMap((g) => g.workspaces.map((v) => v.workspace));
     return [...slices, ...sessionWorkspaces(slices)];
-  }, [groups, nestedGroups, orgGroups]);
+  }, [groups]);
   const triage = useSidebarTriage(triageWorkspaces);
   // Rows, not workspaces: the status axis renders a workspace once per bucket, and each row's
   // actions belong to its own session. Filtering keeps the selection, so ranges use `filtered`.
-  const [orderedIds, rows] = useMemo(() => {
-    const filteredAll = isNested
-      ? filteredNested.flatMap((ng) => ng.subgroups)
-      : isOrgAxis
-        ? filteredOrgGroups.flatMap((og) => og.repos)
-        : filteredGroups;
-    // A collapsed repo or org hides its children, so a range must skip the rows it hides.
-    const rendered = isNested
-      ? visibleSubgroups(filteredNested, hasFilter)
-      : isOrgAxis
-        ? visibleOrgRepos(filteredOrgGroups, hasFilter)
-        : filteredGroups;
-    const every = isNested
-      ? nestedGroups.flatMap((ng) => ng.subgroups)
-      : isOrgAxis
-        ? orgGroups.flatMap((og) => og.repos)
-        : groups;
-    return [renderedOrder(rendered, hasFilter, sunkExpanded, filteredAll), every.flatMap((g) => g.workspaces)] as const;
-  }, [
-    isNested,
-    isOrgAxis,
-    groups,
-    nestedGroups,
-    orgGroups,
-    filteredGroups,
-    filteredNested,
-    filteredOrgGroups,
-    hasFilter,
-    sunkExpanded,
-  ]);
+  const [orderedIds, rows] = useMemo(
+    () => [renderedOrder(filteredGroups, hasFilter, sunkExpanded), groups.flatMap((g) => g.workspaces)] as const,
+    [groups, filteredGroups, hasFilter, sunkExpanded],
+  );
   const selection = useSidebarSelection({
     rows,
     orderedIds,
@@ -214,12 +151,10 @@ export function WorkspaceSidebar(props: Props) {
     offline,
     displayedActiveId: selection.displayedActiveId,
     displayedActiveSessionId: selection.displayedActiveSessionId,
-    onNew: props.onNew,
+    onNewInGroup: props.onNewInGroup,
     onCreateSession: props.onCreateSession,
-    onUpdateAppearance: props.onUpdateRepoAppearance,
-    onPinProject: props.onPinProject,
-    onUnpinProject: props.onUnpinProject,
-    onEditProjectSettings: props.onEditProjectSettings,
+    onRenameGroup: props.onRenameGroup,
+    onSetGroupColor: props.onSetGroupColor,
     onArchiveGroup,
     rowProps: (v: SidebarWorkspaceView) => ({
       rowKey: v.key,
@@ -253,18 +188,9 @@ export function WorkspaceSidebar(props: Props) {
   };
 
   const savedProjectsMatchQuery =
-    !!q &&
-    props.savedProjects.some((p) => p.displayName.toLowerCase().includes(q) || p.repoPath.toLowerCase().includes(q));
-  const hasResults =
-    (isNested ? filteredNested.length : isOrgAxis ? filteredOrgGroups.length : filteredGroups.length) > 0 ||
-    savedProjectsMatchQuery;
-  const sunk = sunkViews(
-    isNested
-      ? filteredNested.flatMap((ng) => ng.subgroups)
-      : isOrgAxis
-        ? filteredOrgGroups.flatMap((og) => og.repos)
-        : filteredGroups,
-  );
+    !!q && props.savedProjects.some((p) => p.displayName.toLowerCase().includes(q) || p.path.toLowerCase().includes(q));
+  const hasResults = filteredGroups.length > 0 || savedProjectsMatchQuery;
+  const sunk = sunkViews(filteredGroups);
 
   const toggleFilter = () => {
     setFilterOpen((o) => {
@@ -326,35 +252,18 @@ export function WorkspaceSidebar(props: Props) {
         )}
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden border-t border-surface-700/60">
-          {isNested ? (
-            <NestedGroupList
-              ctx={ctx}
-              groups={filteredNested}
-              fullGroups={nestedGroups}
-              onToggleGroup={props.onToggleGroup}
-              onToggleSubgroup={props.onToggleSubgroup}
-            />
-          ) : isOrgAxis ? (
-            <OrgGroupList
-              ctx={ctx}
-              groups={filteredOrgGroups}
-              fullGroups={orgGroups}
-              onToggleOrg={props.onToggleOrg}
-              onToggleOrgRepo={props.onToggleOrgRepo}
-            />
-          ) : (
-            <FlatGroupList
-              ctx={ctx}
-              groups={filteredGroups}
-              fullGroups={groups}
-              reorderDisabled={reorderDisabled}
-              groupDragDisabled={reorderDisabled || q.length > 0}
-              onToggleGroup={props.onToggleGroup}
-              onReorderGroups={props.onReorderGroups}
-              onReorderWorkspaces={props.onReorderWorkspaces}
-              dragClickGuard={dragClickGuard}
-            />
-          )}
+          <GroupList
+            ctx={ctx}
+            groups={filteredGroups}
+            fullGroups={groups}
+            reorderDisabled={reorderDisabled}
+            groupDragDisabled={reorderDisabled || hasFilter}
+            onToggleGroup={props.onToggleGroup}
+            onReorderGroups={props.onReorderGroups}
+            onReorderWorkspaces={props.onReorderWorkspaces}
+            onMoveToGroup={props.onMoveToGroup}
+            dragClickGuard={dragClickGuard}
+          />
 
           {sunk.length > 0 && (
             <div data-testid="sidebar-sunk-section">
@@ -385,7 +294,6 @@ export function WorkspaceSidebar(props: Props) {
           {(props.canManageProjects ?? true) && (
             <ProjectsSection
               projects={props.savedProjects}
-              drawsRepoHeaders={axisDrawsRepoHeaders(axis)}
               query={q}
               readOnly={readOnly}
               offline={offline}
@@ -393,6 +301,8 @@ export function WorkspaceSidebar(props: Props) {
               onAddProject={props.onAddProject}
               onEditProject={props.onEditProject}
               onRemoveProject={props.onRemoveProject}
+              onNewScratch={props.onNewScratch}
+              onScratchSettings={props.onScratchSettings}
             />
           )}
 

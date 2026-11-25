@@ -7,7 +7,7 @@ import type { DragHandleProps } from "./types";
 const liftClass = (isDragging: boolean) =>
   "transition-shadow duration-150 " + (isDragging ? "ring-2 ring-inset ring-brand-500 shadow-lg" : "");
 
-/** A session row that is its own drag handle: a tap navigates, a press-and-hold reorders. */
+/** A session row that is its own drag handle: a tap navigates, a press-and-hold reorders or moves it to another Group. */
 export function SortableSessionRow({
   rowKey,
   dragDisabled,
@@ -43,7 +43,7 @@ export function SortableSessionRow({
 }
 
 /** Sortable wrapper around a whole group block (header plus rows) so it moves as a unit. */
-export function SortableRepoGroup({
+export function SortableGroup({
   groupId,
   disabled,
   children,

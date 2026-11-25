@@ -1,19 +1,12 @@
-// Workspace and project structure against a real server: ordering, project pins, attaching repos.
+// Workspace and project structure against a real server: ordering, attaching repos.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, expect, type ServeHandle } from "../helpers/liveTest";
 import { appDirFor, listSessions, resolveAoeBinary } from "../helpers/aoeServe";
-import { gitEnv, initWorkingRepo } from "../helpers/gitFixture";
+import { gitEnv } from "../helpers/gitFixture";
 import { readVisibleSessionTitles, seedSessionsInRepo } from "../helpers/sidebar";
-
-function aoe(env: NodeJS.ProcessEnv, args: string[]) {
-  const res = spawnSync(resolveAoeBinary(), args, { env });
-  if (res.status !== 0) {
-    throw new Error(`aoe ${args[0]} failed: status=${res.status} stderr=${res.stderr?.toString() ?? "<none>"}`);
-  }
-}
 
 test("press-and-hold drag reorders and round-trips PUT /api/workspace-ordering", async ({ page, spawnServe }) => {
   // #1220. Sessions without a branch have workspace id `<project_path>::__session__::<id>`.
@@ -66,66 +59,6 @@ test("press-and-hold drag reorders and round-trips PUT /api/workspace-ordering",
     .toEqual([byTitle.get(initial[2]!), byTitle.get(initial[0]!), byTitle.get(initial[1]!)]);
   const body = (await fetch(`${serve.baseUrl}/api/sessions`).then((r) => r.json())) as { workspace_ordering: string[] };
   expect(body.workspace_ordering.slice(0, 3)).toEqual(puts.at(-1));
-});
-
-test("saved-unpinned hidden; pin POSTs; unpin keeps the saved project", async ({ page, spawnServe }) => {
-  // #2047, #2208: saving a project no longer adds a sidebar header, and unpinning must not delete it.
-  const serve = await spawnServe({
-    seedFn: ({ home, env }) => {
-      const projectA = initWorkingRepo(join(home, "projectA"), env).path;
-      const projectB = initWorkingRepo(join(home, "projectB"), env).path;
-      aoe(env, ["add", projectA, "-t", "pin-session", "-c", "claude"]);
-      aoe(env, ["project", "add", projectB, "--scope", "global"]);
-    },
-  });
-  const sessions = await listSessions(serve.baseUrl);
-  expect(sessions).toHaveLength(1);
-  const repoA = sessions[0]!.project_path as string;
-  const profiles = (await (await page.request.get(`${serve.baseUrl}/api/profiles`)).json()) as Array<{
-    name: string;
-    is_default?: boolean;
-  }>;
-  const profile = profiles.find((candidate) => candidate.is_default)?.name ?? profiles[0]?.name;
-  expect(profile).toBeTruthy();
-  const savedProjects = async () =>
-    (await (
-      await page.request.get(`${serve.baseUrl}/api/projects?profile=${encodeURIComponent(profile!)}`)
-    ).json()) as {
-      name: string;
-      path: string;
-    }[];
-
-  await page.goto(`${serve.baseUrl}/`);
-  const headerA = page.locator(`[data-testid='sidebar-group-header'][data-group-id='${repoA}']`);
-  const marker = headerA.locator("[data-testid='sidebar-group-pinned-marker']");
-  await expect(headerA).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator("[data-testid='sidebar-group-header']").filter({ hasText: "projectB" })).toHaveCount(0);
-  expect((await savedProjects()).some((p) => p.name === "projectB")).toBe(true);
-
-  await headerA.click({ button: "right" });
-  const pinPost = page.waitForResponse(
-    (res) => res.url().endsWith("/api/projects") && res.request().method() === "POST",
-  );
-  await page.locator("[data-testid='sidebar-group-context-menu-pin']").click();
-  const pinRes = await pinPost;
-  expect(pinRes.ok()).toBe(true);
-  expect(pinRes.request().postDataJSON()).toMatchObject({ path: repoA, scope: "global", pinned: true });
-  await expect(marker).toBeVisible({ timeout: 5_000 });
-
-  await page.reload();
-  await expect(marker).toBeVisible({ timeout: 10_000 });
-  await headerA.click({ button: "right" });
-  const unpinPatch = page.waitForResponse(
-    (res) => res.url().includes("/api/projects/") && res.request().method() === "PATCH",
-  );
-  await page.locator("[data-testid='sidebar-group-context-menu-unpin']").click();
-  const unpinRes = await unpinPatch;
-  expect(unpinRes.ok()).toBe(true);
-  expect(unpinRes.request().postDataJSON()).toMatchObject({ pinned: false });
-  await expect(marker).toHaveCount(0, { timeout: 5_000 });
-  // Still a registered Project, so ◆ gives way to ◇.
-  await expect(headerA.locator("[data-testid='sidebar-group-project-marker']")).toBeVisible();
-  expect((await savedProjects()).some((p) => p.path === repoA)).toBe(true);
 });
 
 test("attaching a project over the daemon converts the session into a workspace", async ({ spawnServe }) => {

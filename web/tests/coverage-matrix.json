@@ -1604,8 +1604,13 @@
       "id": "sidebar.scratch-group",
       "kind": "mocked-playwright",
       "risk": "medium",
-      "specs": ["tests/wizard-project.spec.ts"],
-      "components": ["web/src/hooks/useRepoGroups.ts", "web/src/components/WorkspaceSidebar.tsx"]
+      "specs": [
+        "tests/wizard-project.spec.ts",
+        "tests/sidebar-project-settings.spec.ts",
+        "src/components/__tests__/ProjectsSection.test.tsx"
+      ],
+      "components": ["web/src/components/ProjectsSection.tsx", "web/src/components/WorkspaceSidebar.tsx"],
+      "notes": "Scratch sessions sit in their Group like any other; the Projects section Scratch row starts one and opens Scratch settings."
     },
     {
       "id": "directory-browser",
@@ -1827,8 +1832,19 @@
       "id": "sidebar.group-reorder",
       "kind": "mocked-playwright",
       "risk": "medium",
-      "specs": ["tests/sidebar-reorder.spec.ts"],
-      "components": ["web/src/components/WorkspaceSidebar.tsx", "web/src/hooks/useRepoGroups.ts"]
+      "specs": [
+        "tests/sidebar-reorder.spec.ts",
+        "src/components/sidebar/rowDrop.test.ts",
+        "src/lib/groupOrder.test.ts"
+      ],
+      "components": [
+        "web/src/components/WorkspaceSidebar.tsx",
+        "web/src/components/sidebar/GroupLists.tsx",
+        "web/src/components/sidebar/rowDrop.ts",
+        "web/src/hooks/useSessionGroups.ts",
+        "web/src/lib/groupOrder.ts"
+      ],
+      "notes": "In Manual sort a Group header drags to reorder Groups (per browser, synced); a row drags within its Group (workspace ordering) or onto a row of another Group, which moves its sessions there."
     },
     {
       "id": "sidebar.project-row",
@@ -1836,13 +1852,6 @@
       "risk": "medium",
       "specs": ["tests/sidebar-chrome.spec.ts"],
       "components": ["web/src/components/WorkspaceSidebar.tsx", "web/src/components/sidebar/SessionRow.tsx"]
-    },
-    {
-      "id": "sidebar.project-row-header",
-      "kind": "vitest",
-      "risk": "medium",
-      "specs": ["src/components/__tests__/SidebarGroupHeader.test.tsx", "src/lib/__tests__/githubAvatar.test.ts"],
-      "components": ["web/src/components/WorkspaceSidebar.tsx", "web/src/components/OwnerAvatar.tsx"]
     },
     {
       "id": "sidebar.empty-state",
@@ -2143,13 +2152,6 @@
       "components": []
     },
     {
-      "id": "sidebar.repo-groups-hook",
-      "kind": "vitest",
-      "risk": "medium",
-      "specs": ["src/hooks/useRepoGroups.test.ts"],
-      "components": []
-    },
-    {
       "id": "sidebar.sort-toggle-ui",
       "kind": "mocked-playwright",
       "risk": "high",
@@ -2205,47 +2207,31 @@
       ]
     },
     {
-      "id": "sidebar.nested-axis-pure",
-      "kind": "vitest",
-      "risk": "high",
-      "specs": ["src/lib/__tests__/sidebarGroups.test.ts"],
-      "components": ["web/src/lib/sidebarGroups.ts"]
-    },
-    {
-      "id": "sidebar.nested-axis-live",
+      "id": "sidebar.group-header-actions",
       "kind": "mocked-playwright",
-      "risk": "high",
-      "specs": ["tests/sidebar-grouping.spec.ts"],
-      "components": [
-        "web/src/components/WorkspaceSidebar.tsx",
-        "web/src/hooks/useNestedSidebarGroups.ts",
-        "web/src/lib/sidebarGroups.ts"
-      ]
-    },
-    {
-      "id": "sidebar.org-axis-pure",
-      "kind": "vitest",
-      "risk": "high",
-      "specs": ["src/lib/__tests__/sidebarGroups.test.ts"],
-      "components": ["web/src/lib/sidebarGroups.ts"]
-    },
-    {
-      "id": "sidebar.org-axis-hook",
-      "kind": "vitest",
       "risk": "medium",
-      "specs": ["src/hooks/__tests__/sidebarGroupCollapse.test.tsx"],
-      "components": ["web/src/hooks/useOrgGroups.ts"]
+      "specs": [
+        "tests/sidebar-grouping.spec.ts",
+        "tests/sidebar-multi-session.spec.ts",
+        "src/components/__tests__/SidebarGroupHeader.test.tsx",
+        "src/lib/groupColor.test.ts",
+        "src/hooks/__tests__/sidebarGroupCollapse.test.tsx"
+      ],
+      "components": [
+        "web/src/components/sidebar/SidebarGroupHeader.tsx",
+        "web/src/App.tsx",
+        "web/src/lib/api.ts",
+        "web/src/lib/groupColor.ts",
+        "web/src/hooks/useSessionGroups.ts"
+      ],
+      "notes": "A Group header renames its path on the server in every profile its sessions belong to, takes a per-browser color that follows the rename, and its + opens the wizard with the Group prefilled."
     },
     {
-      "id": "sidebar.org-axis-live",
+      "id": "sidebar.projects-section-listing",
       "kind": "mocked-playwright",
-      "risk": "high",
-      "specs": ["tests/sidebar-grouping.spec.ts"],
-      "components": [
-        "web/src/components/WorkspaceSidebar.tsx",
-        "web/src/hooks/useOrgGroups.ts",
-        "web/src/lib/sidebarGroups.ts"
-      ]
+      "risk": "low",
+      "specs": ["tests/sidebar-projects-section.spec.ts"],
+      "components": ["web/src/components/ProjectsSection.tsx", "web/src/lib/registeredProjects.ts"]
     },
     {
       "id": "sidebar.status-axis-pure",
@@ -3904,12 +3890,8 @@
       "kind": "vitest",
       "risk": "low",
       "specs": ["src/components/__tests__/ProjectsSection.test.tsx", "src/lib/__tests__/registeredProjects.test.ts"],
-      "components": [
-        "web/src/components/ProjectsSection.tsx",
-        "web/src/lib/registeredProjects.ts",
-        "web/src/lib/sidebarAxis.ts"
-      ],
-      "notes": "Where the grouping draws repository headers (By repo, By organization, By repo and group) the section is \"Projects, no sessions\" and lists unpinned Projects without a live group; By group draws none, so it is \"Projects\" and lists every registered Project once, pinned or with live sessions included, a pinned row marked ◆ (#5065). Compact is \"Projects\" on every axis. The per-axis rule is axisDrawsRepoHeaders, a Record over SidebarAxis."
+      "components": ["web/src/components/ProjectsSection.tsx", "web/src/lib/registeredProjects.ts"],
+      "notes": "The section lists every registered Project once across scopes, by name, plus a Scratch row; the rail hides the count."
     },
     {
       "id": "story.settings-tmux-select",
@@ -4078,7 +4060,7 @@
         "web/src/components/sidebar/GroupLists.tsx",
         "web/src/components/sidebar/keyboardNav.ts"
       ],
-      "notes": "Arrow keys over headers and rows on every axis, including nested and org lists; Left on a collapsed nested header goes to its parent; the Snoozed & archived toggle is a header for its rows; Archive all that empties a Group moves focus to the nearest remaining Group header, never the toggle, and not after focus moved elsewhere."
+      "notes": "Arrow keys over Group headers and rows, compact or not; Archive all that empties a Group moves focus to a neighbouring header."
     },
     {
       "id": "story.sidebar-plan-progress",
@@ -4789,32 +4771,6 @@
       "components": ["web/src/components/WorkspaceSidebar.tsx", "web/src/lib/sidebarSort.ts"]
     },
     {
-      "id": "sidebar.project-pin",
-      "kind": "live-playwright",
-      "risk": "high",
-      "specs": ["tests/live/workspaces.spec.ts"],
-      "components": [
-        "web/src/components/WorkspaceSidebar.tsx",
-        "web/src/lib/registeredProjects.ts",
-        "web/src/lib/sidebarGroups.ts",
-        "web/src/hooks/useRepoGroups.ts",
-        "web/src/hooks/useProjects.ts",
-        "web/src/components/sidebar/SidebarGroupHeader.tsx"
-      ]
-    },
-    {
-      "id": "sidebar.project-pin-handlers",
-      "kind": "mocked-playwright",
-      "risk": "high",
-      "specs": ["tests/sidebar-project-pin.spec.ts"],
-      "components": [
-        "web/src/App.tsx",
-        "web/src/lib/api.ts",
-        "web/src/hooks/useProjects.ts",
-        "web/src/components/ProjectsSection.tsx"
-      ]
-    },
-    {
       "id": "sidebar.active-project-settings",
       "kind": "mocked-playwright",
       "risk": "medium",
@@ -5175,14 +5131,14 @@
       "kind": "vitest",
       "risk": "high",
       "specs": ["src/hooks/__tests__/useProjects.test.tsx"],
-      "components": ["web/src/hooks/useProjects.ts", "web/src/hooks/app/useProjectActions.ts"]
+      "components": ["web/src/hooks/useProjects.ts"]
     },
     {
       "id": "projects.served-profile-registry",
       "kind": "mocked-playwright",
       "risk": "high",
       "specs": ["tests/served-profile-browser.spec.ts"],
-      "components": ["web/src/hooks/useProjects.ts", "web/src/hooks/app/useProjectActions.ts"],
+      "components": ["web/src/hooks/useProjects.ts", "web/src/components/ProjectsSection.tsx"],
       "notes": "Focus refresh retains acknowledged registry on failure. Both same-tab rename origins refresh served-profile authority before implicit wizard registry reads."
     },
     {

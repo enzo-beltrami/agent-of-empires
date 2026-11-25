@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-11-25: sidebar grouped by Group only
+
+The sidebar groups Sessions by their Group (theme) or by status; grouping by
+repository, organization, and repository then Group is gone. In Manual sort,
+drag a Group header to reorder Groups and a Session row to reorder it or move
+it into another Group. A Group header's menu renames it (server-side, across
+the profiles its Sessions belong to) and sets its color; its `+` opens the
+wizard with the Group prefilled.
+
+Removed with the repository headers: per-repository aliases and colors,
+pinning a Project as a header, and the organization avatar. The Projects
+section now lists every registered Project, plus a Scratch row that starts a
+Scratch session and opens Scratch settings.
+
+Group order and colors sync like the other sidebar preferences. The old
+per-repository preferences are no longer read, so Groups start in
+alphabetical order with no colors; nothing needs cleaning up.
+
 ## 2026-11-12: personal-fork cleanup
 
 The fork was trimmed to the `aoe serve` daemon, its web dashboard and the

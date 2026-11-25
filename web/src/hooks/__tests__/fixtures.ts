@@ -1,7 +1,7 @@
 // Session, workspace, and repo-group builders plus the matchMedia stub shared by the hook tests.
 
 import { vi } from "vitest";
-import type { RepoGroup, SessionResponse, Workspace } from "../../lib/types";
+import type { SessionResponse, Workspace } from "../../lib/types";
 
 type Listener = () => void;
 
@@ -80,21 +80,4 @@ export function workspace(
     sessions,
     ...over,
   };
-}
-
-export function repoGroup(over: Partial<RepoGroup> = {}): RepoGroup {
-  return {
-    id: "repo-1",
-    repoPath: "/repo",
-    displayName: "repo",
-    defaultDisplayName: "repo",
-    alias: null,
-    color: null,
-    remoteOwner: null,
-    workspaces: [],
-    status: "idle",
-    collapsed: false,
-    registeredProjects: [],
-    ...over,
-  } as RepoGroup;
 }

@@ -1,12 +1,8 @@
 import { test, expect } from "./helpers/mockedTest";
 import { Page } from "@playwright/test";
 
-// Mocked coverage for the active-project group header's "Project settings"
-// action: an active project (one with live sessions) previously had no path
-// to the base-branch/worktree/smart-rename override editor at all, which
-// only lived in the sessionless Projects section (see ProjectsSection.tsx's
-// "Project settings" row). This proves the group header offers the same
-// editor, registering the repo on the fly when it was never explicitly saved.
+// Project settings open from a Projects-section row, and Scratch settings from its Scratch row, since
+// the sidebar groups Sessions by Group rather than by repository.
 
 interface MockSession {
   id: string;
@@ -76,26 +72,8 @@ async function mockApis(page: Page, sessions: MockSession[], projects: MockProje
   );
 }
 
-test.describe("Sidebar active-project settings (#4036)", () => {
-  test("Project settings on an unregistered populated repo registers it, then opens the editor", async ({ page }) => {
-    await mockApis(page, [{ id: "s-1", title: "Mongols", project_path: "/tmp/repo-a" }], []);
-    await page.goto("/");
-    await expect(page.locator("header")).toBeVisible();
-
-    const header = page.locator("[data-testid='sidebar-group-header']").filter({ hasText: "repo-a" });
-    await expect(header).toBeVisible();
-    await header.click({ button: "right" });
-
-    const post = page.waitForRequest((req) => req.url().endsWith("/api/projects") && req.method() === "POST");
-    await page.locator("[data-testid='sidebar-group-context-menu-settings']").click();
-    const req = await post;
-    expect(req.postDataJSON()).toMatchObject({ path: "/tmp/repo-a", scope: "global" });
-
-    await expect(page.getByTestId("project-form-modal")).toBeVisible();
-    await expect(page.getByText("Edit project 'repo-a'")).toBeVisible();
-  });
-
-  test("Project settings on an already-registered repo opens the editor directly, no re-registration", async ({
+test.describe("Sidebar project and scratch settings (#4036)", () => {
+  test("Project settings on a registered project's row opens the editor directly, no re-registration", async ({
     page,
   }) => {
     await mockApis(
@@ -106,22 +84,22 @@ test.describe("Sidebar active-project settings (#4036)", () => {
     await page.goto("/");
     await expect(page.locator("header")).toBeVisible();
 
-    const header = page.locator("[data-testid='sidebar-group-header']").filter({ hasText: "repo-a" });
-    await expect(header).toBeVisible();
-    await header.click({ button: "right" });
+    const row = page.getByTestId("sidebar-project-row").filter({ hasText: "repo-a" });
+    await expect(row).toBeVisible();
+    await row.click({ button: "right" });
 
     let posted = false;
     page.on("request", (req) => {
       if (req.url().endsWith("/api/projects") && req.method() === "POST") posted = true;
     });
-    await page.locator("[data-testid='sidebar-group-context-menu-settings']").click();
+    await page.getByTestId("sidebar-project-context-menu-edit").click();
 
     await expect(page.getByTestId("project-form-modal")).toBeVisible();
     await expect(page.getByText("Edit project 'repo-a'")).toBeVisible();
     expect(posted).toBe(false);
   });
 
-  test("Edit settings on the synthetic Scratch group opens its own settings dialog, not the project form", async ({
+  test("Scratch settings on the Projects section's Scratch row opens its own dialog, not the project form", async ({
     page,
   }) => {
     await mockApis(page, [{ id: "s-1", title: "Scratch chat", project_path: "/tmp/scratch/s-1", scratch: true }], []);
@@ -134,10 +112,10 @@ test.describe("Sidebar active-project settings (#4036)", () => {
     await page.goto("/");
     await expect(page.locator("header")).toBeVisible();
 
-    const header = page.locator("[data-testid='sidebar-group-header']").filter({ hasText: "Scratch" });
-    await expect(header).toBeVisible();
-    await header.click({ button: "right" });
-    await page.locator("[data-testid='sidebar-group-context-menu-settings']").click();
+    const row = page.getByTestId("sidebar-scratch-row");
+    await expect(row).toBeVisible();
+    await row.click({ button: "right" });
+    await page.getByTestId("sidebar-scratch-context-menu-settings").click();
 
     await expect(page.getByTestId("scratch-overrides-modal")).toBeVisible();
     await expect(page.getByText("Scratch session settings")).toBeVisible();

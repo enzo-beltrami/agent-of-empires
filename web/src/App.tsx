@@ -29,16 +29,12 @@ import { SessionActionProvider } from "./components/sidebar/SessionActionProvide
 import { safeGetItem, safeRemoveItem } from "./lib/safeStorage";
 import { useWorkspaces } from "./hooks/useWorkspaces";
 import { useLastSessionRestore } from "./hooks/useLastSessionRestore";
-import { SCRATCH_GROUP_ID, useRepoGroups } from "./hooks/useRepoGroups";
 import { useSessionGroups } from "./hooks/useSessionGroups";
 import { useStatusGroups } from "./hooks/useStatusGroups";
 import { useAttentionJump } from "./hooks/useAttentionJump";
-import { useNestedSidebarGroups } from "./hooks/useNestedSidebarGroups";
-import { useOrgGroups } from "./hooks/useOrgGroups";
 import { nextAttentionSessionId, workspaceIsTrashed } from "./lib/sidebarSort";
 import { useSidebarAxis, useSidebarSortMode } from "./hooks/useSidebarPrefs";
-import { axisDrawsRepoHeaders } from "./lib/sidebarAxis";
-import { repoGroupToSidebarGroup, type SidebarGroup } from "./lib/sidebarGroups";
+import type { SidebarGroup } from "./lib/sidebarGroups";
 import { useProjects } from "./hooks/useProjects";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useResolvedTheme } from "./hooks/useResolvedTheme";
@@ -78,8 +74,8 @@ import {
   isDebugBuild,
   markWebTourSeen,
   updateWorkspaceOrdering,
-  createProject,
-  updateProject,
+  updateSessionGroup,
+  renameGroup,
   projectTarget,
   deleteProject,
   setSessionUnread,
@@ -97,7 +93,7 @@ import { getClientCapabilities } from "./lib/clientCapabilities";
 import { onServerDownChange } from "./lib/connectionState";
 import { createAboutRequests } from "./lib/aboutRequests";
 import { ABOUT_RETRY_DELAYS_MS, fetchAboutOnce, fetchAboutRetrying } from "./lib/serverAbout";
-import { normalizeProjectPathKey } from "./lib/registeredProjects";
+import { normalizeProjectPathKey, savedProjects as listSavedProjects } from "./lib/registeredProjects";
 import { IdleDecayWindowContext, parseIdleDecayWindowMs } from "./lib/idleDecay";
 import { parseUnreadIndicatorEnabled, UnreadIndicatorContext, useUnreadIndicatorEnabled } from "./lib/unreadIndicator";
 import { parseSessionRowTagMode, SessionRowTagContext, type SessionRowTagMode } from "./lib/sessionRowTag";
@@ -175,7 +171,7 @@ import { ThemeIntro } from "./components/onboarding/ThemeIntro";
 import type { TourScope } from "./lib/tourSteps";
 import { SessionWizard } from "./components/session-wizard/SessionWizard";
 import type { WizardPrefill, WizardRestore } from "./components/session-wizard/SessionWizard";
-import type { ProjectInfo, RepoGroup, SessionResponse, Workspace } from "./lib/types";
+import type { ProjectInfo, SavedProject, SessionResponse, Workspace } from "./lib/types";
 import { Dashboard } from "./components/Dashboard";
 import { LoginPage } from "./components/LoginPage";
 import { TokenEntryPage } from "./components/TokenEntryPage";
@@ -471,47 +467,21 @@ function AppContent({
     toastBus.handler?.error("Projects are not ready. Refresh before changing the registry.");
     return undefined;
   }, [projectProfile, projectsReady]);
+  const savedProjects = useMemo(() => listSavedProjects(projects), [projects]);
   const {
-    groups: repoGroups,
-    savedProjects,
-    toggleRepoCollapsed,
-    updateRepoAppearance,
-    reorderRepoGroups,
-  } = useRepoGroups(workspaces, workspaceOrdering, sidebarSortMode, projects, axisDrawsRepoHeaders(sidebarAxis));
-  const { groups: sessionGroups, toggleGroupCollapsed } = useSessionGroups(workspaces, sidebarSortMode);
-  // The status axis groups by execution status instead of by where a session
-  // lives, so it owns its own grouping and collapse state.
+    groups: sessionGroups,
+    toggleGroupCollapsed,
+    reorderGroups,
+    setGroupColor,
+    carryGroupPrefs,
+  } = useSessionGroups(workspaces, sidebarSortMode, workspaceOrdering);
+  // The status axis groups by execution status instead of by Group, so it owns its own grouping and collapse state.
   const { groups: statusGroups, toggleGroupCollapsed: toggleStatusGroupCollapsed } = useStatusGroups(
     workspaces,
     sidebarSortMode,
   );
-  // The nested `repo+group` axis reuses the already-built repo groups for
-  // its top level (so repo collapse, appearance, and ordering are shared
-  // with the repo axis) and splits each repo by `group_path` underneath.
-  // See #1720.
-  const { groups: nestedGroups, toggleSubgroupCollapsed } = useNestedSidebarGroups(repoGroups, sidebarSortMode);
-  // The org axis (#3283) partitions the same repo groups by remote owner;
-  // it needs no sort input of its own since it reuses each
-  // repo's already-ordered workspace list verbatim, just like the nested
-  // axis's repo header.
-  const {
-    groups: orgGroups,
-    toggleOrgCollapsed,
-    toggleRepoCollapsed: toggleOrgRepoCollapsed,
-  } = useOrgGroups(repoGroups);
-
-  // Collapse state is independent for each grouping axis.
-  const sidebarGroups = useMemo(() => {
-    if (sidebarAxis === "status") return statusGroups;
-    if (sidebarAxis === "group") return sessionGroups;
-    return repoGroups.map(repoGroupToSidebarGroup);
-  }, [sidebarAxis, statusGroups, sessionGroups, repoGroups]);
-  const toggleSidebarGroup =
-    sidebarAxis === "status"
-      ? toggleStatusGroupCollapsed
-      : sidebarAxis === "group"
-        ? toggleGroupCollapsed
-        : toggleRepoCollapsed;
+  const sidebarGroups = sidebarAxis === "status" ? statusGroups : sessionGroups;
+  const toggleSidebarGroup = sidebarAxis === "status" ? toggleStatusGroupCollapsed : toggleGroupCollapsed;
 
   // Drag-end handler for the sidebar. Optimistically applies the new
   // order locally so the row snaps into place, then persists to the
@@ -525,6 +495,33 @@ function AppContent({
       void updateWorkspaceOrdering(newOrder);
     },
     [setWorkspaceOrdering, markLocalOrderingUpdate],
+  );
+
+  // A row dropped on another Group: persist the new order, then move each of its sessions there.
+  const handleMoveToGroup = useCallback(
+    async (workspace: Workspace, groupPath: string, newOrder: string[]) => {
+      handleReorderWorkspaces(newOrder);
+      const mutations = await Promise.all(workspace.sessions.map((s) => updateSessionGroup(s.id, groupPath)));
+      for (const mutation of mutations) if (mutation) applySessionMutation(mutation);
+      if (mutations.some((m) => !m)) toastBus.handler?.error("Failed to move the session to that group.");
+    },
+    [handleReorderWorkspaces, applySessionMutation],
+  );
+
+  // A Group is per profile, so the rename applies in every profile its sessions belong to.
+  const handleRenameGroup = useCallback(
+    async (group: SidebarGroup, to: string) => {
+      const from = group.groupPath;
+      if (!from) return;
+      const profiles = new Set(group.workspaces.flatMap((v) => v.workspace.sessions.map((s) => s.profile)));
+      const results = await Promise.all([...profiles].map((profile) => renameGroup(profile, from, to)));
+      if (results.some((ok) => !ok)) {
+        toastBus.handler?.error(`Failed to rename group "${from}".`);
+        return;
+      }
+      carryGroupPrefs(group.id, to.replace(/^\/+|\/+$/g, ""));
+    },
+    [carryGroupPrefs],
   );
 
   // Selected diff-file identity. `repoName` is undefined for single-repo
@@ -1286,49 +1283,6 @@ function AppContent({
     [sessions, projects, requireProjectProfile],
   );
 
-  const handlePinProject = useCallback(
-    async (repoPath: string) => {
-      const profile = requireProjectProfile();
-      if (!profile) return;
-      const key = normalizeProjectPathKey(repoPath);
-      const existing = projects.filter((p) => normalizeProjectPathKey(p.path) === key);
-      let failed: { error?: string } | undefined;
-      if (existing.length > 0) {
-        const results = await Promise.all(
-          existing.map((p) => updateProject(p.path, projectTarget(p.scope, profile), { pinned: true })),
-        );
-        failed = results.find((r) => !r.ok);
-      } else {
-        const res = await createProject({ path: repoPath, scope: "global", profile, pinned: true });
-        if (!res.ok) failed = res;
-      }
-      if (failed) {
-        toastBus.handler?.error(failed.error ?? "Failed to pin project");
-        return;
-      }
-      await refreshProjects();
-    },
-    [projects, refreshProjects, requireProjectProfile],
-  );
-
-  // Unpin every returned registration without deleting saved projects.
-  const handleUnpinProject = useCallback(
-    async (group: SidebarGroup) => {
-      const profile = requireProjectProfile();
-      if (!profile || !group.registeredProjects.every((project) => projects.includes(project))) return;
-      const pinned = group.registeredProjects.filter((p) => p.pinned);
-      const results = await Promise.all(
-        pinned.map((p) => updateProject(p.path, projectTarget(p.scope, profile), { pinned: false })),
-      );
-      const failed = results.find((r) => !r.ok);
-      if (failed) {
-        toastBus.handler?.error(failed.error ?? "Failed to unpin project");
-      }
-      await refreshProjects();
-    },
-    [projects, refreshProjects, requireProjectProfile],
-  );
-
   const [projectForm, setProjectForm] = useState<{ editProject: ProjectInfo | null; profile: string } | null>(null);
   const handleAddProject = useCallback(() => {
     const profile = requireProjectProfile();
@@ -1342,44 +1296,17 @@ function AppContent({
     [projects, requireProjectProfile],
   );
 
-  // The synthetic Scratch group has no repo path to register a project entry under, so it gets
-  // a dedicated settings modal instead of ProjectFormModal.
+  // Scratch sessions have no repo path to register a project under, so they get a dedicated settings modal.
   const [scratchSettingsOpen, setScratchSettingsOpen] = useState(false);
-
-  // A group with live sessions may be unregistered; register it globally before editing.
-  const handleEditProjectSettings = useCallback(
-    async (group: SidebarGroup) => {
-      if (group.id === SCRATCH_GROUP_ID) {
-        setScratchSettingsOpen(true);
-        return;
-      }
-      const profile = requireProjectProfile();
-      if (!profile) return;
-      const registered = group.registeredProjects.find((project) => projects.includes(project));
-      if (registered) {
-        setProjectForm({ editProject: registered, profile });
-        return;
-      }
-      if (!group.repoPath) return;
-      const result = await createProject({ path: group.repoPath, scope: "global", profile });
-      if (!result.ok || !result.project) {
-        toastBus.handler?.error(result.error ?? "Failed to register project");
-        return;
-      }
-      await refreshProjects();
-      setProjectForm({ editProject: result.project, profile });
-    },
-    [projects, refreshProjects, requireProjectProfile],
-  );
 
   // Remove only the registrations captured by this sidebar row.
   const handleRemoveProject = useCallback(
-    async (group: RepoGroup) => {
+    async (project: SavedProject) => {
       const profile = requireProjectProfile();
-      if (!profile || !group.registeredProjects.every((project) => projects.includes(project))) return;
-      if (!confirm(`Remove project '${group.displayName}' from the sidebar?`)) return;
+      if (!profile || !project.registrations.every((registration) => projects.includes(registration))) return;
+      if (!confirm(`Remove project '${project.displayName}' from the sidebar?`)) return;
       const results = await Promise.all(
-        group.registeredProjects.map((p) => deleteProject(p.path, projectTarget(p.scope, profile))),
+        project.registrations.map((p) => deleteProject(p.path, projectTarget(p.scope, profile))),
       );
       const failed = results.find((r) => !r.ok);
       if (failed) {
@@ -1560,6 +1487,15 @@ function AppContent({
     setWizardPrefill(undefined);
     setShowSessionWizard(true);
   }, [caps.readOnly]);
+
+  const handleNewInGroup = useCallback(
+    (groupPath: string) => {
+      if (caps.readOnly) return;
+      setWizardPrefill(groupPath ? { group: groupPath } : undefined);
+      setShowSessionWizard(true);
+    },
+    [caps.readOnly],
+  );
 
   const handleNewScratch = useCallback(() => {
     if (caps.readOnly) return;
@@ -2336,32 +2272,26 @@ function AppContent({
                 runtimeEpoch={runtimeEpoch}
                 onSessionMutation={applySessionMutation}
                 groups={sidebarGroups}
-                nestedGroups={nestedGroups}
-                orgGroups={orgGroups}
                 trashedWorkspaces={trashedWorkspaces}
                 trashedCount={trashedCount}
                 trashLoaded={trashLoaded}
                 onLoadTrash={loadTrash}
-                onToggleSubgroup={toggleSubgroupCollapsed}
-                onToggleOrg={toggleOrgCollapsed}
-                onToggleOrgRepo={toggleOrgRepoCollapsed}
                 onReorderWorkspaces={handleReorderWorkspaces}
-                onReorderGroups={reorderRepoGroups}
+                onReorderGroups={reorderGroups}
+                onMoveToGroup={handleMoveToGroup}
                 activeId={activeWorkspace?.id ?? null}
                 activeSessionId={activeSessionId}
                 open={sidebarOpen}
                 onToggle={() => setSidebarOpen(false)}
                 onSelect={handleSelectWorkspace}
                 onToggleGroup={toggleSidebarGroup}
-                onUpdateRepoAppearance={updateRepoAppearance}
-                onNew={() => {
-                  setWizardPrefill(undefined);
-                  setShowSessionWizard(true);
-                }}
+                onSetGroupColor={setGroupColor}
+                onRenameGroup={handleRenameGroup}
+                onNew={handleNewSession}
+                onNewInGroup={handleNewInGroup}
                 onCreateSession={handleCreateSession}
-                onPinProject={projectsReady ? handlePinProject : undefined}
-                onUnpinProject={projectsReady ? handleUnpinProject : undefined}
-                onEditProjectSettings={handleEditProjectSettings}
+                onNewScratch={handleNewScratch}
+                onScratchSettings={() => setScratchSettingsOpen(true)}
                 savedProjects={savedProjects}
                 onAddProject={handleAddProject}
                 onEditProject={handleEditProject}

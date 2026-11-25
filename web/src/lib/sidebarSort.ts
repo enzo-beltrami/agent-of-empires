@@ -1,4 +1,4 @@
-import type { RepoGroup, SessionResponse, SessionStatus, Workspace } from "./types";
+import type { SessionResponse, SessionStatus, Workspace } from "./types";
 import { safeGetItem, safeSetItem } from "./safeStorage";
 
 export type SidebarSortMode = "manual" | "lastActivity" | "attention";
@@ -35,15 +35,6 @@ export function workspaceLastActivityMs(ws: Workspace): number {
   return best;
 }
 
-export function repoGroupLastActivityMs(workspaces: readonly Workspace[]): number {
-  let best = Number.NEGATIVE_INFINITY;
-  for (const ws of workspaces) {
-    const m = workspaceLastActivityMs(ws);
-    if (m > best) best = m;
-  }
-  return best;
-}
-
 export function workspaceIsPinned(ws: Workspace): boolean {
   return ws.sessions.some((s) => s.pinned_at != null);
 }
@@ -68,11 +59,6 @@ export function workspaceTrashedAtMs(ws: Workspace): number {
     if (t > max) max = t;
   }
   return max;
-}
-
-/** Hides a group header whose workspaces all sank into the footer. */
-export function repoGroupHasLiveWorkspace(group: RepoGroup): boolean {
-  return group.workspaces.some((ws) => !workspaceIsSunk(ws));
 }
 
 /** 0 pinned, 1 live, 2 sunk. The server clears sink fields on pin, so any pinned session wins. */
@@ -287,25 +273,8 @@ export function compareWorkspacesByAttention(a: Workspace, b: Workspace): number
   return a.id.localeCompare(b.id);
 }
 
-/** For axes without a manual order, where `manual` means last activity. */
+/** The computed row order; `manual` means last activity where no persisted ordering applies. */
 export function compareWorkspacesForComputedSortMode(mode: SidebarSortMode): (a: Workspace, b: Workspace) => number {
   if (mode === "attention") return compareWorkspacesByAttention;
   return compareWorkspacesByLastActivityDesc;
-}
-
-export function repoGroupAttentionRank(workspaces: readonly Workspace[]): number {
-  let best = ATTENTION_SINK_RANK;
-  for (const ws of workspaces) {
-    const rank = workspaceAttentionRank(ws);
-    if (rank < best) best = rank;
-  }
-  return best;
-}
-
-export function repoGroupIsUrgent(workspaces: readonly Workspace[]): boolean {
-  return workspaces.some(workspaceIsUrgent);
-}
-
-export function repoGroupIsFavorited(workspaces: readonly Workspace[]): boolean {
-  return workspaces.some(workspaceIsFavorited);
 }

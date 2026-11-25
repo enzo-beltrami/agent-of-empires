@@ -1,21 +1,15 @@
 import { memo, useRef } from "react";
-import type { ProjectInfo, RepoGroup } from "../lib/types";
-import { repoColorStyle } from "../lib/repoAppearance";
-import { MARK_MEANING, meaningText } from "../lib/sidebarMarks";
+import type { ProjectInfo, SavedProject } from "../lib/types";
 import { useSidebarCompact } from "../lib/sidebarCompact";
 import { ContextMenu, MenuItem, MenuSeparator } from "./ContextMenu";
 import { FoldChevron, PlusIcon } from "./icons";
-import { Tooltip } from "./Tooltip";
 import { useContextMenu } from "./useContextMenu";
 import { useLongPress } from "./sidebar/useLongPress";
 import { usePersistedFlag } from "./usePersistedFlag";
 
 interface ProjectsSectionProps {
-  // Registered projects to list, one entry per path (`unpinnedSavedProjects`).
-  projects: RepoGroup[];
-  // Whether the sidebar axis draws repository headers. Without them the section lists every Project, not
-  // only those without a session (#5065), and its label says so.
-  drawsRepoHeaders?: boolean;
+  // Registered projects to list, one entry per path (`savedProjects`).
+  projects: SavedProject[];
   // Lowercased, trimmed filter query; empty means no filter.
   query: string;
   readOnly?: boolean;
@@ -23,12 +17,14 @@ interface ProjectsSectionProps {
   onCreateSession: (repoPath: string) => void;
   onAddProject: () => void;
   onEditProject: (project: ProjectInfo) => void;
-  onRemoveProject: (group: RepoGroup) => void;
+  onRemoveProject: (project: SavedProject) => void;
+  /** A Scratch row that starts a Scratch session; omitted hides it. */
+  onNewScratch?: () => void;
+  onScratchSettings?: () => void;
 }
 
 export function ProjectsSection({
   projects,
-  drawsRepoHeaders = true,
   query,
   readOnly,
   offline,
@@ -36,18 +32,20 @@ export function ProjectsSection({
   onAddProject,
   onEditProject,
   onRemoveProject,
+  onNewScratch,
+  onScratchSettings,
 }: ProjectsSectionProps) {
   const [expanded, toggle] = usePersistedFlag("aoe-projects-section-expanded", true);
   const compact = useSidebarCompact();
 
   const visible = query
-    ? projects.filter((p) => p.displayName.toLowerCase().includes(query) || p.repoPath.toLowerCase().includes(query))
+    ? projects.filter((p) => p.displayName.toLowerCase().includes(query) || p.path.toLowerCase().includes(query))
     : projects;
+  const showScratch = !!onNewScratch && (!query || "scratch".includes(query));
 
   // With CRUD available the header stays so Add is reachable with zero projects.
   const canAdd = !readOnly && !offline;
-  if (visible.length === 0 && !canAdd) return null;
-  const label = drawsRepoHeaders ? "Projects, no sessions" : "Projects";
+  if (visible.length === 0 && !canAdd && !showScratch) return null;
 
   return (
     <div data-testid="sidebar-projects-section">
@@ -63,9 +61,7 @@ export function ProjectsSection({
           <FoldChevron className={`shrink-0 transition-transform duration-75 ${expanded ? "" : "-rotate-90"}`} />
           {/* A clipped count is exactly what looks broken, so the label truncates and the count never
               does; the rail has room for neither (#2288). */}
-          <span className="truncate" title={label}>
-            {compact ? "Projects" : label}
-          </span>
+          <span className="truncate">Projects</span>
           {!compact && <span className="shrink-0">({visible.length})</span>}
         </button>
         {canAdd && !compact && (
@@ -83,7 +79,7 @@ export function ProjectsSection({
       {expanded &&
         visible.map((project) => (
           <ProjectRow
-            key={project.repoPath}
+            key={project.path}
             project={project}
             readOnly={readOnly}
             offline={offline}
@@ -92,6 +88,9 @@ export function ProjectsSection({
             onRemoveProject={onRemoveProject}
           />
         ))}
+      {expanded && showScratch && (
+        <ScratchRow readOnly={readOnly} offline={offline} onNew={onNewScratch} onSettings={onScratchSettings} />
+      )}
       {expanded && visible.length === 0 && !compact && (
         <p className="px-3 py-2 text-[12px] text-text-dim">
           {query ? "No matching projects." : "No registered Projects. Add one to keep a repo handy without a session."}
@@ -101,6 +100,9 @@ export function ProjectsSection({
   );
 }
 
+const PROJECT_ROW_CLASS =
+  "group flex items-center gap-2 px-3 py-1.5 text-text-secondary hover:bg-surface-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-600 select-none [-webkit-touch-callout:none]";
+
 const ProjectRow = memo(function ProjectRow({
   project,
   readOnly,
@@ -109,17 +111,16 @@ const ProjectRow = memo(function ProjectRow({
   onEditProject,
   onRemoveProject,
 }: {
-  project: RepoGroup;
+  project: SavedProject;
   readOnly?: boolean;
   offline: boolean;
   onCreateSession: (repoPath: string) => void;
   onEditProject: (project: ProjectInfo) => void;
-  onRemoveProject: (group: RepoGroup) => void;
+  onRemoveProject: (project: SavedProject) => void;
 }) {
   const openedAtRef = useRef(0);
   const { menu, menuRef, openMenu, closeMenu } = useContextMenu<{ x: number; y: number }>(openedAtRef);
-  const baseBranch = project.registeredProjects[0]?.default_base_branch;
-  const pinned = project.registeredProjects.some((p) => p.pinned);
+  const baseBranch = project.registrations[0]?.default_base_branch;
   const canModify = !readOnly && !offline;
   const longPress = useLongPress(canModify, (x, y) => {
     openedAtRef.current = Date.now();
@@ -130,7 +131,7 @@ const ProjectRow = memo(function ProjectRow({
     <>
       <div
         data-testid="sidebar-project-row"
-        data-repo-path={project.repoPath}
+        data-repo-path={project.path}
         tabIndex={canModify ? 0 : undefined}
         aria-haspopup={canModify ? "menu" : undefined}
         aria-label={canModify ? `Project actions for ${project.displayName}` : undefined}
@@ -155,17 +156,10 @@ const ProjectRow = memo(function ProjectRow({
               }
             : undefined
         }
-        className="group flex items-center gap-2 px-3 py-1.5 text-text-secondary hover:bg-surface-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-600 select-none [-webkit-touch-callout:none]"
-        style={repoColorStyle(project.color)}
+        className={PROJECT_ROW_CLASS}
       >
-        {/* Listed here when the axis draws no pinned header (#5065), so the row carries the pin itself. */}
-        <Tooltip text={meaningText(pinned ? MARK_MEANING.pinnedProject : MARK_MEANING.project)}>
-          <span className="shrink-0 text-[10px] leading-none text-text-dim" aria-hidden>
-            {pinned ? "◆" : "◇"}
-          </span>
-        </Tooltip>
         <button
-          onClick={() => canModify && onCreateSession(project.repoPath)}
+          onClick={() => canModify && onCreateSession(project.path)}
           disabled={!canModify}
           title={`New session in ${project.displayName}`}
           className="min-w-0 flex-1 text-left cursor-pointer disabled:cursor-not-allowed"
@@ -173,14 +167,14 @@ const ProjectRow = memo(function ProjectRow({
           <span className="block truncate text-[13px] md:text-[14px] font-mono text-text-primary">
             {project.displayName}
           </span>
-          <span className="block truncate text-[11px] text-text-dim" title={project.repoPath}>
-            {project.repoPath}
+          <span className="block truncate text-[11px] text-text-dim" title={project.path}>
+            {project.path}
             {baseBranch ? ` · ${baseBranch}` : ""}
           </span>
         </button>
         {canModify && (
           <button
-            onClick={() => onCreateSession(project.repoPath)}
+            onClick={() => onCreateSession(project.path)}
             title="New session"
             aria-label={`New session in ${project.displayName}`}
             className="shrink-0 w-6 h-6 flex items-center justify-center text-text-dim opacity-0 group-hover:opacity-100 hover:text-text-primary hover:bg-surface-700/50 cursor-pointer rounded transition"
@@ -192,7 +186,7 @@ const ProjectRow = memo(function ProjectRow({
 
       {canModify && menu && (
         <ContextMenu menu={menu} menuRef={menuRef} testId="sidebar-project-context-menu">
-          {project.registeredProjects.map((reg) => (
+          {project.registrations.map((reg) => (
             <MenuItem
               key={`${reg.scope}:${reg.path}`}
               onClick={() => {
@@ -201,7 +195,7 @@ const ProjectRow = memo(function ProjectRow({
               }}
               testId="sidebar-project-context-menu-edit"
             >
-              {project.registeredProjects.length > 1 ? `Project settings (${reg.scope})` : "Project settings"}
+              {project.registrations.length > 1 ? `Project settings (${reg.scope})` : "Project settings"}
             </MenuItem>
           ))}
           <MenuSeparator />
@@ -219,3 +213,75 @@ const ProjectRow = memo(function ProjectRow({
     </>
   );
 });
+
+/** Scratch sessions run in a directory AoE owns, so the row starts one and holds their settings. */
+function ScratchRow({
+  readOnly,
+  offline,
+  onNew,
+  onSettings,
+}: {
+  readOnly?: boolean;
+  offline: boolean;
+  onNew: () => void;
+  onSettings?: () => void;
+}) {
+  const openedAtRef = useRef(0);
+  const { menu, menuRef, openMenu, closeMenu } = useContextMenu<{ x: number; y: number }>(openedAtRef);
+  const canModify = !readOnly && !offline;
+  const hasMenu = canModify && !!onSettings;
+  const longPress = useLongPress(hasMenu, (x, y) => {
+    openedAtRef.current = Date.now();
+    openMenu({ x, y });
+  });
+  return (
+    <>
+      <div
+        data-testid="sidebar-scratch-row"
+        onContextMenu={
+          hasMenu
+            ? (e) => {
+                e.preventDefault();
+                openMenu({ x: e.clientX, y: e.clientY });
+              }
+            : undefined
+        }
+        {...longPress.handlers}
+        className={PROJECT_ROW_CLASS}
+      >
+        <button
+          onClick={() => canModify && onNew()}
+          disabled={!canModify}
+          title="New scratch session"
+          className="min-w-0 flex-1 text-left cursor-pointer disabled:cursor-not-allowed"
+        >
+          <span className="block truncate text-[13px] md:text-[14px] font-mono text-text-primary">Scratch</span>
+          <span className="block truncate text-[11px] text-text-dim">Temporary directory, no project</span>
+        </button>
+        {canModify && (
+          <button
+            onClick={onNew}
+            title="New session"
+            aria-label="New scratch session"
+            className="shrink-0 w-6 h-6 flex items-center justify-center text-text-dim opacity-0 group-hover:opacity-100 hover:text-text-primary hover:bg-surface-700/50 cursor-pointer rounded transition"
+          >
+            <PlusIcon size={13} />
+          </button>
+        )}
+      </div>
+      {hasMenu && menu && (
+        <ContextMenu menu={menu} menuRef={menuRef} testId="sidebar-scratch-context-menu">
+          <MenuItem
+            onClick={() => {
+              closeMenu();
+              onSettings?.();
+            }}
+            testId="sidebar-scratch-context-menu-settings"
+          >
+            Scratch settings
+          </MenuItem>
+        </ContextMenu>
+      )}
+    </>
+  );
+}

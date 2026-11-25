@@ -87,17 +87,16 @@ test.describe("essentials", () => {
     expect(created[0]?.create_new_branch).toBe(true);
   });
 
-  test("group-level New session button prefills the wizard with the repo path", async ({ page }) => {
+  test("a Group header's New session button prefills the wizard with that Group", async ({ page }) => {
     await startWizard(page, { project: false });
-    const groupHeader = page.locator('[data-testid="sidebar-group-header"]').first();
+    // The seed session's `group_path` is "/tmp", which the sidebar normalizes to the Group "tmp".
+    const groupHeader = page.locator('[data-testid="sidebar-group-header"][data-group-id="tmp"]');
     await expect(groupHeader).toBeVisible();
-    await groupHeader.getByRole("button", { name: /New session in /i }).click();
+    await groupHeader.getByRole("button", { name: "New session in tmp" }).click();
     await expect(page.getByRole("heading", { name: "New session" })).toBeVisible();
-    // Scoped: the sidebar row behind the modal shows the same path.
-    await expect(wizard(page).getByTestId("wizard-project-row")).toContainText("/tmp/example");
-    await expect(wizard(page).getByRole("button", { name: /Launch session/ })).toBeEnabled();
-    // Like the TUI, a known project skips straight to the title.
-    await expect(wizard(page).getByPlaceholder("Auto-generated if empty")).toBeFocused();
+    // A Group carries no folder, so the project is still picked first; the Group survives the pick.
+    await wizard(page).getByText("/tmp/example").click();
+    await expect(wizard(page).getByLabel(GROUP_LABEL, { exact: true })).toHaveValue("tmp");
   });
 
   test("wizard overlay outranks the z-50 tooltip layer on mobile", async ({ page }) => {

@@ -1,23 +1,16 @@
 import type { ComponentProps, ReactNode } from "react";
 import { DndContext, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import type { RepoAppearanceUpdate } from "../../lib/repoAppearance";
-import {
-  nestedSidebarGroupShouldRender,
-  orgNestedGroupShouldRender,
-  sidebarGroupHasLiveWorkspace,
-  sidebarGroupShouldRender,
-  type NestedSidebarGroup,
-  type OrgNestedGroup,
-  type SidebarGroup,
-  type SidebarWorkspaceView,
-} from "../../lib/sidebarGroups";
+import type { GroupColor } from "../../lib/groupColor";
+import { sidebarGroupHasLiveWorkspace, type SidebarGroup, type SidebarWorkspaceView } from "../../lib/sidebarGroups";
+import type { Workspace } from "../../lib/types";
 import { workspaceIsPinned, workspaceIsSunk } from "../../lib/sidebarSort";
 import { dragEnded, dragStarted, typedClosestCenter, useReleaseDragOnUnmount, type DragClickGuard } from "./dnd";
+import { rowDrop } from "./rowDrop";
 import { SessionRow } from "./SessionRow";
 import { SidebarGroupHeader } from "./SidebarGroupHeader";
 import { ROWS, rowsId } from "./keyboardNav";
-import { SortableRepoGroup, SortableSessionRow } from "./Sortable";
+import { SortableGroup, SortableSessionRow } from "./Sortable";
 import type { DragHandleProps } from "./types";
 
 type RowProps = Omit<ComponentProps<typeof SessionRow>, "indented">;
@@ -28,12 +21,12 @@ export interface ListContext {
   offline: boolean;
   displayedActiveId: string | null;
   displayedActiveSessionId: string | null;
-  onNew: () => void;
+  /** Opens the wizard with `groupPath` prefilled; "" for Ungrouped. */
+  onNewInGroup: (groupPath: string) => void;
+  /** New session next to a row's own repo, from its context menu. */
   onCreateSession: (repoPath: string) => void;
-  onUpdateAppearance: (repoId: string, update: RepoAppearanceUpdate) => void;
-  onPinProject?: (repoPath: string) => void;
-  onUnpinProject?: (group: SidebarGroup) => void;
-  onEditProjectSettings?: (group: SidebarGroup) => void;
+  onRenameGroup: (group: SidebarGroup, to: string) => void;
+  onSetGroupColor: (groupId: string, color: GroupColor | null) => void;
   onArchiveGroup: (group: SidebarGroup) => void;
   rowProps: (v: SidebarWorkspaceView) => RowProps;
 }
@@ -54,14 +47,12 @@ function GroupRows({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-/** Header for any group level. `full` is the unfiltered group so "Archive all" covers hidden members. */
+/** `full` is the unfiltered group so "Archive all" covers hidden members. */
 function GroupHeader({
   ctx,
   full,
   visible,
   onToggle,
-  pinnable = false,
-  createsInRepo = false,
   dragHandle,
   rows,
 }: {
@@ -69,29 +60,22 @@ function GroupHeader({
   full: SidebarGroup;
   visible: SidebarWorkspaceView[];
   onToggle: () => void;
-  pinnable?: boolean;
-  createsInRepo?: boolean;
   dragHandle?: DragHandleProps;
   /** Id of the `GroupRows` this header controls. */
   rows: string;
 }) {
   const expanded = ctx.hasFilter || !full.collapsed;
   const locked = ctx.readOnly || ctx.offline;
+  const userGroup = full.kind === "sessionGroup";
   return (
     <SidebarGroupHeader
       group={{ ...full, collapsed: !expanded }}
       hasActiveChild={!expanded && containsActive(visible, ctx.displayedActiveId, ctx.displayedActiveSessionId)}
       onClick={() => !ctx.hasFilter && onToggle()}
-      onUpdateAppearance={ctx.onUpdateAppearance}
+      onSetColor={userGroup ? (color) => ctx.onSetGroupColor(full.id, color) : undefined}
+      onRename={!locked && userGroup && full.groupPath ? (to) => ctx.onRenameGroup(full, to) : undefined}
       onArchiveAll={locked ? undefined : () => ctx.onArchiveGroup(full)}
-      onPin={locked || !pinnable ? undefined : ctx.onPinProject}
-      onUnpin={locked || !pinnable ? undefined : ctx.onUnpinProject}
-      onEditProject={locked || !pinnable ? undefined : ctx.onEditProjectSettings}
-      onNewSession={() =>
-        createsInRepo && full.capabilities.create === "repo" && full.repoPath
-          ? ctx.onCreateSession(full.repoPath)
-          : ctx.onNew()
-      }
+      onNewSession={() => ctx.onNewInGroup(full.groupPath ?? "")}
       offline={ctx.offline}
       dragHandle={dragHandle}
       rowsId={rows}
@@ -99,7 +83,11 @@ function GroupHeader({
   );
 }
 
-export function FlatGroupList({
+/**
+ * Every Group with its rows. In `manual` order a header drags to reorder Groups, and a row drags to
+ * reorder within its Group or onto a row of another Group to move its sessions there.
+ */
+export function GroupList({
   ctx,
   groups,
   fullGroups,
@@ -108,6 +96,7 @@ export function FlatGroupList({
   onToggleGroup,
   onReorderGroups,
   onReorderWorkspaces,
+  onMoveToGroup,
   dragClickGuard,
 }: {
   ctx: ListContext;
@@ -118,6 +107,8 @@ export function FlatGroupList({
   onToggleGroup: (groupId: string) => void;
   onReorderGroups: (orderedGroupIds: string[]) => void;
   onReorderWorkspaces: (newOrder: string[]) => void;
+  /** Moves a row's sessions to `groupPath`, then persists `newOrder`. */
+  onMoveToGroup: (workspace: Workspace, groupPath: string, newOrder: string[]) => void;
   dragClickGuard: React.MutableRefObject<DragClickGuard>;
 }) {
   useReleaseDragOnUnmount(dragClickGuard);
@@ -138,20 +129,13 @@ export function FlatGroupList({
       if (from >= 0 && to >= 0) onReorderGroups(arrayMove(ids, from, to));
       return;
     }
-    // Rows reorder within their own group; the full flat id list is persisted so every client agrees.
-    const groupIndex = fullGroups.findIndex((g) => g.workspaces.some((v) => v.key === active.id));
-    const group = fullGroups[groupIndex];
-    if (!group) return;
-    const from = group.workspaces.findIndex((v) => v.key === active.id);
-    const to = group.workspaces.findIndex((v) => v.key === over.id);
-    if (from < 0 || to < 0) return;
-    const reordered = arrayMove(group.workspaces, from, to);
-    onReorderWorkspaces(
-      fullGroups.flatMap((g, i) => (i === groupIndex ? reordered : g.workspaces).map((v) => v.workspace.id)),
-    );
+    const drop = rowDrop(fullGroups, String(active.id), String(over.id));
+    if (!drop) return;
+    if (drop.target) onMoveToGroup(drop.moved, drop.target.groupPath ?? "", drop.order);
+    else onReorderWorkspaces(drop.order);
   };
 
-  const liveGroups = groups.filter(sidebarGroupShouldRender);
+  const liveGroups = groups.filter(sidebarGroupHasLiveWorkspace);
   const body = (group: SidebarGroup, dragHandle?: DragHandleProps) => {
     const live = liveViews(group);
     return (
@@ -161,8 +145,6 @@ export function FlatGroupList({
           full={{ ...(byId.get(group.id) ?? group), collapsed: group.collapsed }}
           visible={group.workspaces}
           onToggle={() => onToggleGroup(group.id)}
-          pinnable
-          createsInRepo
           dragHandle={dragHandle}
           rows={rowsId(group.id)}
         />
@@ -198,127 +180,11 @@ export function FlatGroupList({
     >
       <SortableContext items={liveGroups.map((g) => g.id)} strategy={verticalListSortingStrategy}>
         {liveGroups.map((group) => (
-          <SortableRepoGroup key={group.id} groupId={group.id} disabled={groupDragDisabled}>
+          <SortableGroup key={group.id} groupId={group.id} disabled={groupDragDisabled}>
             {(handle) => body(group, groupDragDisabled ? undefined : handle)}
-          </SortableRepoGroup>
+          </SortableGroup>
         ))}
       </SortableContext>
     </DndContext>
   );
-}
-
-function IndentedLevel({ testId, repoId, children }: { testId: string; repoId: string; children: ReactNode }) {
-  return (
-    <div className="pl-3" data-testid={testId} data-repo-id={repoId}>
-      {children}
-    </div>
-  );
-}
-
-export function NestedGroupList({
-  ctx,
-  groups,
-  fullGroups,
-  onToggleGroup,
-  onToggleSubgroup,
-}: {
-  ctx: ListContext;
-  groups: NestedSidebarGroup[];
-  fullGroups: NestedSidebarGroup[];
-  onToggleGroup: (groupId: string) => void;
-  onToggleSubgroup: (repoId: string, groupPath: string) => void;
-}) {
-  return groups.filter(nestedSidebarGroupShouldRender).map(({ repo, subgroups }) => (
-    <div key={repo.id} data-testid="sidebar-nested-repo" data-repo-id={repo.id}>
-      <GroupHeader
-        ctx={ctx}
-        full={repo}
-        visible={subgroups.flatMap((sg) => sg.workspaces)}
-        onToggle={() => onToggleGroup(repo.id)}
-        pinnable
-        createsInRepo
-        rows={rowsId(`repo:${encodeURIComponent(repo.id)}`)}
-      />
-      <GroupRows id={rowsId(`repo:${encodeURIComponent(repo.id)}`)}>
-        {(ctx.hasFilter || !repo.collapsed) &&
-          subgroups.filter(sidebarGroupHasLiveWorkspace).map((sg) => {
-            const groupPath = sg.groupPath ?? "";
-            const full =
-              fullGroups.find((n) => n.repo.id === repo.id)?.subgroups.find((s) => (s.groupPath ?? "") === groupPath) ??
-              sg;
-            // Every id part is encoded, top level included, so `::` is only ever the separator.
-            const rows = rowsId(`repo:${encodeURIComponent(repo.id)}::${encodeURIComponent(groupPath)}`);
-            return (
-              <IndentedLevel key={`${repo.id}::${groupPath}`} testId="sidebar-nested-subgroup" repoId={repo.id}>
-                <GroupHeader
-                  ctx={ctx}
-                  full={{ ...full, collapsed: sg.collapsed }}
-                  visible={sg.workspaces}
-                  onToggle={() => onToggleSubgroup(repo.id, groupPath)}
-                  rows={rows}
-                />
-                <GroupRows id={rows}>
-                  {(ctx.hasFilter || !sg.collapsed) &&
-                    liveViews(sg).map((v) => (
-                      <SessionRow key={`${repo.id}::${groupPath}::${v.key}`} {...ctx.rowProps(v)} indented />
-                    ))}
-                </GroupRows>
-              </IndentedLevel>
-            );
-          })}
-      </GroupRows>
-    </div>
-  ));
-}
-
-export function OrgGroupList({
-  ctx,
-  groups,
-  fullGroups,
-  onToggleOrg,
-  onToggleOrgRepo,
-}: {
-  ctx: ListContext;
-  groups: OrgNestedGroup[];
-  fullGroups: OrgNestedGroup[];
-  onToggleOrg: (orgId: string) => void;
-  onToggleOrgRepo: (orgId: string, repoId: string) => void;
-}) {
-  const fullRepoById = new Map(fullGroups.flatMap((o) => o.repos.map((r) => [`${o.org.id}::${r.id}`, r] as const)));
-  return groups.filter(orgNestedGroupShouldRender).map(({ org, repos }) => (
-    <div key={org.id} data-testid="sidebar-org-group" data-org-id={org.id}>
-      <GroupHeader
-        ctx={ctx}
-        full={org}
-        visible={repos.flatMap((r) => r.workspaces)}
-        onToggle={() => onToggleOrg(org.id)}
-        rows={rowsId(`org:${encodeURIComponent(org.id)}`)}
-      />
-      <GroupRows id={rowsId(`org:${encodeURIComponent(org.id)}`)}>
-        {(ctx.hasFilter || !org.collapsed) &&
-          repos.filter(sidebarGroupShouldRender).map((repo) => {
-            const full = fullRepoById.get(`${org.id}::${repo.id}`) ?? repo;
-            const rows = rowsId(`org:${encodeURIComponent(org.id)}::${encodeURIComponent(repo.id)}`);
-            return (
-              <IndentedLevel key={`${org.id}::${repo.id}`} testId="sidebar-org-repo" repoId={repo.id}>
-                <GroupHeader
-                  ctx={ctx}
-                  full={{ ...full, collapsed: repo.collapsed }}
-                  visible={repo.workspaces}
-                  onToggle={() => onToggleOrgRepo(org.id, repo.id)}
-                  createsInRepo
-                  rows={rows}
-                />
-                <GroupRows id={rows}>
-                  {(ctx.hasFilter || !repo.collapsed) &&
-                    liveViews(repo).map((v) => (
-                      <SessionRow key={`${org.id}::${repo.id}::${v.key}`} {...ctx.rowProps(v)} indented />
-                    ))}
-                </GroupRows>
-              </IndentedLevel>
-            );
-          })}
-      </GroupRows>
-    </div>
-  ));
 }

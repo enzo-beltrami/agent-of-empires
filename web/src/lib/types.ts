@@ -1,5 +1,4 @@
 import type { RateLimitInfo } from "./acpTypes";
-import type { RepoColor } from "./repoAppearance";
 import type { AgentLifecycleInfo } from "./agentProfiles";
 import type { SchemaSettings } from "./generated/settingsKeys";
 
@@ -265,21 +264,11 @@ export interface RichFileContentsResponse {
 
 export type WorkspaceStatus = "active" | "idle";
 
-export interface RepoGroup {
-  id: string;
-  repoPath: string;
+/** A registered Project path with its registrations in every scope. */
+export interface SavedProject {
+  path: string;
   displayName: string;
-  defaultDisplayName: string;
-  alias: string | null;
-  color: RepoColor | null;
-  remoteOwner: string | null;
-  /** "owner@host"; null when `remoteOwner` is null. */
-  remoteOwnerKey: string | null;
-  workspaces: Workspace[];
-  status: WorkspaceStatus;
-  collapsed: boolean;
-  /** Registry entries for this repo path; several when registered in multiple scopes. Entries without workspaces make a pinned-but-empty project. */
-  registeredProjects: ProjectInfo[];
+  registrations: ProjectInfo[];
 }
 
 export interface Workspace {

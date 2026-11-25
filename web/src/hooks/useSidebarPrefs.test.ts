@@ -41,8 +41,7 @@ function persistedChoiceCases<T extends string>(
   });
 }
 
-describe("useSidebarAxis", () =>
-  persistedChoiceCases(SIDEBAR_AXIS_KEY, useSidebarAxis, "repo", ["org", "group", "repo+group", "status"]));
+describe("useSidebarAxis", () => persistedChoiceCases(SIDEBAR_AXIS_KEY, useSidebarAxis, "group", ["status"]));
 
 describe("useSidebarSortMode", () =>
   persistedChoiceCases(SIDEBAR_SORT_MODE_KEY, useSidebarSortMode, "manual", ["lastActivity"]));

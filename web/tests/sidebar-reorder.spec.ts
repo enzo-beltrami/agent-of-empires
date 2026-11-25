@@ -1,5 +1,5 @@
-// Sidebar drag-to-reorder (#1169, #1419, #1644). dnd-kit activates on 8px of mouse movement, or a
-// 150ms touch hold with under 8px of movement.
+// Sidebar drag-to-reorder (#1169, #1419, #1644) and drag between Groups. dnd-kit activates on 8px of
+// mouse movement, or a 150ms touch hold with under 8px of movement.
 
 import { devices, type CDPSession, type Page } from "@playwright/test";
 import { test, expect, observeFor, publishedRequests, waitForResponseBody } from "./helpers/mockedTest";
@@ -192,20 +192,29 @@ test.describe("desktop rows", () => {
     await expectNoOrderingPut(page, handle, 200);
   });
 
-  test("dragging a row onto a different repo group is a no-op", async ({ page }) => {
-    // Each repo has its own SortableContext, so a cross-group drop never reaches the reorder handler.
+  test("dragging a row onto a row of another Group moves its session there and PUTs the order", async ({ page }) => {
     const sessions: MockSessionInput[] = [
-      { id: "a1", title: "alpha-a", project_path: "/tmp/repo-a", branch: "feat/1" },
-      { id: "a2", title: "beta-a", project_path: "/tmp/repo-a", branch: "feat/2" },
-      { id: "b1", title: "alpha-b", project_path: "/tmp/repo-b", branch: "feat/1" },
-      { id: "b2", title: "beta-b", project_path: "/tmp/repo-b", branch: "feat/2" },
+      { id: "a1", title: "alpha-a", project_path: "/tmp/repo-a", branch: "feat/1", group: "alpha" },
+      { id: "a2", title: "beta-a", project_path: "/tmp/repo-a", branch: "feat/2", group: "alpha" },
+      { id: "b1", title: "alpha-b", project_path: "/tmp/repo-b", branch: "feat/1", group: "beta" },
+      { id: "b2", title: "beta-b", project_path: "/tmp/repo-b", branch: "feat/2", group: "beta" },
     ];
-    const handle = await openDesktop(page, sessions, { ordering: sessions.map(workspaceId) });
+    const handle = await openDesktop(page, sessions, {
+      ordering: sessions.map(workspaceId),
+      persistPutOrdering: true,
+      persistGroupMoves: true,
+    });
     const wrappers = page.locator(WRAPPERS);
     await expect(wrappers).toHaveCount(4);
-    await dragRow(page, wrappers.nth(1), wrappers.nth(2));
-    await expectNoOrderingPut(page, handle, 300);
-    expect(await readVisibleSessionTitles(page)).toEqual(["alpha-a", "beta-a", "alpha-b", "beta-b"]);
+    // beta-a lands on beta-b's place in the other Group.
+    await dragRow(page, wrappers.nth(1), wrappers.nth(3));
+    await expect.poll(() => handle.groupMoves).toEqual([{ id: "a2", group: "beta" }]);
+    expect(handle.puts.map((p) => p.order)).toEqual([
+      ["a1", "b1", "a2", "b2"].map((id) => workspaceId(sessions.find((s) => s.id === id)!)),
+    ]);
+    const beta = page.locator("[data-testid='sidebar-group-header'][data-group-id='beta']");
+    await expect(beta.getByTestId("sidebar-group-session-count")).toHaveText("(3)");
+    await expect.poll(() => readVisibleSessionTitles(page)).toEqual(["alpha-a", "alpha-b", "beta-a", "beta-b"]);
   });
 
   test("read-only viewer cannot drag sidebar rows", async ({ page }) => {
@@ -289,8 +298,8 @@ test.describe("touch rows", () => {
 // Group order is client-only (localStorage); the whole real header is the drag activator (#2207).
 test.describe("group headers", () => {
   const twoRepos: MockSessionInput[] = [
-    { id: "s-a", title: "alpha-session", project_path: "/tmp/repo-alpha", branch: "feat/a" },
-    { id: "s-b", title: "beta-session", project_path: "/tmp/repo-beta", branch: "feat/b" },
+    { id: "s-a", title: "alpha-session", project_path: "/tmp/repo-alpha", branch: "feat/a", group: "alpha" },
+    { id: "s-b", title: "beta-session", project_path: "/tmp/repo-beta", branch: "feat/b", group: "beta" },
   ];
   const groupNames = (page: Page) =>
     page.evaluate(() =>
@@ -338,6 +347,7 @@ test.describe("group headers", () => {
 
     const expected = [before[1], before[0]];
     await expect.poll(() => groupNames(page), { timeout: 4_000 }).toEqual(expected);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("aoe-group-order-v1") ?? "[]"))).toEqual(expected);
     await page.reload();
     await expect(draggable(page)).toHaveCount(2);
     await expect.poll(() => groupNames(page), { timeout: 4_000 }).toEqual(expected);

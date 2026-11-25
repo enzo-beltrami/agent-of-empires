@@ -1,5 +1,6 @@
-// Sidebar grouping axes (#1220, #1234, #1720, #3283): repo, group, nested repo+group, and org buckets with
-// per-axis collapse persisted in localStorage. Bucketing is unit-tested in src/lib/__tests__/sidebarGroups.test.ts.
+// Sidebar grouping axes (#1234, #4867): user Groups (the default) and status buckets, with per-axis collapse
+// persisted in localStorage, plus the Group header's own actions. Bucketing is unit-tested in
+// src/lib/__tests__/sidebarGroups.test.ts.
 
 import { test, expect } from "./helpers/mockedTest";
 import type { Locator, Page, Route } from "@playwright/test";
@@ -10,35 +11,11 @@ const HEADER = "[data-testid='sidebar-group-header']";
 const ROW = "[data-testid='sidebar-session-row']";
 const AXIS_TOGGLE = "[data-testid='sidebar-axis-toggle']";
 
-function twoRepoSessions(): MockSessionInput[] {
-  return [
-    { id: "s-a", title: "alpha-session", project_path: "/tmp/repo-alpha", branch: "feat/a" },
-    { id: "s-b", title: "beta-session", project_path: "/tmp/repo-beta", branch: "feat/b" },
-  ];
-}
-
 function groupedSessions(): MockSessionInput[] {
   return [
     { id: "s-f1", title: "feat-one", project_path: "/tmp/project", branch: "feat/one", group: "feature" },
     { id: "s-f2", title: "feat-two", project_path: "/tmp/project", branch: "feat/two", group: "feature" },
     { id: "s-r1", title: "refac-one", project_path: "/tmp/project", branch: "refac/one", group: "refactor" },
-  ];
-}
-
-function nestedSessions(): MockSessionInput[] {
-  return [
-    { id: "s-f1", title: "feat-one", project_path: "/tmp/project", branch: "feat/one", group: "feature" },
-    { id: "s-f2", title: "feat-two", project_path: "/tmp/project", branch: "feat/two", group: "feature" },
-    { id: "s-x1", title: "fix-one", project_path: "/tmp/project", branch: "fix/one", group: "fix" },
-    { id: "s-l1", title: "loose-one", project_path: "/tmp/project", branch: "loose/one" },
-  ];
-}
-
-function orgSessions(): MockSessionInput[] {
-  return [
-    { id: "s-a", title: "alpha-session", project_path: "/tmp/repo-alpha", branch: "feat/a", remote_owner: "acme" },
-    { id: "s-b", title: "beta-session", project_path: "/tmp/repo-beta", branch: "feat/b", remote_owner: "acme" },
-    { id: "s-c", title: "gamma-session", project_path: "/tmp/repo-gamma", branch: "feat/c", remote_owner: null },
   ];
 }
 
@@ -66,11 +43,6 @@ function statusSessions(): MockSessionInput[] {
       fields: { status: "Running" },
     },
   ];
-}
-
-// Stub owner avatars so the test makes no network request.
-async function stubOwnerAvatars(page: Page) {
-  await page.route("https://github.com/**", (r) => r.fulfill({ status: 404, body: "" }));
 }
 
 async function resolvedColor(page: Page, token: string): Promise<string> {
@@ -116,164 +88,90 @@ async function pickAxis(page: Page, toggle: Locator, target: string) {
   await expect(toggle).toHaveAttribute("data-axis", target);
 }
 
-test.describe("sidebar repo groups (#1220)", () => {
-  test("two repos render as two groups; the filter narrows groups and rows by repo name", async ({ page }) => {
-    await installSidebarMocks(page, { sessions: twoRepoSessions() });
-    await gotoDesktop(page);
+const header = (page: Page, id: string) => page.locator(`${HEADER}[data-group-id='${id}']`);
 
-    await expect(page.locator(HEADER)).toHaveCount(2);
-    await expect(page.getByText("repo-alpha")).toBeVisible();
-    await expect(page.getByText("repo-beta")).toBeVisible();
-
-    await expect(page.locator(ROW)).toHaveCount(2);
-    await expect(page.getByText("alpha-session")).toBeVisible();
-    await expect(page.getByText("beta-session")).toBeVisible();
-
-    await page.getByLabel("Filter sessions").click();
-    const filter = page.locator("[data-testid='sidebar-filter-input']");
-    await expect(filter).toBeVisible();
-
-    await filter.fill("alpha");
-    await expect(page.locator(HEADER)).toHaveCount(1);
-    await expect(page.getByText("repo-alpha")).toBeVisible();
-    await expect(page.getByText("repo-beta")).toBeHidden();
-
-    // Clear the input rather than the toggle, which would also hide the input.
-    await filter.fill("");
-    await expect(page.locator(HEADER)).toHaveCount(2);
-
-    await filter.fill("nonexistent-repo-xyz");
-    await expect(page.getByText(/No matches for/)).toBeVisible();
-    await expect(page.locator(ROW)).toHaveCount(0);
-  });
-
-  test("a collapsed group marks that it holds the open session (#3912)", async ({ page }) => {
-    await installSidebarMocks(page, { sessions: twoRepoSessions() });
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto("/session/s-a");
-
-    const alphaHeader = page.locator(HEADER, { has: page.getByText("repo-alpha") });
-    const betaHeader = page.locator(HEADER, { has: page.getByText("repo-beta") });
-    const expandBtn = alphaHeader.locator("button[aria-expanded]");
-
-    // Expanded, the open session's row carries the frame instead of the header.
-    await expect(expandBtn).toHaveAttribute("aria-expanded", "true");
-    expect(await alphaHeader.getAttribute("class")).not.toContain("border-session-active");
-
-    // Collapsed, the header uses the projected token; border-brand-600 fails contrast on catppuccin-latte.
-    await expandBtn.click();
-    await expect(page.getByText("alpha-session")).toBeHidden();
-    expect(await alphaHeader.getAttribute("class")).toContain("border-session-active");
-    expect(await betaHeader.getAttribute("class")).not.toContain("border-session-active");
-    // toHaveCSS polls past the color transition.
-    await expect(alphaHeader).toHaveCSS("border-left-color", await resolvedColor(page, "--color-session-active"));
-  });
-});
-
-test.describe("sidebar user-group axis (#1234)", () => {
-  test("axis toggle renders user groups by group_path; their collapse persists across reload per axis", async ({
+test.describe("sidebar Group axis (#1234)", () => {
+  test("Groups are the default; the filter narrows by Group name or row, and collapse persists per axis", async ({
     page,
   }) => {
     await installSidebarMocks(page, { sessions: groupedSessions() });
     await gotoDesktop(page);
 
-    const headers = page.locator(HEADER);
-    await expect(headers).toHaveCount(1);
-    await expect(page.locator(ROW)).toHaveCount(3);
-
-    const axisHeading = page.getByTestId("sidebar-axis-heading");
-    await expect(axisHeading).toHaveText("Sessions");
-
     const axisToggle = page.locator(AXIS_TOGGLE);
-    await expect(axisToggle).toHaveAttribute("data-axis", "repo");
-    await pickAxis(page, axisToggle, "group");
     await expect(axisToggle).toHaveAttribute("data-axis", "group");
-    await expect(axisHeading).toHaveText("Groups");
-
-    await expect(headers).toHaveCount(2);
-    await expect(page.locator(`${HEADER}[data-group-id='feature']`)).toBeVisible();
-    await expect(page.locator(`${HEADER}[data-group-id='refactor']`)).toBeVisible();
+    await expect(page.getByTestId("sidebar-axis-heading")).toHaveText("Groups");
+    await expect(page.locator(HEADER)).toHaveCount(2);
+    await expect(page.locator(HEADER).nth(0)).toHaveAttribute("data-group-id", "feature");
+    await expect(page.locator(HEADER).nth(1)).toHaveAttribute("data-group-id", "refactor");
     await expect(page.locator(ROW)).toHaveCount(3);
 
-    const featureHeader = page.locator(`${HEADER}[data-group-id='feature']`);
-    const featureExpand = featureHeader.locator("button[aria-expanded]");
-    await expect(featureExpand).toHaveAttribute("aria-expanded", "true");
+    await page.getByLabel("Filter sessions").click();
+    const filter = page.locator("[data-testid='sidebar-filter-input']");
+    // (query, Groups left, rows left)
+    for (const [query, groups, rows] of [
+      ["refactor", 1, 1],
+      ["feat-two", 1, 1],
+      ["", 2, 3],
+    ] as const) {
+      await filter.fill(query);
+      await expect(page.locator(HEADER), query).toHaveCount(groups);
+      await expect(page.locator(ROW), query).toHaveCount(rows);
+    }
+    await filter.fill("nonexistent-xyz");
+    await expect(page.getByText(/No matches for/)).toBeVisible();
+    await expect(page.locator(ROW)).toHaveCount(0);
+    await filter.fill("");
 
+    const featureExpand = header(page, "feature").locator("button[aria-expanded]");
     await featureExpand.click();
     await expect(featureExpand).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByText("feat-one")).toBeHidden();
 
     await page.reload();
-    await expect(axisToggle).toHaveAttribute("data-axis", "group");
-    await expect(featureHeader.locator("button[aria-expanded]")).toHaveAttribute("aria-expanded", "false");
+    await expect(featureExpand).toHaveAttribute("aria-expanded", "false");
 
-    // Collapse maps are per axis; the picker switches straight back to repo.
-    await pickAxis(page, axisToggle, "repo");
+    // Collapse maps are per axis: the status bucket holding the same rows starts expanded.
+    await pickAxis(page, axisToggle, "status");
     await expect(page.locator(`${HEADER} button[aria-expanded]`)).toHaveAttribute("aria-expanded", "true");
   });
-});
 
-test.describe("sidebar nested repo+group axis (#1720)", () => {
-  test("nests user groups inside the repo block; subgroup collapse is independent of repo collapse and persists", async ({
-    page,
-  }) => {
-    await installSidebarMocks(page, { sessions: nestedSessions() });
-    await gotoDesktop(page);
+  test("a collapsed group marks that it holds the open session (#3912)", async ({ page }) => {
+    await installSidebarMocks(page, { sessions: groupedSessions() });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/session/s-f1");
 
-    const axisToggle = page.locator(AXIS_TOGGLE);
-    await expect(axisToggle).toHaveAttribute("data-axis", "repo");
-    await pickAxis(page, axisToggle, "repo+group");
+    const featureHeader = header(page, "feature");
+    const refactorHeader = header(page, "refactor");
+    const expandBtn = featureHeader.locator("button[aria-expanded]");
 
-    const repoBlocks = page.locator("[data-testid='sidebar-nested-repo']");
-    await expect(repoBlocks).toHaveCount(1);
-    const repo = repoBlocks.first();
+    // Expanded, the open session's row carries the frame instead of the header.
+    await expect(expandBtn).toHaveAttribute("aria-expanded", "true");
+    expect(await featureHeader.getAttribute("class")).not.toContain("border-session-active");
 
-    await expect(repo.locator("[data-testid='sidebar-nested-subgroup']")).toHaveCount(3);
-    await expect(repo.locator("[data-testid='sidebar-nested-subgroup'] [data-group-id='feature']")).toBeVisible();
-    await expect(repo.locator("[data-testid='sidebar-nested-subgroup'] [data-group-id='fix']")).toBeVisible();
-    await expect(repo.locator("[data-testid='sidebar-nested-subgroup'] [data-group-id='__ungrouped__']")).toBeVisible();
-
-    await expect(page.locator(ROW)).toHaveCount(4);
-
-    const featureSub = page.locator("[data-testid='sidebar-nested-subgroup'] [data-group-id='feature']");
-    const featureExpand = featureSub.locator("button[aria-expanded]");
-    await expect(featureExpand).toHaveAttribute("aria-expanded", "true");
-
-    await featureExpand.click();
-    await expect(featureExpand).toHaveAttribute("aria-expanded", "false");
+    // Collapsed, the header uses the projected token; border-brand-600 fails contrast on catppuccin-latte.
+    await expandBtn.click();
     await expect(page.getByText("feat-one")).toBeHidden();
-    await expect(page.getByText("fix-one")).toBeVisible();
-
-    await page.reload();
-    await expect(axisToggle).toHaveAttribute("data-axis", "repo+group");
-    await expect(
-      page
-        .locator("[data-testid='sidebar-nested-subgroup'] [data-group-id='feature']")
-        .locator("button[aria-expanded]"),
-    ).toHaveAttribute("aria-expanded", "false");
-
-    const repoHeader = page.locator("[data-testid='sidebar-nested-repo']").first().locator(HEADER).first();
-    await repoHeader.locator("button[aria-expanded]").click();
-    await expect(page.locator("[data-testid='sidebar-nested-subgroup']")).toHaveCount(0);
+    expect(await featureHeader.getAttribute("class")).toContain("border-session-active");
+    expect(await refactorHeader.getAttribute("class")).not.toContain("border-session-active");
+    // toHaveCSS polls past the color transition.
+    await expect(featureHeader).toHaveCSS("border-left-color", await resolvedColor(page, "--color-session-active"));
   });
 
-  test("a Shift+click range skips the rows hidden under a collapsed repo", async ({ page }) => {
+  test("a Shift+click range skips the rows hidden under a collapsed Group", async ({ page }) => {
     const sessions: MockSessionInput[] = ["a", "b", "c"].map((name) => ({
       id: `s-${name}`,
       title: `${name}-session`,
       project_path: `/tmp/repo-${name}`,
       branch: `feat/${name}`,
-      group: "feature",
+      group: `group-${name}`,
     }));
     const archived: string[] = [];
     await installSidebarMocks(page, { sessions });
     await recordArchives(page, archived, sessions);
     await gotoDesktop(page);
-    await pickAxis(page, page.locator(AXIS_TOGGLE), "repo+group");
 
-    // Hide repo B's row, then range from A to C across it.
-    const repoB = page.locator("[data-testid='sidebar-nested-repo'][data-repo-id='/tmp/repo-b']");
-    await repoB.locator(HEADER).first().locator("button[aria-expanded]").click();
+    // Hide Group B's row, then range from A to C across it.
+    await header(page, "group-b").locator("button[aria-expanded]").click();
     await expect(page.getByText("b-session")).toBeHidden();
 
     const row = (title: string) => page.locator(ROW).filter({ hasText: title });
@@ -287,6 +185,78 @@ test.describe("sidebar nested repo+group axis (#1720)", () => {
   });
 });
 
+test.describe("sidebar Group header", () => {
+  async function openMenu(page: Page, id: string) {
+    await header(page, id).click({ button: "right" });
+    await expect(page.getByTestId("sidebar-group-context-menu")).toBeVisible();
+  }
+
+  test("Rename sends the full new path for the Group's profile", async ({ page }) => {
+    await installSidebarMocks(page, { sessions: groupedSessions() });
+    const renames: unknown[] = [];
+    await page.route("**/api/groups", async (route) => {
+      if (route.request().method() !== "PATCH") return route.fallback();
+      renames.push(route.request().postDataJSON());
+      await route.fulfill({ json: {} });
+    });
+    await gotoDesktop(page);
+
+    await openMenu(page, "feature");
+    await page.getByTestId("sidebar-group-context-menu-rename").click();
+    const input = page.getByTestId("sidebar-group-rename-input");
+    await expect(input).toHaveValue("feature");
+    await input.fill("work/features");
+    await input.press("Enter");
+
+    await expect
+      .poll(() => renames)
+      .toEqual([
+        { source: { profile: "default", path: "feature" }, target: { profile: "default", path: "work/features" } },
+      ]);
+  });
+
+  test("a color tints the header and survives a reload", async ({ page }) => {
+    await installSidebarMocks(page, { sessions: groupedSessions() });
+    await gotoDesktop(page);
+
+    await expect(header(page, "feature")).not.toHaveAttribute("style", /background-color/);
+    await openMenu(page, "feature");
+    await page.getByTestId("sidebar-group-color-teal").click();
+    await page.keyboard.press("Escape");
+    await expect(header(page, "feature")).toHaveAttribute("style", /background-color/);
+    expect(await page.evaluate(() => localStorage.getItem("aoe-group-color-v1"))).toBe(
+      JSON.stringify({ feature: "teal" }),
+    );
+
+    await page.reload();
+    await expect(header(page, "feature")).toHaveAttribute("style", /background-color/);
+    await expect(header(page, "refactor")).not.toHaveAttribute("style", /background-color/);
+  });
+
+  test("the header's + opens the wizard with its Group prefilled", async ({ page }) => {
+    await installSidebarMocks(page, {
+      sessions: [
+        ...groupedSessions(),
+        { id: "s-loose", title: "loose-one", project_path: "/tmp/project", branch: "loose/one" },
+      ],
+    });
+
+    // (Group id, prefilled Group)
+    for (const [id, prefilled] of [
+      ["refactor", "refactor"],
+      ["__ungrouped__", ""],
+    ] as const) {
+      await gotoDesktop(page);
+      await header(page, id)
+        .getByRole("button", { name: /New session in/ })
+        .click();
+      // With no path prefilled the wizard opens on its Project picker; the Group field is one step back.
+      await page.getByRole("button", { name: "Back" }).click();
+      await expect(page.locator("#wizard-group"), id).toHaveValue(prefilled);
+    }
+  });
+});
+
 test.describe("sidebar status axis (#4867)", () => {
   test("groups sessions by execution status in attention order; collapse persists and stays per axis", async ({
     page,
@@ -296,7 +266,7 @@ test.describe("sidebar status axis (#4867)", () => {
 
     const axisToggle = page.locator(AXIS_TOGGLE);
     const axisHeading = page.getByTestId("sidebar-axis-heading");
-    await expect(axisToggle).toHaveAttribute("data-axis", "repo");
+    await expect(axisToggle).toHaveAttribute("data-axis", "group");
     await expect(page.locator(ROW)).toHaveCount(3);
 
     await pickAxis(page, axisToggle, "status");
@@ -323,8 +293,8 @@ test.describe("sidebar status axis (#4867)", () => {
       page.locator(`${HEADER}[data-group-id='status:Waiting']`).locator("button[aria-expanded]"),
     ).toHaveAttribute("aria-expanded", "false");
 
-    // Collapse keys are per axis; the repo header never collapsed.
-    await pickAxis(page, axisToggle, "repo");
+    // Collapse keys are per axis; the Ungrouped header never collapsed.
+    await pickAxis(page, axisToggle, "group");
     await expect(page.locator(`${HEADER} button[aria-expanded]`)).toHaveAttribute("aria-expanded", "true");
   });
 
@@ -342,35 +312,35 @@ test.describe("sidebar status axis (#4867)", () => {
     await expect(option("group")).toHaveText("Group");
     // Same single-select menu semantics as the sort picker beside it.
     await expect(menu).toHaveAttribute("role", "menu");
-    await expect(option("repo")).toHaveAttribute("role", "menuitemradio");
+    await expect(option("group")).toHaveAttribute("role", "menuitemradio");
     // Focus enters on the checked option, and the menu owns the arrows, so options are not Tab stops.
-    await expect(option("repo")).toBeFocused();
-    await expect(option("repo")).toHaveAttribute("tabindex", "-1");
+    await expect(option("group")).toBeFocused();
+    await expect(option("group")).toHaveAttribute("tabindex", "-1");
 
     await page.keyboard.press("ArrowDown");
-    await expect(option("org")).toBeFocused();
-    await page.keyboard.press("End");
     await expect(option("status")).toBeFocused();
     // Both ends wrap.
     await page.keyboard.press("ArrowDown");
-    await expect(option("repo")).toBeFocused();
+    await expect(option("group")).toBeFocused();
     await page.keyboard.press("ArrowUp");
     await expect(option("status")).toBeFocused();
     await page.keyboard.press("Home");
-    await expect(option("repo")).toBeFocused();
+    await expect(option("group")).toBeFocused();
+    await page.keyboard.press("End");
+    await expect(option("status")).toBeFocused();
 
     // Escape closes without picking and hands the focus back to the trigger.
     await page.keyboard.press("Escape");
     await expect(menu).toBeHidden();
     await expect(axisToggle).toBeFocused();
-    await expect(axisToggle).toHaveAttribute("data-axis", "repo");
+    await expect(axisToggle).toHaveAttribute("data-axis", "group");
 
     // Enter on an arrowed-to option commits it, and the trigger keeps the focus.
     await page.keyboard.press("Enter");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(menu).toBeHidden();
-    await expect(axisToggle).toHaveAttribute("data-axis", "org");
+    await expect(axisToggle).toHaveAttribute("data-axis", "status");
     await expect(axisToggle).toBeFocused();
 
     // Tabbing out closes the menu instead of walking its options.
@@ -610,54 +580,5 @@ test.describe("sidebar status axis (#4867)", () => {
 
     release();
     await expect.poll(() => [...patched].sort()).toEqual(["s-run:unread", "s-wait:archive"]);
-  });
-});
-
-test.describe("sidebar org axis (#3283)", () => {
-  test("buckets repos by remote owner, No organization last; repo collapse within an org persists independently", async ({
-    page,
-  }) => {
-    await stubOwnerAvatars(page);
-    await installSidebarMocks(page, { sessions: orgSessions() });
-    await gotoDesktop(page);
-
-    const axisToggle = page.locator(AXIS_TOGGLE);
-    await expect(axisToggle).toHaveAttribute("data-axis", "repo");
-    await pickAxis(page, axisToggle, "org");
-
-    const orgBlocks = page.locator("[data-testid='sidebar-org-group']");
-    await expect(orgBlocks).toHaveCount(2);
-
-    const acmeOrg = page.locator("[data-testid='sidebar-org-group'][data-org-id='acme@example.com']");
-    await expect(acmeOrg.locator(HEADER).first()).toContainText("acme");
-    await expect(acmeOrg.locator("[data-testid='sidebar-org-repo']")).toHaveCount(2);
-
-    const noOrg = page.locator("[data-testid='sidebar-org-group'][data-org-id='__no_org__']");
-    await expect(noOrg.locator(HEADER).first()).toContainText("No organization");
-    await expect(noOrg.locator("[data-testid='sidebar-org-repo']")).toHaveCount(1);
-
-    await expect(orgBlocks.nth(0)).toHaveAttribute("data-org-id", "acme@example.com");
-    await expect(orgBlocks.nth(1)).toHaveAttribute("data-org-id", "__no_org__");
-
-    await expect(page.locator(ROW)).toHaveCount(3);
-
-    const alphaRepo = acmeOrg.locator("[data-testid='sidebar-org-repo'][data-repo-id='/tmp/repo-alpha']");
-    const alphaExpand = alphaRepo.locator("button[aria-expanded]");
-    await expect(alphaExpand).toHaveAttribute("aria-expanded", "true");
-
-    await alphaExpand.click();
-    await expect(alphaExpand).toHaveAttribute("aria-expanded", "false");
-    await expect(page.getByText("alpha-session")).toBeHidden();
-    await expect(page.getByText("beta-session")).toBeVisible();
-
-    await page.reload();
-    await expect(axisToggle).toHaveAttribute("data-axis", "org");
-    await expect(
-      page.locator("[data-testid='sidebar-org-repo'][data-repo-id='/tmp/repo-alpha']").locator("button[aria-expanded]"),
-    ).toHaveAttribute("aria-expanded", "false");
-
-    const orgHeader = acmeOrg.locator(HEADER).first();
-    await orgHeader.locator("button[aria-expanded]").click();
-    await expect(acmeOrg.locator("[data-testid='sidebar-org-repo']")).toHaveCount(0);
   });
 });

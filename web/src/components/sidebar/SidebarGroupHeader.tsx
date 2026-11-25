@@ -1,22 +1,14 @@
 import { memo, useId, useRef, useState } from "react";
-import { Folder, Sparkles } from "lucide-react";
-import { isCoordinatorPath } from "../../lib/coordinator";
+import { Activity, Layers } from "lucide-react";
 import { archivableWorkspaces, type SidebarGroup } from "../../lib/sidebarGroups";
-import { SCRATCH_GROUP_ID } from "../../hooks/useRepoGroups";
-import {
-  REPO_COLOR_OPTIONS,
-  repoColorStyle,
-  repoSwatchStyle,
-  type RepoAppearanceUpdate,
-} from "../../lib/repoAppearance";
+import { GROUP_COLOR_OPTIONS, groupColorStyle, groupSwatchStyle, type GroupColor } from "../../lib/groupColor";
 import { STATUS_DOT_CLASS } from "../../lib/session";
 import { workspaceAttentionCount, workspaceIsSunk } from "../../lib/sidebarSort";
 import { useSidebarCompact } from "../../lib/sidebarCompact";
 import { OFFLINE_TITLE } from "../../lib/connectionState";
 import { ContextMenu, MenuChoiceRow, MenuItem, MenuSeparator, MenuSwatches } from "../ContextMenu";
-import { OwnerAvatar } from "../OwnerAvatar";
 import { Tooltip } from "../Tooltip";
-import { GROUP_DOT_STATE, MARK_MEANING, meaningText } from "../../lib/sidebarMarks";
+import { GROUP_DOT_STATE } from "../../lib/sidebarMarks";
 import { useContextMenu } from "../useContextMenu";
 import { FoldChevron, PlusIcon } from "../icons";
 import { DISABLED_ICON_BUTTON } from "./styles";
@@ -28,14 +20,12 @@ interface Props {
   hasActiveChild: boolean;
   onClick: () => void;
   onNewSession: () => void;
-  onUpdateAppearance: (repoId: string, update: RepoAppearanceUpdate) => void;
+  /** Omitted (status buckets) hides the color choices. */
+  onSetColor?: (color: GroupColor | null) => void;
+  /** Renames the Group's path; omitted (Ungrouped, status buckets, read-only or offline) hides Rename. */
+  onRename?: (to: string) => void;
   /** Omitted (read-only or offline) hides "Archive all"; the parent confirms. */
   onArchiveAll?: () => void;
-  /** Registers the repo so it persists with zero sessions; omitted hides it. */
-  onPin?: (repoPath: string) => void;
-  onUnpin?: (group: SidebarGroup) => void;
-  /** Opens project settings, registering the repo first if needed; omitted hides it. */
-  onEditProject?: (group: SidebarGroup) => void;
   offline: boolean;
   dragHandle?: DragHandleProps;
   /** Id of the element wrapping this Group's rows, for `aria-controls`. */
@@ -44,17 +34,10 @@ interface Props {
 
 export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props) {
   const { group, hasActiveChild, onClick, onNewSession, offline, dragHandle, rowsId } = props;
-  // Appearance is repo-axis only; archive-all works on every axis.
-  const canAppearance = group.capabilities.appearance;
   const archivableCount = props.onArchiveAll ? archivableWorkspaces(group).length : 0;
-  const canPin = !!props.onPin && group.capabilities.create === "repo" && !!group.repoPath && !group.pinned;
-  const canUnpin = !!props.onUnpin && group.kind === "repo" && group.pinned;
-  const canEditProject =
-    !!props.onEditProject &&
-    (group.id === SCRATCH_GROUP_ID || (group.capabilities.create === "repo" && !!group.repoPath));
-  const hasMenu = canAppearance || archivableCount > 0 || canPin || canUnpin || canEditProject;
+  const hasMenu = !!props.onSetColor || !!props.onRename || archivableCount > 0;
   const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(group.alias ?? group.displayName);
+  const [renameValue, setRenameValue] = useState(group.groupPath ?? "");
   const renameRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -62,9 +45,8 @@ export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props)
   const compact = useSidebarCompact();
 
   const dotClass = STATUS_DOT_CLASS[group.status === "active" ? "Running" : "Idle"] ?? "bg-status-idle";
-  const coordinator = isCoordinatorPath(group.repoPath);
-  const rowClass = `${coordinator ? "bg-brand-500/10 hover:bg-brand-500/15" : group.color ? "" : "hover:bg-surface-800/50"} ${hasActiveChild ? "border-l-2 border-session-active" : coordinator ? "border-l-2 border-brand-500/60" : ""}`;
-  const headerStyle = repoColorStyle(group.color);
+  const rowClass = `${group.color ? "" : "hover:bg-surface-800/50"} ${hasActiveChild ? "border-l-2 border-session-active" : ""}`;
+  const headerStyle = groupColorStyle(group.color);
   // Like a Session row's glyph: the header button takes focus and is described by the dot.
   const [dotTip, setDotTip] = useState<"hover" | "focus" | null>(null);
   const dotTipId = useId();
@@ -85,7 +67,8 @@ export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props)
 
   const commitRename = () => {
     setRenaming(false);
-    props.onUpdateAppearance(group.id, { alias: renameValue.trim() || null });
+    const next = renameValue.trim();
+    if (next && next !== group.groupPath) props.onRename?.(next);
   };
   // Enter and Escape unmount the focused input; send focus back to the header button once
   // it renders again. A blur (Tab, a click) keeps its own destination.
@@ -186,17 +169,11 @@ export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props)
               data-testid="sidebar-group-icon"
               className="absolute inset-0 flex items-center justify-center transition-opacity duration-75 group-hover:opacity-0 group-focus-within:opacity-0"
             >
-              <OwnerAvatar
-                ownerKey={group.remoteOwnerKey}
-                size={16}
-                fallback={
-                  coordinator ? (
-                    <Sparkles className="h-3.5 w-3.5 text-brand-400" />
-                  ) : (
-                    <Folder className="h-3.5 w-3.5 text-text-dim" />
-                  )
-                }
-              />
+              {group.kind === "status" ? (
+                <Activity className="h-3.5 w-3.5 text-text-dim" />
+              ) : (
+                <Layers className="h-3.5 w-3.5 text-text-dim" />
+              )}
             </span>
             <span
               data-testid="sidebar-group-fold-chevron"
@@ -208,36 +185,8 @@ export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props)
               />
             </span>
           </span>
-          {group.pinned ? (
-            <Tooltip text={meaningText(MARK_MEANING.pinnedProject)}>
-              <span
-                role="img"
-                className="shrink-0 text-[10px] leading-none text-text-dim"
-                data-testid="sidebar-group-pinned-marker"
-                aria-label="Pinned project"
-              >
-                ◆
-              </span>
-            </Tooltip>
-          ) : (
-            group.registeredProjects.length > 0 && (
-              <Tooltip text={meaningText(MARK_MEANING.project)}>
-                <span
-                  role="img"
-                  className="shrink-0 text-[10px] leading-none text-text-dim"
-                  data-testid="sidebar-group-project-marker"
-                  aria-label="Project"
-                >
-                  ◇
-                </span>
-              </Tooltip>
-            )
-          )}
-          <span
-            className={`text-[13px] md:text-[14px] font-medium truncate flex-1 ${coordinator ? "text-brand-400" : ""}`}
-            title={group.groupPath ?? group.repoPath}
-          >
-            {coordinator && !group.alias ? "Coordinator" : group.displayName}
+          <span className="text-[13px] md:text-[14px] font-medium truncate flex-1" title={group.groupPath}>
+            {group.displayName}
           </span>
           {attentionCount > 0 && (
             <Tooltip
@@ -293,16 +242,13 @@ export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props)
               })
             }
             archivableCount={archivableCount}
-            canPin={canPin}
-            canUnpin={canUnpin}
-            canEditProject={canEditProject}
             close={closeMenu}
             closeToHeader={() => {
               closeMenu();
               buttonRef.current?.focus();
             }}
             startRename={() => {
-              setRenameValue(group.alias ?? group.defaultDisplayName);
+              setRenameValue(group.groupPath ?? "");
               setRenaming(true);
               // select() alone doesn't move focus in every browser.
               requestAnimationFrame(() => {
@@ -319,31 +265,22 @@ export const SidebarGroupHeader = memo(function SidebarGroupHeader(props: Props)
 
 function GroupMenuItems({
   group,
-  onUpdateAppearance,
+  onSetColor,
+  onRename,
   onArchiveAll,
-  onPin,
-  onUnpin,
-  onEditProject,
   archivableCount,
-  canPin,
-  canUnpin,
-  canEditProject,
   close,
   closeToHeader,
   startRename,
 }: Props & {
   archivableCount: number;
-  canPin: boolean;
-  canUnpin: boolean;
-  canEditProject: boolean;
   close: () => void;
   /** Close and return focus to the header button, for actions that leave the header in place. */
   closeToHeader: () => void;
   startRename: () => void;
 }) {
-  const canAppearance = group.capabilities.appearance;
-  // Rename focuses its input and Project settings its dialog; every other action keeps the
-  // header, so focus goes back to it rather than to the menu item that just unmounted.
+  // Rename focuses its input; every other action keeps the header, so focus goes back to it
+  // rather than to the menu item that just unmounted.
   const act =
     (fn: () => void, toHeader = true) =>
     () => {
@@ -352,49 +289,26 @@ function GroupMenuItems({
     };
   return (
     <>
-      {canPin && (
-        <MenuItem
-          onClick={act(() => group.repoPath && onPin?.(group.repoPath))}
-          testId="sidebar-group-context-menu-pin"
-        >
-          Pin project
-        </MenuItem>
-      )}
-      {canUnpin && (
-        <MenuItem onClick={act(() => onUnpin?.(group))} testId="sidebar-group-context-menu-unpin">
-          Unpin project
-        </MenuItem>
-      )}
-      {canEditProject && (
-        <MenuItem onClick={act(() => onEditProject?.(group), false)} testId="sidebar-group-context-menu-settings">
-          Project settings
-        </MenuItem>
-      )}
-      {(canPin || canUnpin || canEditProject) && (archivableCount > 0 || canAppearance) && <MenuSeparator />}
       {archivableCount > 0 && (
         <MenuItem onClick={act(() => onArchiveAll?.())} testId="sidebar-group-context-menu-archive-all">
           {`Archive all (${archivableCount})`}
         </MenuItem>
       )}
-      {archivableCount > 0 && canAppearance && <MenuSeparator />}
-      {canAppearance && (
-        <>
-          <MenuItem onClick={act(startRename, false)} testId="sidebar-group-context-menu-rename">
-            Rename
-          </MenuItem>
-          {group.alias && (
-            <MenuItem onClick={act(() => onUpdateAppearance(group.id, { alias: null }))}>Clear alias</MenuItem>
-          )}
-          <MenuSeparator />
-          <MenuChoiceRow label="Color">
-            <MenuSwatches
-              options={REPO_COLOR_OPTIONS.map((o) => ({ key: o.id, label: o.label, style: repoSwatchStyle(o.id) }))}
-              value={group.color}
-              onPick={(color) => onUpdateAppearance(group.id, { color })}
-              testIdPrefix="sidebar-group-color"
-            />
-          </MenuChoiceRow>
-        </>
+      {archivableCount > 0 && (onRename || onSetColor) && <MenuSeparator />}
+      {onRename && (
+        <MenuItem onClick={act(startRename, false)} testId="sidebar-group-context-menu-rename">
+          Rename
+        </MenuItem>
+      )}
+      {onSetColor && (
+        <MenuChoiceRow label="Color">
+          <MenuSwatches
+            options={GROUP_COLOR_OPTIONS.map((o) => ({ key: o.id, label: o.label, style: groupSwatchStyle(o.id) }))}
+            value={group.color}
+            onPick={(color) => onSetColor(color)}
+            testIdPrefix="sidebar-group-color"
+          />
+        </MenuChoiceRow>
       )}
     </>
   );

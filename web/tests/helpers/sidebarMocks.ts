@@ -52,6 +52,8 @@ export interface SidebarMockHandle {
   /** One-shot override for the next PUT's response. */
   nextPutResponse: { status?: number; body?: string } | null;
   readOnly: boolean;
+  /** `PATCH /api/sessions/:id/group` bodies, in order, when `persistGroupMoves` is set. */
+  groupMoves: Array<{ id: string; group: string }>;
 }
 
 export interface SidebarMockOptions {
@@ -61,6 +63,8 @@ export interface SidebarMockOptions {
   readOnly?: boolean;
   /** A successful PUT replaces the served ordering, like the real server. */
   persistPutOrdering?: boolean;
+  /** A group PATCH moves the session and bumps the runtime revision, like the real server. */
+  persistGroupMoves?: boolean;
 }
 
 export async function installSidebarMocks(page: Page, opts: SidebarMockOptions): Promise<SidebarMockHandle> {
@@ -69,7 +73,9 @@ export async function installSidebarMocks(page: Page, opts: SidebarMockOptions):
     puts: [],
     nextPutResponse: null,
     readOnly: !!opts.readOnly,
+    groupMoves: [],
   };
+  let revision = 1;
 
   let ordering = opts.ordering ?? filled.map((s) => workspaceId(s));
 
@@ -77,13 +83,28 @@ export async function installSidebarMocks(page: Page, opts: SidebarMockOptions):
   await page.route(/\/api\/sessions(\?.*)?$/, (r) => {
     if (r.request().method() !== "GET") return r.fulfill({ status: 400 });
     return r.fulfill({
-      headers: { "aoe-runtime-epoch": "mock-runtime", "aoe-runtime-revision": "1" },
+      headers: { "aoe-runtime-epoch": "mock-runtime", "aoe-runtime-revision": String(revision) },
       json: {
         sessions: filled.map(toResponse),
         workspace_ordering: ordering,
       },
     });
   });
+  if (opts.persistGroupMoves) {
+    await page.route(/\/api\/sessions\/[^/]+\/group$/, (r) => {
+      const id = decodeURIComponent(new URL(r.request().url()).pathname.split("/").at(-2)!);
+      const session = filled.find((s) => s.id === id);
+      if (r.request().method() !== "PATCH" || !session) return r.fulfill({ status: 400 });
+      const { group } = r.request().postDataJSON() as { group: string };
+      handle.groupMoves.push({ id, group });
+      session.group = group;
+      revision += 1;
+      return r.fulfill({
+        headers: { "aoe-runtime-epoch": "mock-runtime", "aoe-runtime-revision": String(revision) },
+        json: toResponse(session),
+      });
+    });
+  }
   await page.route("**/api/workspace-ordering", (r: Route) => {
     if (r.request().method() === "PUT") {
       const body = r.request().postDataJSON() as { order?: string[] };

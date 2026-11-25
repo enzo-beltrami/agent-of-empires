@@ -3,25 +3,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
-import { useNestedSidebarGroups } from "../useNestedSidebarGroups";
-import { useOrgGroups } from "../useOrgGroups";
 import { useSessionGroups } from "../useSessionGroups";
-import { repoGroup, session, workspace } from "./fixtures";
+import { session, workspace } from "./fixtures";
 
 const groupedWorkspace = (group_path: string, over = {}) =>
   workspace("w1", "/repo", [session({ group_path, branch: "feat", main_repo_path: "/repo", ...over })], {
     branch: "feat",
     displayName: "feat",
-  });
-
-const OWNER = "acme@example.com";
-const orgRepo = (id = "repo-1") =>
-  repoGroup({
-    id,
-    repoPath: `/${id}`,
-    remoteOwner: "acme",
-    remoteOwnerKey: OWNER,
-    workspaces: [groupedWorkspace("", { remote_owner: "acme", remote_owner_key: OWNER })],
   });
 
 beforeEach(() => localStorage.clear());
@@ -44,49 +32,29 @@ describe("sidebar group collapse persistence", () => {
     expect(localStorage.getItem(key)).toBeNull();
   });
 
-  it("useNestedSidebarGroups keys subgroup collapse on the encoded repo and group path", () => {
-    const repos = [repoGroup({ workspaces: [groupedWorkspace("team-a")] })];
-    const key = `aoe-nested-group-collapsed-${encodeURIComponent("repo-1")}::${encodeURIComponent("team-a")}`;
-    localStorage.setItem(key, "1");
-    const { result } = renderHook(() => useNestedSidebarGroups(repos, "lastActivity"));
-    const group = () => result.current.groups[0]!;
-    expect(group().repo.id).toBe("repo-1");
-    expect(group().repo.capabilities.reorder).toBe(false);
-    expect(group().subgroups[0]!.collapsed).toBe(true);
+  it("useSessionGroups persists the dragged order and colors, and carries both through a rename", () => {
+    const workspaces = [
+      workspace("w1", "/repo", [session({ id: "a", group_path: "alpha" })]),
+      workspace("w2", "/repo", [session({ id: "b", group_path: "beta" })]),
+    ];
+    const render = () => renderHook(({ ws }) => useSessionGroups(ws, "manual"), { initialProps: { ws: workspaces } });
+    const { result, rerender } = render();
+    const ids = () => result.current.groups.map((g) => g.id);
+    expect(ids()).toEqual(["alpha", "beta"]);
 
-    act(() => result.current.toggleSubgroupCollapsed("repo-1", "team-a"));
-    expect(localStorage.getItem(key)).toBeNull();
-    expect(group().subgroups[0]!.collapsed).toBe(false);
-    act(() => result.current.toggleSubgroupCollapsed("repo-1", "team-a"));
-    expect(localStorage.getItem(key)).toBe("1");
-  });
+    act(() => result.current.reorderGroups(["beta", "alpha"]));
+    act(() => result.current.setGroupColor("alpha", "rose"));
+    expect(ids()).toEqual(["beta", "alpha"]);
+    expect(render().result.current.groups.map((g) => [g.id, g.color])).toEqual([
+      ["beta", null],
+      ["alpha", "rose"],
+    ]);
 
-  it("useOrgGroups buckets repos under their org and collapses org and repo independently", () => {
-    const orgKey = `aoe-org-group-collapsed-org:${encodeURIComponent(OWNER)}`;
-    const repoKey = `aoe-org-group-collapsed-repo:${encodeURIComponent(OWNER)}::${encodeURIComponent("repo-1")}`;
-    const { result } = renderHook(() => useOrgGroups([orgRepo(), orgRepo("repo-2")]));
-    const org = () => result.current.groups[0]!;
-    expect(org().org.id).toBe(OWNER);
-    expect(org().repos.map((r) => r.id)).toEqual(["repo-1", "repo-2"]);
-
-    act(() => result.current.toggleOrgCollapsed(OWNER));
-    expect(localStorage.getItem(orgKey)).toBe("1");
-    expect(org().org.collapsed).toBe(true);
-    expect(org().repos[0]!.collapsed).toBe(false);
-    act(() => result.current.toggleOrgCollapsed(OWNER));
-    expect(localStorage.getItem(orgKey)).toBeNull();
-
-    act(() => result.current.toggleRepoCollapsed(OWNER, "repo-1"));
-    expect(localStorage.getItem(repoKey)).toBe("1");
-    expect(org().repos.map((r) => r.collapsed)).toEqual([true, false]);
-    expect(org().org.collapsed).toBe(false);
-    act(() => result.current.toggleRepoCollapsed(OWNER, "repo-1"));
-    expect(localStorage.getItem(repoKey)).toBeNull();
-  });
-
-  it("useOrgGroups reads initial org collapse from storage", () => {
-    localStorage.setItem(`aoe-org-group-collapsed-org:${encodeURIComponent(OWNER)}`, "1");
-    const { result } = renderHook(() => useOrgGroups([orgRepo()]));
-    expect(result.current.groups[0]!.org.collapsed).toBe(true);
+    act(() => result.current.carryGroupPrefs("alpha", "omega"));
+    rerender({ ws: [workspace("w1", "/repo", [session({ id: "a", group_path: "omega" })]), workspaces[1]!] });
+    expect(result.current.groups.map((g) => [g.id, g.color])).toEqual([
+      ["beta", null],
+      ["omega", "rose"],
+    ]);
   });
 });

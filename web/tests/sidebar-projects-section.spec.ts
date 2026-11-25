@@ -1,12 +1,8 @@
 import { test, expect } from "./helpers/mockedTest";
 import { Page } from "@playwright/test";
 
-// Mocked coverage for the web sidebar pin/unpin handlers (#2208). The live
-// spec (web/tests/live/project-pin.spec.ts) proves the real wire round-trip;
-// this mocked spec drives the same App handlers under the instrumented build
-// so handlePinProject (POST + PATCH-existing branches) and handleUnpinProject
-// (PATCH, never DELETE) are exercised. Unpin must PATCH pinned:false, keeping
-// the saved project rather than deleting it.
+// The sidebar's Projects section lists every registered Project, whether or not it has a Session or was
+// pinned by an older build, since Groups replace repository headers.
 
 interface MockSession {
   id: string;
@@ -98,45 +94,22 @@ async function mockApis(page: Page, sessions: MockSession[], projects: MockProje
   }
 }
 
-test.describe("Sidebar project pin/unpin", () => {
-  for (const alreadySaved of [false, true]) {
-    test(`Pin keeps a ${alreadySaved ? "saved" : "new"} project visible after its last session disappears`, async ({
-      page,
-    }) => {
-      const sessions = [{ id: "s-1", title: "Mongols", project_path: "/tmp/repo-a" }];
-      await mockApis(
-        page,
-        sessions,
-        alreadySaved ? [{ name: "repo-a", path: "/tmp/repo-a", scope: "global", pinned: false }] : [],
-      );
-      await page.goto("/");
-      const header = page.getByTestId("sidebar-group-header").filter({ hasText: "repo-a" });
-      await expect(header).toBeVisible();
-      await header.click({ button: "right" });
-      const response = page.waitForResponse(
-        (response) => response.url().includes("/api/projects") && response.request().method() !== "GET",
-      );
-      await page.getByTestId("sidebar-group-context-menu-pin").click();
-      await response;
-      sessions.splice(0);
-      await page.reload();
-      await expect(header).toBeVisible();
-    });
-  }
-
-  test("Unpin removes the sessionless header but preserves its saved project", async ({ page }) => {
-    await mockApis(page, [], [{ name: "repo-b", path: "/tmp/repo-b", scope: "global", pinned: true }]);
-    await page.goto("/");
-    const header = page.getByTestId("sidebar-group-header").filter({ hasText: "repo-b" });
-    await expect(header).toBeVisible();
-    await header.click({ button: "right" });
-    await page.getByTestId("sidebar-group-context-menu-unpin").click();
-    await expect(header).toBeHidden();
-    const toggle = page.getByTestId("sidebar-projects-toggle");
-    // The section names what it holds, with its own count.
-    await expect(toggle).toContainText("Projects, no sessions");
-    await expect(toggle).toContainText("(1)");
-    if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
-    await expect(page.getByTestId("sidebar-project-row").filter({ hasText: "repo-b" })).toBeVisible();
-  });
+test("the Projects section lists every registered project, with or without sessions", async ({ page }) => {
+  await mockApis(
+    page,
+    [{ id: "s-1", title: "Mongols", project_path: "/tmp/repo-a" }],
+    [
+      { name: "repo-a", path: "/tmp/repo-a", scope: "global", pinned: false },
+      { name: "repo-b", path: "/tmp/repo-b", scope: "global", pinned: true },
+    ],
+  );
+  await page.goto("/");
+  const toggle = page.getByTestId("sidebar-projects-toggle");
+  await expect(toggle).toContainText("Projects");
+  await expect(toggle).toContainText("(2)");
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+  const rows = page.getByTestId("sidebar-project-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("repo-a");
+  await expect(rows.nth(1)).toContainText("repo-b");
 });

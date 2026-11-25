@@ -200,7 +200,7 @@ Add a new session
 
 * `-t`, `--title <TITLE>` — Session title (defaults to a civilization name, or the worktree branch)
 * `-i`, `--interactive` — Prompt for the session name. Shows the generated default; press Enter to accept it. Ignored when --title is given. Requires an interactive terminal
-* `-g`, `--group <GROUP>` — Group path (defaults to parent folder)
+* `-g`, `--group <GROUP>` — Group path, `/` for nesting (none by default)
 * `-c`, `--cmd <COMMAND>` — Command to run (e.g., 'claude' or any other supported agent)
 * `--tool <TOOL>` — Named built-in or configured custom agent to run
 * `-P`, `--parent <PARENT>` — Parent session (creates sub-session, inherits group, not worktree or path). Without `--worktree` or `--scratch`, opens at `<path>` (default: current directory) on its checked-out branch. `--scratch` uses a fresh directory

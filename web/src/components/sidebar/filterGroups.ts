@@ -1,11 +1,5 @@
 import type { Workspace } from "../../lib/types";
-import {
-  sidebarGroupHasLiveWorkspace,
-  type NestedSidebarGroup,
-  type OrgNestedGroup,
-  type SidebarGroup,
-  type SidebarWorkspaceView,
-} from "../../lib/sidebarGroups";
+import { sidebarGroupHasLiveWorkspace, type SidebarGroup, type SidebarWorkspaceView } from "../../lib/sidebarGroups";
 import { workspaceIsSunk, workspaceIsTrashed } from "../../lib/sidebarSort";
 
 function workspaceMatchesQuery(ws: Workspace, q: string): boolean {
@@ -18,45 +12,17 @@ function workspaceMatchesQuery(ws: Workspace, q: string): boolean {
   );
 }
 
-/** A row survives when it or any enclosing header name matches `q`. */
+/** A row survives when it or its Group's name matches `q`. */
 export function makeRowFilter(q: string) {
-  return (v: SidebarWorkspaceView, ...groupNames: string[]) =>
-    !q || workspaceMatchesQuery(v.workspace, q) || groupNames.some((n) => n.toLowerCase().includes(q));
+  return (v: SidebarWorkspaceView, groupName: string) =>
+    !q || workspaceMatchesQuery(v.workspace, q) || groupName.toLowerCase().includes(q);
 }
-
-type RowFilter = ReturnType<typeof makeRowFilter>;
 
 /** Filters each group's rows and drops groups left empty. */
-function filterLevel<G extends SidebarGroup>(groups: G[], keep: RowFilter, ...parentNames: string[]): G[] {
+export function filterGroups(groups: SidebarGroup[], keep: ReturnType<typeof makeRowFilter>): SidebarGroup[] {
   return groups
-    .map((g) => ({ ...g, workspaces: g.workspaces.filter((v) => keep(v, g.displayName, ...parentNames)) }))
+    .map((g) => ({ ...g, workspaces: g.workspaces.filter((v) => keep(v, g.displayName)) }))
     .filter((g) => g.workspaces.length > 0);
-}
-
-export function filterFlat(groups: SidebarGroup[], keep: RowFilter): SidebarGroup[] {
-  return filterLevel(groups, keep);
-}
-
-export function filterNested(groups: NestedSidebarGroup[], keep: RowFilter): NestedSidebarGroup[] {
-  return groups
-    .map((ng) => ({ repo: ng.repo, subgroups: filterLevel(ng.subgroups, keep, ng.repo.displayName) }))
-    .filter((ng) => ng.subgroups.length > 0);
-}
-
-export function filterOrg(groups: OrgNestedGroup[], keep: RowFilter): OrgNestedGroup[] {
-  return groups
-    .map((og) => ({ org: og.org, repos: filterLevel(og.repos, keep, og.org.displayName) }))
-    .filter((og) => og.repos.length > 0);
-}
-
-/** The subgroups a nested axis renders: a collapsed repo hides every subgroup under it. */
-export function visibleSubgroups(groups: NestedSidebarGroup[], expandAll: boolean): SidebarGroup[] {
-  return groups.flatMap((ng) => (expandAll || !ng.repo.collapsed ? ng.subgroups : []));
-}
-
-/** The repos an org axis renders: a collapsed org hides every repo under it. */
-export function visibleOrgRepos(groups: OrgNestedGroup[], expandAll: boolean): SidebarGroup[] {
-  return groups.flatMap((og) => (expandAll || !og.org.collapsed ? og.repos : []));
 }
 
 // Deduped by workspace: the status axis slices one workspace into a bucket per status, so the

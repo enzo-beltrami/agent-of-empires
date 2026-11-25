@@ -6,7 +6,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import { SidebarGroupHeader } from "../sidebar/SidebarGroupHeader";
 import type { SidebarGroup } from "../../lib/sidebarGroups";
-import { MARK_MEANING, meaningText } from "../../lib/sidebarMarks";
 import type { SessionStatus, Workspace } from "../../lib/types";
 import { makeSession, makeWorkspace } from "./fixtures";
 
@@ -24,21 +23,14 @@ const views = (...wss: Workspace[]) => wss.map((w) => ({ key: w.id, workspace: w
 
 function group(over: Partial<SidebarGroup> = {}): SidebarGroup {
   return {
-    id: "g1",
-    kind: "repo",
-    displayName: "my-project",
-    defaultDisplayName: "my-project",
-    alias: null,
+    id: "work/payto",
+    kind: "sessionGroup",
+    displayName: "work / payto",
     color: null,
-    remoteOwnerKey: null,
     workspaces: views(workspace("w1", idle(3))),
     status: "idle",
     collapsed: false,
-    capabilities: { appearance: true, reorder: true, create: "repo" },
-    repoPath: "/p",
-    registeredProjects: [],
-    pinned: false,
-    pinnedEmpty: false,
+    groupPath: "work/payto",
     ...over,
   };
 }
@@ -58,7 +50,8 @@ function renderHeader(props: Partial<Parameters<typeof SidebarGroupHeader>[0]> =
       hasActiveChild={false}
       onClick={onClick}
       onNewSession={onNewSession}
-      onUpdateAppearance={() => {}}
+      onSetColor={() => {}}
+      onRename={() => {}}
       offline={false}
       rowsId="sidebar-rows-test"
       {...p}
@@ -96,27 +89,17 @@ describe("SidebarGroupHeader", () => {
     expect(text("sidebar-group-attention-badge")).toBe(badge);
   });
 
-  it("shows the owner avatar only for GitHub remotes, and the folder otherwise or once the image fails", () => {
-    const folder = () => screen.getByTestId("sidebar-group-icon").querySelector("svg.lucide-folder");
-    // (remoteOwnerKey, avatar src); no src means no image, so no request.
-    const cases: Array<[string | null, string | null]> = [
-      ["octocat@github.com", "https://github.com/octocat.png?size=32"],
-      ["acme@gitlab.com", null],
-      [null, null],
-    ];
-    for (const [key, src] of cases) {
-      renderHeader({ group: group({ remoteOwnerKey: key }) });
-      const img = screen.queryByRole("img");
-      expect(img?.getAttribute("src") ?? null, String(key)).toBe(src);
-      if (img) {
-        expect(img.getAttribute("alt")).toBe("octocat");
-        expect(folder()).toBeNull();
-        fireEvent.error(img);
-        expect(screen.queryByRole("img")).toBeNull();
-      }
-      expect(folder(), String(key)).not.toBeNull();
-      cleanup();
-    }
+  it("shows a Group icon for a user Group and an activity icon for a status bucket", () => {
+    const icon = () => screen.getByTestId("sidebar-group-icon").querySelector("svg")!.getAttribute("class");
+    renderHeader();
+    expect(icon()).toContain("lucide-layers");
+    cleanup();
+    renderHeader({
+      group: group({ kind: "status", groupPath: undefined }),
+      onSetColor: undefined,
+      onRename: undefined,
+    });
+    expect(icon()).toContain("lucide-activity");
   });
 
   it("is one disclosure button that controls its rows and names its menu shortcut", () => {
@@ -132,14 +115,11 @@ describe("SidebarGroupHeader", () => {
     expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("returns focus to the header after a menu action that keeps it, but not after Rename or settings", () => {
+  it("returns focus to the header after a menu action that keeps it, but not after Rename", () => {
     // (menu item, props, focus back on the header button)
     const cases: [string, Partial<Parameters<typeof SidebarGroupHeader>[0]>, boolean][] = [
-      ["sidebar-group-context-menu-pin", { onPin: vi.fn() }, true],
       ["sidebar-group-context-menu-archive-all", { onArchiveAll: vi.fn() }, true],
-      ["Clear alias", { group: group({ alias: "nick" }) }, true],
       ["sidebar-group-context-menu-rename", {}, false],
-      ["sidebar-group-context-menu-settings", { onEditProject: vi.fn(), group: group({ id: "__scratch__" }) }, false],
     ];
     for (const [item, props, toHeader] of cases) {
       renderHeader(props);
@@ -170,34 +150,47 @@ describe("SidebarGroupHeader", () => {
     }
   });
 
-  it("marks a header that is a registered Project, and a pinned one more strongly", () => {
-    const project = { name: "my-project", path: "/p", scope: "global" as const };
-    // (group, marker shown, its accessible name, its tooltip)
-    const cases: [Partial<SidebarGroup>, string | null, string | null, string | null][] = [
-      [{}, null, null, null],
-      [{ registeredProjects: [project] }, "sidebar-group-project-marker", "Project", meaningText(MARK_MEANING.project)],
-      [
-        { registeredProjects: [{ ...project, pinned: true }], pinned: true },
-        "sidebar-group-pinned-marker",
-        "Pinned project",
-        meaningText(MARK_MEANING.pinnedProject),
-      ],
+  it("renames to the trimmed full path, and ignores a blank or unchanged one", () => {
+    // (typed value, how the edit ends, the rename sent)
+    const cases: [string, string, string | null][] = [
+      ["  work/payments  ", "Enter", "work/payments"],
+      ["work/payments", "Escape", null],
+      ["   ", "Enter", null],
+      ["work/payto", "Enter", null],
     ];
-    for (const [over, testId, name, tip] of cases) {
-      renderHeader({ group: group(over) });
-      const markers = ["sidebar-group-project-marker", "sidebar-group-pinned-marker"].filter((id) =>
-        screen.queryByTestId(id),
-      );
-      expect(markers, JSON.stringify(over)).toEqual(testId ? [testId] : []);
-      if (name) {
-        // A Tooltip, shared with the legend, explains the mark; no `title` duplicates it.
-        const mark = screen.getByRole("img", { name });
-        expect(mark.hasAttribute("title")).toBe(false);
-        fireEvent.mouseEnter(mark.parentElement!);
-        expect(screen.getByRole("tooltip").textContent).toBe(tip);
-      }
+    for (const [value, key, sent] of cases) {
+      const onRename = vi.fn();
+      renderHeader({ onRename });
+      fireEvent.contextMenu(screen.getByTestId("sidebar-group-header"));
+      fireEvent.click(screen.getByTestId("sidebar-group-context-menu-rename"));
+      const input = screen.getByTestId<HTMLInputElement>("sidebar-group-rename-input");
+      expect(input.value).toBe("work/payto");
+      fireEvent.change(input, { target: { value } });
+      fireEvent.keyDown(input, { key });
+      expect(onRename.mock.calls, `${value} ${key}`).toEqual(sent ? [[sent]] : []);
       cleanup();
     }
+  });
+
+  it("picks and clears a color, and offers only the menu items its handlers allow", () => {
+    const onSetColor = vi.fn();
+    renderHeader({ group: group({ color: "teal" }), onSetColor });
+    fireEvent.contextMenu(screen.getByTestId("sidebar-group-header"));
+    expect(screen.getByTestId("sidebar-group-color-teal").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("sidebar-group-color-rose"));
+    fireEvent.click(screen.getByTestId("sidebar-group-color-clear"));
+    expect(onSetColor.mock.calls).toEqual([["rose"], [null]]);
+    cleanup();
+
+    // Ungrouped and read-only headers cannot rename; a status bucket has no menu at all.
+    renderHeader({ group: group({ id: "__ungrouped__", groupPath: "" }), onRename: undefined });
+    fireEvent.contextMenu(screen.getByTestId("sidebar-group-header"));
+    expect(screen.queryByTestId("sidebar-group-context-menu-rename")).toBeNull();
+    expect(screen.getByTestId("sidebar-group-color-amber")).toBeTruthy();
+    cleanup();
+    renderHeader({ group: group({ kind: "status" }), onSetColor: undefined, onRename: undefined });
+    fireEvent.contextMenu(screen.getByTestId("sidebar-group-header"));
+    expect(screen.queryByTestId("sidebar-group-context-menu")).toBeNull();
   });
 
   it("marks the header draggable only with a drag handle", () => {
@@ -205,27 +198,5 @@ describe("SidebarGroupHeader", () => {
     expect(screen.getByTestId("sidebar-group-header").getAttribute("data-draggable")).toBe("true");
     rerender({});
     expect(screen.getByTestId("sidebar-group-header").getAttribute("data-draggable")).toBeNull();
-  });
-
-  it("offers 'Edit settings' for the synthetic Scratch group despite capabilities.create being 'generic'", () => {
-    const onEditProjectSettings = vi.fn();
-    renderHeader({
-      group: group({ id: "__scratch__", capabilities: { appearance: true, reorder: true, create: "generic" } }),
-      onEditProject: onEditProjectSettings,
-    });
-
-    fireEvent.contextMenu(screen.getByTestId("sidebar-group-header"));
-    fireEvent.click(screen.getByTestId("sidebar-group-context-menu-settings"));
-    expect(onEditProjectSettings).toHaveBeenCalledWith(expect.objectContaining({ id: "__scratch__" }));
-  });
-
-  it("hides 'Edit settings' for an ordinary unregistered repo group ('generic' create, no repoPath match)", () => {
-    renderHeader({
-      group: group({ id: "other", capabilities: { appearance: true, reorder: true, create: "generic" } }),
-      onEditProject: vi.fn(),
-    });
-
-    fireEvent.contextMenu(screen.getByTestId("sidebar-group-header"));
-    expect(screen.queryByTestId("sidebar-group-context-menu-settings")).toBeNull();
   });
 });

@@ -143,7 +143,7 @@ test("accepted color reset survives navigating Settings before its first ACK", a
   await expect(page.getByTestId("sidebar-context-menu-color-clear")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("attach keeps the failed restart result through canonical Multi-repo regrouping", async ({ page }) => {
+test("attach keeps the failed restart result while its row re-keys into a multi-repo workspace", async ({ page }) => {
   const next = await boot(page);
   await consume(page, await next(), { sessions: [initialA], workspace_ordering: [] }, 10n);
   await page.route("**/api/projects**", (route) => route.fulfill({ json: [] }));
@@ -157,7 +157,6 @@ test("attach keeps the failed restart result through canonical Multi-repo regrou
   await page.getByTestId("add-project-modal-input").fill("/tmp/frontend");
   await page.getByTestId("add-project-modal-submit").click();
   await expect.poll(() => pending.length).toBe(1);
-  const oldGroup = page.getByTestId("sidebar-group-header").filter({ hasText: /^repo/ });
   await consume(
     page,
     pending.shift()!,
@@ -176,8 +175,10 @@ test("attach keeps the failed restart result through canonical Multi-repo regrou
     },
     11n,
   );
-  await expect(page.getByTestId("sidebar-group-header").filter({ hasText: "Multi-repo" })).toBeVisible();
-  await expect(oldGroup).toHaveCount(0);
+  // The workspace re-keys under its unchanged Group; the row and the result both survive it.
+  const group = page.locator("[data-testid='sidebar-group-header'][data-group-id='tmp/repo']");
+  await expect(group).toBeVisible();
+  await expect(row(page, "alpha")).toBeVisible();
   const modal = page.getByTestId("add-project-modal");
   await expect(modal).toContainText("original worker restart failed");
   await expect(modal).toContainText("attached warning retained");

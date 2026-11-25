@@ -10,10 +10,7 @@ import { SidebarLegend } from "./SidebarLegend";
 
 /** Heading above the list; the picker labels its axes itself. */
 const AXIS_HEADING: Record<SidebarAxis, string> = {
-  repo: "Sessions",
-  org: "Sessions",
   group: "Groups",
-  "repo+group": "Sessions",
   status: "Status",
 };
 
