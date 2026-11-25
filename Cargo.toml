@@ -256,6 +256,12 @@ codegen-units = 16
 # `-dev` namespace.
 debug-assertions = false
 
+[profile.dev-release.package.agent-of-empires]
+# Incremental reuses this crate's unchanged codegen units between local
+# rebuilds; dependencies keep the profile's settings, so their cache survives.
+incremental = true
+codegen-units = 256
+
 [[test]]
 # Explicit target so the `e2e-tests` feature gate applies. Without this entry
 # Cargo auto-discovers tests/e2e/main.rs unconditionally; the gate lets CI split

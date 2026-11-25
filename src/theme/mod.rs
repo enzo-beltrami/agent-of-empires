@@ -304,8 +304,8 @@ mod tests {
         ),
         (
             "honeybee",
-            Color::Rgb(0x0c, 0x0b, 0x09),
-            Color::Rgb(0xff, 0xd2, 0x1f),
+            Color::Rgb(0x05, 0x05, 0x05),
+            Color::Rgb(0xff, 0xd0, 0x00),
         ),
     ];
 

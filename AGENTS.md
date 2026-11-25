@@ -16,6 +16,7 @@
 cargo build                         # CLI + daemon, no Node needed
 cargo build --features web          # web dashboard, requires Node and npm
 cargo build --profile dev-release   # optimized local build without LTO
+cargo deploy-build                  # dev-release + web for the local dashboard, -j 12
 cargo test
 cargo fmt
 cargo clippy

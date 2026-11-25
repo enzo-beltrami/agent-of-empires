@@ -6,3 +6,6 @@ jobs = 4
 
 [alias]
 xtask = "run -p xtask --"
+# The local dashboard build. A lone deploy build may use most of the host, so it
+# overrides `jobs` above; parallel worktree builds keep the default.
+deploy-build = "build --profile dev-release --features web -j 12"
